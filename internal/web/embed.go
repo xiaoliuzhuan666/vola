@@ -3,8 +3,10 @@ package web
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -33,16 +35,29 @@ func Handler() http.Handler {
 				http.Error(w, "frontend not built", http.StatusNotFound)
 				return
 			}
+			w.Header().Set("Cache-Control", "no-cache")
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
 			w.Write(indexFile)
 			return
 		}
 		_ = f
 
+		setFrontendCacheHeaders(w, path)
 		// File exists — let the standard file server handle it
 		// (it sets correct Content-Type, caching headers, etc.)
 		fileServer.ServeHTTP(w, r)
 	})
+}
+
+func setFrontendCacheHeaders(w http.ResponseWriter, path string) {
+	ext := strings.ToLower(filepath.Ext(path))
+	switch ext {
+	case ".html", ".js", ".css":
+		w.Header().Set("Cache-Control", "no-cache")
+	}
+	if contentType := mime.TypeByExtension(ext); contentType != "" {
+		w.Header().Set("Content-Type", contentType)
+	}
 }
 
 // DevProxy returns true if the NEUDRIVE_DEV environment variable is set,

@@ -142,11 +142,11 @@ export default function DashboardPage({}: DashboardPageProps) {
       api.getOAuthGrants(),
       api.getTreeSnapshot('/'),
     ])
-    if (statsResult.status === 'fulfilled') setStats({ ...emptyStats, ...statsResult.value })
+    if (statsResult.status === 'fulfilled') setStats(statsResult.value || emptyStats)
     else setError(statsResult.reason?.message || tx('加载 Dashboard 失败', 'Failed to load dashboard'))
     if (connectionsResult.status === 'fulfilled') setConnections(connectionsResult.value || [])
     if (grantsResult.status === 'fulfilled') setGrants(grantsResult.value || [])
-    if (treeResult.status === 'fulfilled') setTreeEntries(treeResult.value.entries || [])
+    if (treeResult.status === 'fulfilled') setTreeEntries(Array.isArray(treeResult.value.entries) ? treeResult.value.entries : [])
   }
 
   useEffect(() => {
@@ -254,7 +254,8 @@ export default function DashboardPage({}: DashboardPageProps) {
         minute: '2-digit',
       }).format(new Date(lastSyncTime))
     : '-'
-  const pendingCount = stats.pending.reduce((total, item) => total + Math.max(0, item.count || 0), 0)
+  const pending = Array.isArray(stats.pending) ? stats.pending : []
+  const pendingCount = pending.reduce((total, item) => total + Math.max(0, item.count || 0), 0)
   const summaryItems = [
     { label: tx('连接', 'Connections'), value: stats.connections },
     { label: tx('存储', 'Storage'), value: formatBytes(storageBytes) },

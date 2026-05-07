@@ -112,6 +112,15 @@ func isUnsafeAuthRedirectPath(raw string) bool {
 	if cleanPath == "/login" {
 		return true
 	}
+	if strings.HasPrefix(cleanPath, "/assets/") {
+		return true
+	}
+	if cleanPath == "/favicon.ico" || strings.HasPrefix(cleanPath, "/favicon-") || cleanPath == "/apple-touch-icon.png" {
+		return true
+	}
+	if cleanPath == "/robots.txt" || cleanPath == "/sitemap.xml" {
+		return true
+	}
 	if strings.HasPrefix(cleanPath, "/api/auth/providers/") && strings.HasSuffix(cleanPath, "/callback") {
 		return true
 	}

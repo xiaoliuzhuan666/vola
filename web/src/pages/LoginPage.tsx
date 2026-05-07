@@ -133,8 +133,15 @@ function sanitizeLoginRedirect(raw: string | null): string {
     const target = redirect.startsWith('/') ? new URL(redirect, window.location.origin) : new URL(redirect)
     if (target.origin !== window.location.origin) return '/'
     if (target.pathname === '/login' || target.pathname === '/signup') return '/'
+    if (isStaticAssetPath(target.pathname)) return '/'
     return `${target.pathname}${target.search}${target.hash}`
   } catch {
     return '/'
   }
+}
+
+function isStaticAssetPath(pathname: string) {
+  if (pathname.startsWith('/assets/')) return true
+  if (pathname === '/favicon.ico' || pathname.startsWith('/favicon-') || pathname === '/apple-touch-icon.png') return true
+  return pathname === '/robots.txt' || pathname === '/sitemap.xml'
 }

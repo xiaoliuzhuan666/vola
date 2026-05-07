@@ -203,6 +203,20 @@ export interface DashboardStats {
   pending: DashboardPending[];
 }
 
+export function normalizeDashboardStats(stats?: Partial<DashboardStats> | null): DashboardStats {
+  return {
+    connections: Number(stats?.connections || 0),
+    files: Number(stats?.files || 0),
+    memory: Number(stats?.memory || 0),
+    profile: Number(stats?.profile || 0),
+    conversations: Number(stats?.conversations || 0),
+    skills: Number(stats?.skills || 0),
+    projects: Number(stats?.projects || 0),
+    weekly_activity: Array.isArray(stats?.weekly_activity) ? stats.weekly_activity : [],
+    pending: Array.isArray(stats?.pending) ? stats.pending : [],
+  };
+}
+
 export interface SkillSummary {
   name: string;
   path: string;
@@ -618,7 +632,8 @@ export const api = {
     }),
 
   // Dashboard
-  getStats: () => request<DashboardStats>("/dashboard/stats"),
+  getStats: () =>
+    request<DashboardStats>("/dashboard/stats").then(normalizeDashboardStats),
 
   // Billing
   getBillingStatus: () => request<BillingStatus>('/billing/status'),

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useState } from 'react'
+import { Component, Suspense, lazy, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, BILLING_REDIRECT_EVENT, type BillingRedirectDetail, type BillingStatus, type DashboardStats, type PublicConfig } from './api'
 import LanguageToggle from './components/LanguageToggle'
@@ -41,6 +41,54 @@ const GuidePage = lazy(() => import('./pages/PublicPages').then((module) => ({ d
 const SignupPage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.SignupPage })))
 const PrivacyPage = lazy(() => import('./pages/PublicPages').then(({ LegalPage }) => ({ default: () => <LegalPage kind="privacy" /> })))
 const TermsPage = lazy(() => import('./pages/PublicPages').then(({ LegalPage }) => ({ default: () => <LegalPage kind="terms" /> })))
+
+const STALE_CHUNK_RELOAD_KEY = 'neudrive.staleChunkReloadAt'
+
+function isChunkLoadError(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error || '')
+  return /Failed to fetch dynamically imported module|Importing a module script failed|Loading chunk|vite:preloadError/i.test(message)
+}
+
+function reloadForFreshAssets() {
+  if (typeof window === 'undefined') return false
+  const now = Date.now()
+  const lastReload = Number(window.sessionStorage.getItem(STALE_CHUNK_RELOAD_KEY) || '0')
+  if (Number.isFinite(lastReload) && now - lastReload < 60_000) return false
+  window.sessionStorage.setItem(STALE_CHUNK_RELOAD_KEY, String(now))
+  const nextURL = new URL(window.location.href)
+  nextURL.searchParams.set('__nd_reload', String(now))
+  window.location.replace(nextURL.toString())
+  return true
+}
+
+if (typeof window !== 'undefined') {
+  window.addEventListener('vite:preloadError', (event) => {
+    event.preventDefault()
+    reloadForFreshAssets()
+  })
+  window.addEventListener('unhandledrejection', (event) => {
+    if (isChunkLoadError(event.reason) && reloadForFreshAssets()) {
+      event.preventDefault()
+    }
+  })
+}
+
+class RouteErrorBoundary extends Component<{ children: ReactNode; fallback: ReactNode }, { failed: boolean }> {
+  state = { failed: false }
+
+  static getDerivedStateFromError() {
+    return { failed: true }
+  }
+
+  componentDidCatch(error: unknown, _errorInfo: ErrorInfo) {
+    if (isChunkLoadError(error)) reloadForFreshAssets()
+  }
+
+  render() {
+    if (this.state.failed) return this.props.fallback
+    return this.props.children
+  }
+}
 
 const emptyStats: DashboardStats = {
   connections: 0,
@@ -175,6 +223,18 @@ function App() {
   }, [checkAuth])
 
   useEffect(() => {
+    const currentURL = new URL(window.location.href)
+    if (currentURL.searchParams.has('__nd_reload')) {
+      currentURL.searchParams.delete('__nd_reload')
+      window.history.replaceState({}, '', `${currentURL.pathname}${currentURL.search}${currentURL.hash}`)
+    }
+    const timer = window.setTimeout(() => {
+      window.sessionStorage.removeItem(STALE_CHUNK_RELOAD_KEY)
+    }, 60_000)
+    return () => window.clearTimeout(timer)
+  }, [])
+
+  useEffect(() => {
     if (!user) return
     let cancelled = false
     const loadShellState = async () => {
@@ -246,6 +306,22 @@ function App() {
     </div>
   )
 
+  const routeErrorFallback = (
+    <div className="loading-screen">
+      <p>{tx('页面资源已更新，请刷新后继续。', 'The page assets were updated. Refresh to continue.')}</p>
+      <button
+        className="btn btn-primary"
+        type="button"
+        onClick={() => {
+          window.sessionStorage.removeItem(STALE_CHUNK_RELOAD_KEY)
+          window.location.reload()
+        }}
+      >
+        {tx('刷新页面', 'Refresh page')}
+      </button>
+    </div>
+  )
+
   const handleLogout = async () => {
     await api.logout()
     setUser(null)
@@ -262,15 +338,16 @@ function App() {
   }
 
   if (location.pathname === '/oauth/authorize') {
-    return <Suspense fallback={routeFallback}><OAuthAuthorizePage /></Suspense>
+    return <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}><Suspense fallback={routeFallback}><OAuthAuthorizePage /></Suspense></RouteErrorBoundary>
   }
 
   if (location.pathname === '/import/skills') {
-    return <Suspense fallback={routeFallback}><SkillsImportPage /></Suspense>
+    return <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}><Suspense fallback={routeFallback}><SkillsImportPage /></Suspense></RouteErrorBoundary>
   }
 
   if (location.pathname.startsWith('/guides/') || location.pathname.startsWith('/integrations/') || location.pathname === '/privacy' || location.pathname === '/terms') {
     return (
+      <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}>
       <Suspense fallback={routeFallback}>
         <Routes>
           <Route path="/guides/:platform" element={<GuidePage />} />
@@ -279,6 +356,7 @@ function App() {
           <Route path="/terms" element={<TermsPage />} />
         </Routes>
       </Suspense>
+      </RouteErrorBoundary>
     )
   }
 
@@ -286,6 +364,7 @@ function App() {
     const protectedSignupRedirect = `/signup?redirect=${encodeURIComponent(location.pathname + location.search)}`
     const protectedLoginRedirect = `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
     return (
+      <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}>
       <Suspense fallback={routeFallback}>
         <Routes>
           <Route path="/" element={<MarketingHomePage />} />
@@ -303,6 +382,7 @@ function App() {
           <Route path="*" element={<Navigate to={protectedLoginRedirect} replace />} />
         </Routes>
       </Suspense>
+      </RouteErrorBoundary>
     )
   }
 
@@ -318,7 +398,7 @@ function App() {
   }
 
   if (isSyncLoginRoute) {
-    return <Suspense fallback={routeFallback}><SyncLoginPage systemSettingsEnabled={systemSettingsEnabled} /></Suspense>
+    return <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}><Suspense fallback={routeFallback}><SyncLoginPage systemSettingsEnabled={systemSettingsEnabled} /></Suspense></RouteErrorBoundary>
   }
 
   return (
@@ -391,6 +471,7 @@ function App() {
       </aside>
 
       <main className="main-content">
+        <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}>
         <Suspense fallback={routeFallback}>
           <Routes>
             <Route path="/" element={<DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} billingEnabled={billingEnabled} />} />
@@ -466,6 +547,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>
+        </RouteErrorBoundary>
       </main>
     </div>
   )

@@ -105,8 +105,11 @@ func TestNormalizeAuthRedirectURLRejectsUnsafeAuthLoops(t *testing.T) {
 	cases := []string{
 		"/login",
 		"/login?redirect=%2Fprojects",
+		"/assets/index-demo.js",
+		"/favicon.ico",
 		"/api/auth/providers/pocket/callback?code=demo&state=abc",
 		"https://neudrive.example.com/login?redirect=%2Fprojects",
+		"https://neudrive.example.com/assets/index-demo.js",
 		"https://neudrive.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
 	}
 
@@ -127,6 +130,7 @@ func TestAuthSuccessRedirectRejectsUnsafeTargets(t *testing.T) {
 	cases := []string{
 		"",
 		"/login?redirect=%2Fprojects",
+		"/assets/index-demo.js",
 		"/api/auth/providers/pocket/callback?code=demo&state=abc",
 		"https://neudrive.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
 	}
@@ -155,6 +159,7 @@ func TestAuthErrorRedirectDropsUnsafeRedirectTarget(t *testing.T) {
 	cases := []string{
 		"",
 		"/login?redirect=%2Fprojects",
+		"/assets/index-demo.js",
 		"/api/auth/providers/pocket/callback?code=demo&state=abc",
 		"https://neudrive.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
 	}
