@@ -116,8 +116,8 @@ test.describe('Bundle Sync', () => {
     await setupUser(page, request)
 
     await page.goto('/data/sync')
-    await page.waitForURL(/\/git-mirror$/, { timeout: 15000 })
-    await expect(page.getByRole('heading', { name: 'Git Mirror' })).toBeVisible()
+    await page.waitForURL(/\/sync-backup$/, { timeout: 15000 })
+    await expect(page.getByRole('heading', { name: 'GitHub Backup' })).toBeVisible()
     await expect(page.locator('#git-mirror-auth-mode')).toBeVisible()
   })
 
