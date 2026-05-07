@@ -1,5 +1,5 @@
-import { FormEvent, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
+import { useEffect, useState, type ReactNode } from 'react'
+import { Link, useLocation, useParams } from 'react-router-dom'
 import { api, type AuthProvider } from '../api'
 import GitHubRepoLink from '../components/GitHubRepoLink'
 import LanguageToggle from '../components/LanguageToggle'
@@ -1708,16 +1708,9 @@ export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
 export function SignupPage() {
   const { tx } = useI18n()
   useDocumentTitle(tx('注册 — neuDrive', 'Sign up — neuDrive'), DEFAULT_SEO_DESCRIPTION, 'noindex, nofollow')
-  const navigate = useNavigate()
   const [providers, setProviders] = useState<AuthProvider[]>([])
   const [error, setError] = useState('')
   const [loadingAction, setLoadingAction] = useState('')
-  const [form, setForm] = useState({
-    email: '',
-    password: '',
-    display_name: '',
-    slug: '',
-  })
 
   useEffect(() => {
     api.getAuthProviders().then(setProviders).catch(() => setProviders([]))
@@ -1728,10 +1721,6 @@ export function SignupPage() {
   const githubEnabled = !!githubProvider?.enabled
   const pocketEnabled = !!pocketProvider?.enabled
   const busy = loadingAction !== ''
-  const suggestedSlug = useMemo(() => {
-    const base = form.slug || form.email.split('@')[0] || form.display_name
-    return base.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
-  }, [form.display_name, form.email, form.slug])
 
   const beginProviderSignup = async (provider: AuthProvider | undefined, action: 'login' | 'signup', key: string) => {
     if (!provider?.enabled) return
@@ -1743,27 +1732,6 @@ export function SignupPage() {
       window.location.assign(resp.authorization_url)
     } catch (err: any) {
       setError(err?.message || tx('启动注册失败', 'Failed to start signup'))
-      setLoadingAction('')
-    }
-  }
-
-  const submitLocalSignup = async (event: FormEvent) => {
-    event.preventDefault()
-    if (busy) return
-    setLoadingAction('email')
-    setError('')
-    try {
-      const response = await api.register({
-        ...form,
-        slug: suggestedSlug,
-        display_name: form.display_name || form.email,
-      })
-      localStorage.setItem('token', response.access_token)
-      localStorage.setItem('refresh_token', response.refresh_token)
-      localStorage.setItem('neudrive.postSignupIntent', '1')
-      navigate('/plan', { replace: true })
-    } catch (err: any) {
-      setError(err?.message || tx('注册失败', 'Signup failed'))
       setLoadingAction('')
     }
   }
@@ -1781,18 +1749,8 @@ export function SignupPage() {
             {loadingAction === 'github' ? tx('跳转中...', 'Redirecting...') : tx('使用 GitHub 继续', 'Continue with GitHub')}
           </button>
           <button className="btn btn-outline btn-block" disabled={busy || !pocketEnabled} onClick={() => { void beginProviderSignup(pocketProvider, 'signup', 'pocket') }}>
-            {loadingAction === 'pocket' ? tx('跳转中...', 'Redirecting...') : tx('使用 Pocket ID 注册', 'Continue with Pocket ID')}
+            {loadingAction === 'pocket' ? tx('跳转中...', 'Redirecting...') : tx('邮箱登录 / 注册', 'Continue with email')}
           </button>
-          <div className="auth-divider"><span>{tx('或使用邮箱', 'or use email')}</span></div>
-          <form className="login-form" onSubmit={submitLocalSignup}>
-            <input className="input" type="email" required placeholder="you@example.com" value={form.email} onChange={(event) => setForm({ ...form, email: event.target.value })} />
-            <input className="input" type="text" placeholder={tx('显示名称', 'Display name')} value={form.display_name} onChange={(event) => setForm({ ...form, display_name: event.target.value })} />
-            <input className="input" type="password" required minLength={8} placeholder={tx('密码', 'Password')} value={form.password} onChange={(event) => setForm({ ...form, password: event.target.value })} />
-            <input className="input" type="text" placeholder={tx('用户名 slug', 'Username slug')} value={form.slug} onChange={(event) => setForm({ ...form, slug: event.target.value })} />
-            <button className="btn btn-primary btn-block" disabled={busy}>
-              {loadingAction === 'email' ? tx('创建中...', 'Creating...') : tx('创建账户', 'Create account')}
-            </button>
-          </form>
           <p className="login-note">
             {tx('已有账户？', 'Already have an account?')} <Link to="/login">{tx('登录', 'Log in')}</Link>
           </p>

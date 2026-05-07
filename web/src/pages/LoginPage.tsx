@@ -1,17 +1,14 @@
-import { FormEvent, useEffect, useState } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { api, type AuthProvider } from '../api'
 import { useI18n } from '../i18n'
 import { PublicShell } from './PublicPages'
 
 export default function LoginPage() {
   const { tx } = useI18n()
-  const navigate = useNavigate()
   const [providers, setProviders] = useState<AuthProvider[]>([])
   const [error, setError] = useState('')
   const [loadingAction, setLoadingAction] = useState('')
-  const [email, setEmail] = useState('')
-  const [password, setPassword] = useState('')
 
   useEffect(() => {
     document.title = tx('登录 — neuDrive', 'Log in — neuDrive')
@@ -47,22 +44,6 @@ export default function LoginPage() {
     }
   }
 
-  const handleEmailLogin = async (event: FormEvent) => {
-    event.preventDefault()
-    if (busy) return
-    setLoadingAction('email')
-    setError('')
-    try {
-      const response = await api.login({ email, password })
-      localStorage.setItem('token', response.access_token)
-      localStorage.setItem('refresh_token', response.refresh_token)
-      window.location.assign(redirectTarget())
-    } catch (err: any) {
-      setError(err?.message || tx('登录失败', 'Login failed'))
-      setLoadingAction('')
-    }
-  }
-
   return (
     <PublicShell>
       <main className="auth-split">
@@ -91,19 +72,9 @@ export default function LoginPage() {
               onClick={() => { void handleProviderAction(pocketProvider, 'pocket') }}
               disabled={busy || !pocketEnabled}
             >
-              {loadingAction === 'pocket' ? tx('跳转中...', 'Redirecting...') : tx('使用 Pocket ID 登录', 'Continue with Pocket ID')}
+              {loadingAction === 'pocket' ? tx('跳转中...', 'Redirecting...') : tx('邮箱登录 / 注册', 'Continue with email')}
             </button>
           </div>
-
-          <div className="auth-divider"><span>{tx('或使用邮箱', 'or use email')}</span></div>
-
-          <form className="login-form" onSubmit={handleEmailLogin}>
-            <input className="input" type="email" required placeholder="you@example.com" value={email} onChange={(event) => setEmail(event.target.value)} />
-            <input className="input" type="password" required placeholder={tx('密码', 'Password')} value={password} onChange={(event) => setPassword(event.target.value)} />
-            <button className="btn btn-outline btn-block" disabled={busy}>
-              {loadingAction === 'email' ? tx('登录中...', 'Signing in...') : tx('登录', 'Log in')}
-            </button>
-          </form>
 
           <p className="login-note">
             {tx('还没有账户？', 'No account yet?')} <Link to="/signup">{tx('免费创建账号', 'Create free account')}</Link>
