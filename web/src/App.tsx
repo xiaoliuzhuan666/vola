@@ -2,6 +2,7 @@ import { Component, Suspense, lazy, useCallback, useEffect, useState, type Error
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, BILLING_REDIRECT_EVENT, type BillingRedirectDetail, type BillingStatus, type DashboardStats, type PublicConfig } from './api'
 import LanguageToggle from './components/LanguageToggle'
+import GitHubRepoLink from './components/GitHubRepoLink'
 import { useI18n } from './i18n'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
@@ -410,7 +411,11 @@ function App() {
     <div className="app-layout">
       <aside className="sidebar">
         <div className="sidebar-brand">
-          <h1>neuDrive</h1>
+          <div className="sidebar-brand-lockup">
+            <img className="sidebar-brand-logo" src="/logo-mark.png" alt="" aria-hidden="true" />
+            <h1>neuDrive</h1>
+          </div>
+          <GitHubRepoLink className="sidebar-github-link" />
         </div>
 
         <nav className="sidebar-nav">

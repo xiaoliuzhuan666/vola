@@ -107,6 +107,8 @@ func TestNormalizeAuthRedirectURLRejectsUnsafeAuthLoops(t *testing.T) {
 		"/login?redirect=%2Fprojects",
 		"/assets/index-demo.js",
 		"/favicon.ico",
+		"/logo-mark.png",
+		"/logo-social.png",
 		"/api/auth/providers/pocket/callback?code=demo&state=abc",
 		"https://neudrive.example.com/login?redirect=%2Fprojects",
 		"https://neudrive.example.com/assets/index-demo.js",

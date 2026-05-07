@@ -77,8 +77,8 @@ export default function CommandLineToolsPage() {
           <h2 className="materials-title">{tx('命令行工具', 'Command Line Tools')}</h2>
           <p className="materials-subtitle">
             {tx(
-              '使用 neu 在终端里登录官方云服务、检查本地 daemon、连接 AI 工具、导入本地数据，并把 neuDrive 内容备份出来。',
-              'Use neu from your terminal to sign in to the hosted service, check the local daemon, connect AI tools, import local data, and back up neuDrive content.',
+              '使用 neu 在终端里登录官方云服务、检查本地运行状态、连接 AI 工具、导入本地数据，并把 neuDrive 内容备份出来。',
+              'Use neu from your terminal to sign in to the hosted service, check local status, connect AI tools, import local data, and back up neuDrive content.',
             )}
           </p>
         </div>
@@ -117,7 +117,7 @@ export default function CommandLineToolsPage() {
         />
         <CommandBlock
           title={tx('日常检查和连接', 'Daily checks and connection')}
-          description={tx('检查本地运行状态，查看平台 adapter，并快速配置 Claude 等工具。', 'Check local runtime status, list platform adapters, and quickly configure tools such as Claude.')}
+          description={tx('检查本地运行状态，查看可连接的平台，并快速配置 Claude 等工具。', 'Check local status, list available platforms, and quickly configure tools such as Claude.')}
           command={dailyCommands}
           copyKey="daily"
           copied={copied}

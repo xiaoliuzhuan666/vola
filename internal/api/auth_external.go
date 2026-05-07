@@ -118,6 +118,9 @@ func isUnsafeAuthRedirectPath(raw string) bool {
 	if cleanPath == "/favicon.ico" || strings.HasPrefix(cleanPath, "/favicon-") || cleanPath == "/apple-touch-icon.png" {
 		return true
 	}
+	if cleanPath == "/logo-mark.png" || cleanPath == "/logo-social.png" {
+		return true
+	}
 	if cleanPath == "/robots.txt" || cleanPath == "/sitemap.xml" {
 		return true
 	}

@@ -180,7 +180,7 @@ export default function OnboardingPage() {
             </button>
           </div>
           <div className="mcp-step-actions">
-            <Link to="/" className="btn btn-primary">{tx('打开首页', 'Open Dashboard')}</Link>
+            <Link to="/" className="btn btn-primary">{tx('打开概览', 'Open Home')}</Link>
             <Link to="/connections" className="btn btn-outline">{tx('查看已连接应用', 'View connected apps')}</Link>
           </div>
         </article>

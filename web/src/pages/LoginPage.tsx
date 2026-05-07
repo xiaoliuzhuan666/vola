@@ -131,5 +131,6 @@ function sanitizeLoginRedirect(raw: string | null): string {
 function isStaticAssetPath(pathname: string) {
   if (pathname.startsWith('/assets/')) return true
   if (pathname === '/favicon.ico' || pathname.startsWith('/favicon-') || pathname === '/apple-touch-icon.png') return true
+  if (pathname === '/logo-mark.png' || pathname === '/logo-social.png') return true
   return pathname === '/robots.txt' || pathname === '/sitemap.xml'
 }

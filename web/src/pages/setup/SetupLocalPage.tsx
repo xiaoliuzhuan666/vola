@@ -25,7 +25,7 @@ export default function SetupLocalPage() {
     <SetupSection
       icon={<>&#128187;</>}
       title={tx('本地模式（stdio + Token）', 'Local mode (stdio + token)')}
-      description={tx('通过本地 neudrive-mcp binary + scoped token 连接，适合本地开发或内网环境。', 'Connect through a local neudrive-mcp binary and scoped token for local development or internal networks.')}
+      description={tx('通过本地 neuDrive MCP 程序和访问凭证连接，适合本地开发或内网环境。', 'Connect through the local neuDrive MCP program and an access credential for local development or internal networks.')}
     >
       <p className="setup-note setup-note-first">
         {tx('说明默认直接可看，不会自动创建 token。推荐把 token 放进环境变量 ', 'The guide is view-only by default and will not create a token automatically. Prefer storing the token in ')}<code>{TOKEN_ENV_NAME}</code>{tx('，再让 Claude Code 或 Codex CLI 在启动本地 MCP binary 时读取它。', ' so Claude Code or Codex CLI can read it when starting the local MCP binary.')}

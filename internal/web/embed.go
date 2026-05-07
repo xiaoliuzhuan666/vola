@@ -190,6 +190,8 @@ func structuredDataScript(seo pageSEO) string {
 		"operatingSystem":     "Web",
 		"url":                 seo.URL,
 		"description":         seo.Description,
+		"logo":                siteURL + "/logo-mark.png",
+		"image":               siteURL + "/logo-social.png",
 		"offers": map[string]string{
 			"@type":         "Offer",
 			"price":         "60",

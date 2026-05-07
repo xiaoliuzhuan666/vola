@@ -363,7 +363,7 @@ export default function SystemSettingsPage() {
           </div>
         )}
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
-          {tx('注意：这里可能包含 token、密钥和本地路径。部分配置变更需要重启本地 daemon 后才会生效。', 'This file can contain tokens, secrets, and local paths. Some changes require restarting the local daemon before they take effect.')}
+          {tx('注意：这里可能包含 token、密钥和本地路径。部分配置变更需要重启本地服务后才会生效。', 'This file can contain tokens, secrets, and local paths. Some changes require restarting the local service before they take effect.')}
         </div>
         {localConfigBusy && <div className="page-loading">{tx('加载中...', 'Loading...')}</div>}
         {!localConfigBusy && (
@@ -380,7 +380,7 @@ export default function SystemSettingsPage() {
                     </div>
                     <div className="form-group">
                       <label htmlFor="config-listen-addr">{tx('本地监听地址', 'Local listen address')}</label>
-                      <div className="data-sync-field-note">{tx('本地 daemon 的 HTTP 监听地址。', 'The HTTP listen address for the local daemon.')}</div>
+                      <div className="data-sync-field-note">{tx('本地服务的 HTTP 监听地址。', 'The HTTP listen address for the local service.')}</div>
                       <input id="config-listen-addr" value={settingsDraft.listenAddr} onChange={(e) => updateSettingsDraft({ listenAddr: e.target.value })} placeholder="127.0.0.1:42690" />
                     </div>
                     <div className="form-group">

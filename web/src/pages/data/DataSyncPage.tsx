@@ -521,7 +521,7 @@ export default function DataSyncPage() {
           </div>
         )}
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
-          {tx('注意：这里可能包含 token、密钥和本地路径。部分配置变更需要重启本地 daemon 后才会生效。', 'This file can contain tokens, secrets, and local paths. Some changes require restarting the local daemon before they take effect.')}
+          {tx('注意：这里可能包含 token、密钥和本地路径。部分配置变更需要重启本地服务后才会生效。', 'This file can contain tokens, secrets, and local paths. Some changes require restarting the local service before they take effect.')}
         </div>
         {localConfigBusy && <div className="page-loading">{tx('加载中...', 'Loading...')}</div>}
         {!localConfigBusy && (
@@ -559,7 +559,7 @@ export default function DataSyncPage() {
                   <div className="data-sync-settings-grid">
                     <div className="form-group">
                       <label htmlFor="config-listen-addr">{tx('监听地址', 'Listen address')}</label>
-                      <div className="data-sync-field-note">{tx('本地 daemon 监听的 host:port。通常保持自动分配的地址即可。', 'The host:port used by the local daemon. The auto-assigned address is usually the safest choice.')}</div>
+                      <div className="data-sync-field-note">{tx('本地服务监听的 host:port。通常保持自动分配的地址即可。', 'The host:port used by the local service. The auto-assigned address is usually the safest choice.')}</div>
                       <input
                         id="config-listen-addr"
                         value={settingsDraft.listenAddr}

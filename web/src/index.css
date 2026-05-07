@@ -660,6 +660,32 @@ a:hover {
   flex-shrink: 0;
 }
 
+.github-repo-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(18, 25, 45, 0.12);
+  border-radius: 13px;
+  color: #12192d;
+  background: rgba(255, 255, 255, 0.72);
+  transition: background 160ms ease, border-color 160ms ease, transform 160ms ease;
+}
+
+.github-repo-link:hover {
+  border-color: rgba(18, 25, 45, 0.28);
+  background: #fff;
+  transform: translateY(-1px);
+  text-decoration: none;
+}
+
+.github-repo-icon {
+  width: 20px;
+  height: 20px;
+  fill: currentColor;
+}
+
 /* === App Layout === */
 .app-layout {
   display: flex;
@@ -687,8 +713,23 @@ a:hover {
   padding: 22px 16px;
   border-bottom: 1px solid var(--color-border-light);
   display: flex;
-  align-items: baseline;
+  align-items: center;
+  justify-content: space-between;
   gap: 8px;
+}
+
+.sidebar-brand-lockup {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 10px;
+}
+
+.sidebar-brand-logo {
+  width: 30px;
+  height: 30px;
+  flex: 0 0 auto;
+  display: block;
 }
 
 .sidebar-brand h1 {
@@ -700,6 +741,19 @@ a:hover {
 .sidebar-version {
   font-size: 11px;
   color: var(--materials-copy);
+}
+
+.sidebar-github-link {
+  width: 34px;
+  height: 34px;
+  border-radius: 11px;
+  color: var(--materials-title);
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.sidebar-github-link .github-repo-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .sidebar-nav {
@@ -7979,10 +8033,7 @@ button.data-summary-card {
   content: "";
   width: 26px;
   height: 26px;
-  border-radius: 8px;
-  background:
-    linear-gradient(135deg, #12192d 0%, #12192d 52%, #2b8a7d 52%, #2b8a7d 100%);
-  box-shadow: 0 8px 18px rgba(43, 138, 125, 0.22);
+  background: url("/logo-mark.png") center / contain no-repeat;
 }
 
 .public-nav-links {

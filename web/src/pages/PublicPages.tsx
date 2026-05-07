@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, type AuthProvider } from '../api'
+import GitHubRepoLink from '../components/GitHubRepoLink'
 import LanguageToggle from '../components/LanguageToggle'
 import { useI18n } from '../i18n'
 
@@ -547,8 +548,8 @@ const integrations: IntegrationGuide[] = [
     setup: { zh: '约 5 分钟', en: '~5 min' },
     accent: 'API',
     audience: {
-      zh: '适合自研 Agent、内部系统、自动化脚本和平台适配器。',
-      en: 'For custom agents, internal systems, automation scripts, and platform adapters.',
+      zh: '适合自研 Agent、内部系统和自动化脚本。',
+      en: 'For custom agents, internal systems, and automation scripts.',
     },
     demo: {
       zh: '为自定义 Agent 创建访问凭证，复制服务地址，然后接入 MCP 或 REST API。',
@@ -603,8 +604,8 @@ const integrations: IntegrationGuide[] = [
       { zh: '不再使用时撤销连接。', en: 'Revoke the connection when it is no longer used.' },
     ],
     detailSummary: {
-      zh: 'MCP / REST API 面向自研 Agent、内部系统和自动化脚本，用 scoped credential 连接 neuDrive。',
-      en: 'MCP / REST API is for custom agents, internal systems, and automation scripts using scoped credentials.',
+      zh: 'MCP / REST API 面向自研 Agent、内部系统和自动化脚本，用独立访问凭证连接 neuDrive。',
+      en: 'MCP / REST API is for custom agents, internal systems, and automation scripts using separate access credentials.',
     },
     detailHighlights: [
       { zh: '按用途创建 Custom Agent 凭证。', en: 'Create Custom Agent credentials by purpose.' },
@@ -618,7 +619,7 @@ const integrations: IntegrationGuide[] = [
     detailFaq: [
       {
         question: { zh: '什么时候用 API 而不是平台接入？', en: 'When should I use API instead of a platform setup?' },
-        answer: { zh: '当你在构建自研 Agent、内部自动化或平台适配器时，API 更合适。', en: 'Use API when building custom agents, internal automation, or platform adapters.' },
+        answer: { zh: '当你在构建自研 Agent、内部自动化或自定义系统时，API 更合适。', en: 'Use API when building custom agents, internal automation, or custom systems.' },
       },
       {
         question: { zh: 'Token 可以撤销吗？', en: 'Can tokens be revoked?' },
@@ -712,9 +713,9 @@ export function PublicShell({ children }: { children: ReactNode }) {
           <Link to="/docs">{tx('文档', 'Docs')}</Link>
         </nav>
         <div className="public-nav-actions">
+          <GitHubRepoLink className="public-github-link" />
           <div className="public-nav-language"><LanguageToggle compact /></div>
           <Link to="/login" className="btn btn-outline public-login-link">{tx('登录', 'Log in')}</Link>
-          <Link to="/signup" className="btn btn-primary" onClick={closeMobileMenu}>{tx('免费创建账号', 'Create free account')}</Link>
           <button
             type="button"
             className="public-menu-button"
@@ -1180,7 +1181,6 @@ function PricingSection() {
           <h3>{tx('Free 免费版', 'Free')}</h3>
           <div className="pricing-price">$0</div>
           <p>{tx('10 MiB 存储', '10 MiB storage')}</p>
-          <Link to="/signup" className="btn btn-outline">{tx('免费创建账号', 'Create free account')}</Link>
         </article>
         <article className="pricing-public-card featured">
           <span className="recommended-chip">{tx('推荐', 'Recommended')}</span>
@@ -1774,7 +1774,6 @@ export function SignupPage() {
         <section className="auth-copy">
           <p className="public-kicker">{tx('创建账号', 'Create account')}</p>
           <h1>{tx('3 分钟接入第一个 AI 工具。', 'Connect your first AI tool in 3 minutes.')}</h1>
-          <p>{tx('注册后先选择套餐，再进入接入向导。Free 可以继续使用，Pro Yearly 会默认推荐。', 'After signup you will choose a plan, then enter the setup wizard. Free remains available and Pro Yearly is recommended by default.')}</p>
         </section>
         <section className="auth-card">
           {error && <div className="alert alert-warn">{error}</div>}

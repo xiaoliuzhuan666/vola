@@ -22,7 +22,7 @@ export default function SetupAdaptersPage() {
 
       <h4 className="setup-platform-title">Feishu Bot Adapter</h4>
       <p className="setup-note setup-note-first">
-        {tx('当前飞书先提供一版 Bot Webhook MVP：完成请求网址校验后，飞书发来的事件会进入 neuDrive 的结构化事件记录。', 'The current Feishu integration starts with a Bot Webhook MVP: after request URL verification, Feishu events are written into neuDrive structured event records.')}
+        {tx('完成请求网址校验后，飞书发来的事件会进入 neuDrive 的结构化事件记录。', 'After request URL verification, Feishu events are written into neuDrive structured event records.')}
       </p>
 
       <SetupCodeBlock
@@ -57,7 +57,7 @@ export default function SetupAdaptersPage() {
       </ol>
 
       <p className="setup-note">
-        {tx('当前 MVP 会把飞书消息写入 neuDrive 的事件记录，并在配置了 ', 'The current MVP writes Feishu messages into neuDrive event records and, after ')}<code>FEISHU_APP_ID</code> / <code>FEISHU_APP_SECRET</code>{tx(' 后自动回一条确认消息。文本消息会提取正文；非文本消息会以原始内容的形式保存在结构化 payload 中。更深的对话桥接会在后续版本补上。', ' are configured, automatically replies with a confirmation message. Text messages extract the body; non-text messages are stored as structured payload content. Deeper conversation bridging will come later.')}
+        {tx('飞书消息会写入 neuDrive 的事件记录；配置 ', 'Feishu messages are written into neuDrive event records. After ')}<code>FEISHU_APP_ID</code> / <code>FEISHU_APP_SECRET</code>{tx(' 后，neuDrive 会自动回复一条确认消息。文本消息会提取正文，非文本消息会保留结构化内容。', ' are configured, neuDrive can automatically reply with a confirmation message. Text messages extract the body; non-text messages keep structured content.')}
       </p>
     </SetupSection>
   )

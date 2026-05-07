@@ -143,7 +143,7 @@ export default function DashboardPage({}: DashboardPageProps) {
       api.getTreeSnapshot('/'),
     ])
     if (statsResult.status === 'fulfilled') setStats(statsResult.value || emptyStats)
-    else setError(statsResult.reason?.message || tx('加载 Dashboard 失败', 'Failed to load dashboard'))
+    else setError(statsResult.reason?.message || tx('加载概览失败', 'Failed to load overview'))
     if (connectionsResult.status === 'fulfilled') setConnections(connectionsResult.value || [])
     if (grantsResult.status === 'fulfilled') setGrants(grantsResult.value || [])
     if (treeResult.status === 'fulfilled') setTreeEntries(Array.isArray(treeResult.value.entries) ? treeResult.value.entries : [])

@@ -1,0 +1,20 @@
+User-agent: *
+Allow: /
+Disallow: /api/
+Disallow: /oauth/
+Disallow: /mcp
+Disallow: /gpt/
+Disallow: /stripe/
+Disallow: /settings/
+Disallow: /data/
+Disallow: /imports/
+Disallow: /sync/
+Disallow: /billing/
+Disallow: /plan
+Disallow: /onboarding
+Disallow: /setup/
+Disallow: /cli
+Disallow: /login
+Disallow: /signup
+
+Sitemap: https://www.neudrive.ai/sitemap.xml

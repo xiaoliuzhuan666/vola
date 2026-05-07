@@ -208,15 +208,15 @@ export default function DeveloperAccessPage() {
           <h2>{tx('开发者访问用于什么？', 'What is Developer Access for?')}</h2>
           <p>
             {tx(
-              '这里用来创建 scoped token，让命令行工具、本地应用、浏览器扩展或自定义 Agent 访问你的 neuDrive 数据。',
-              'Create scoped tokens here when a CLI, local app, browser extension, or custom agent needs access to your neuDrive data.',
+              '这里用来为命令行工具、本地应用、浏览器扩展或自定义 Agent 创建访问凭证。',
+              'Create access credentials here for CLI tools, local apps, browser extensions, or custom agents.',
             )}
           </p>
         </div>
         <ol>
           <li>{tx('选择只读、读+写或自定义权限。', 'Choose read-only, read + write, or custom permissions.')}</li>
-          <li>{tx('创建后立即复制 token；它只会显示一次。', 'Copy the token immediately after creation; it is shown only once.')}</li>
-          <li>{tx('不再使用时，在 Token 列表里吊销。', 'Revoke it from the token list when it is no longer needed.')}</li>
+          <li>{tx('创建后立即复制访问凭证；它只会显示一次。', 'Copy the credential immediately after creation; it is shown only once.')}</li>
+          <li>{tx('不再使用时，在列表里吊销。', 'Revoke it from the list when it is no longer needed.')}</li>
         </ol>
       </section>
 
