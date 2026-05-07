@@ -124,7 +124,7 @@ const integrations: IntegrationGuide[] = [
       { zh: '在 Connections 里查看 Claude 连接状态。', en: 'Check Claude connection status in Connections.' },
     ],
     detailSummary: {
-      zh: 'Claude 适合成为第一个接入的 AI 工具：连接后可以直接读取 neuDrive 中的 Profile Memory、项目资料和可用 Skills。',
+      zh: 'Claude 适合成为第一个接入的 AI 工具：连接后可以直接读取 neuDrive 中的个人记忆、项目资料和可用技能。',
       en: 'Claude is a good first connection: after setup, it can read Profile Memory, project material, and available Skills from neuDrive.',
     },
     detailHighlights: [
@@ -235,7 +235,7 @@ const integrations: IntegrationGuide[] = [
       },
       {
         question: { zh: '连接后能做什么？', en: 'What can I do after setup?' },
-        answer: { zh: '可以让 ChatGPT 读取 neuDrive 中的 profile、项目上下文、文件和 skills。', en: 'You can ask ChatGPT to read your neuDrive profile, project context, files, and skills.' },
+        answer: { zh: '可以让 ChatGPT 读取 neuDrive 中的个人资料、项目上下文、文件和技能。', en: 'You can ask ChatGPT to read your neuDrive profile, project context, files, and skills.' },
       },
     ],
   },
@@ -311,8 +311,8 @@ const integrations: IntegrationGuide[] = [
     },
     afterConnection: [
       { zh: '保存项目 README 和开发约定。', en: 'Save the project README and development conventions.' },
-      { zh: '导入可复用 skill。', en: 'Import reusable skills.' },
-      { zh: '在 Data Explorer 里查看写入结果。', en: 'Review the result in Data Explorer.' },
+      { zh: '导入可复用技能。', en: 'Import reusable skills.' },
+      { zh: '在文件管理器里查看写入结果。', en: 'Review the result in Data Explorer.' },
     ],
     detailSummary: {
       zh: 'Cursor / Windsurf 适合把当前 repo 的项目背景、命令、约定和长期上下文写入 neuDrive。',
@@ -325,7 +325,7 @@ const integrations: IntegrationGuide[] = [
     ],
     detailLimits: [
       { zh: '不同编辑器的 MCP 配置字段可能不同，请使用对应配置。', en: 'MCP config fields differ by editor; use the matching config.' },
-      { zh: '首次保存后建议到 Data Explorer 检查写入路径。', en: 'After first save, check the written path in Data Explorer.' },
+      { zh: '首次保存后建议到文件管理器检查写入路径。', en: 'After first save, check the written path in Data Explorer.' },
     ],
     detailFaq: [
       {
@@ -334,7 +334,7 @@ const integrations: IntegrationGuide[] = [
       },
       {
         question: { zh: '会自动上传整个仓库吗？', en: 'Will it upload the entire repo automatically?' },
-        answer: { zh: '不会。你需要让 Agent 选择并写入有长期价值的上下文、文件或摘要。', en: 'No. You ask the agent to select and write durable context, files, or summaries.' },
+        answer: { zh: '不会。你需要让 AI 工具选择并写入有长期价值的上下文、文件或摘要。', en: 'No. You ask the agent to select and write durable context, files, or summaries.' },
       },
     ],
   },
@@ -429,7 +429,7 @@ const integrations: IntegrationGuide[] = [
       { zh: '用 `neu sync pull` 导出备份。', en: 'Use `neu sync pull` to export a backup.' },
     ],
     detailSummary: {
-      zh: 'CLI 接入适合日常在终端工作的用户，把 Codex、Claude Code 等命令行 Agent 接到同一个 neuDrive 数据层。',
+      zh: 'CLI 接入适合日常在终端工作的用户，把 Codex、Claude Code 等命令行 AI 工具接到同一个 neuDrive 资料中枢。',
       en: 'CLI setup is for terminal-based work, connecting Codex, Claude Code, and similar agents to the same neuDrive data layer.',
     },
     detailHighlights: [
@@ -448,7 +448,7 @@ const integrations: IntegrationGuide[] = [
       },
       {
         question: { zh: 'CLI 适合做什么？', en: 'What is CLI setup best for?' },
-        answer: { zh: '适合导入项目资料、保存开发约定、同步备份和让终端 Agent 读取 neuDrive。', en: 'It is best for importing project material, saving conventions, syncing backups, and letting terminal agents read neuDrive.' },
+        answer: { zh: '适合导入项目资料、保存开发约定、同步备份，并让终端 AI 工具读取 neuDrive。', en: 'It is best for importing project material, saving conventions, syncing backups, and letting terminal agents read neuDrive.' },
       },
     ],
   },
@@ -499,20 +499,20 @@ const integrations: IntegrationGuide[] = [
         },
       },
       {
-        title: { zh: '注入偏好、项目和 Skills', en: 'Inject preferences, project, and skills' },
+        title: { zh: '插入偏好、项目资料和技能', en: 'Inject preferences, project, and skills' },
         copy: {
-          zh: '需要时，在面板里选择偏好、项目资料或技能，把内容放进当前输入框。',
+          zh: '需要时，在面板里选择偏好、项目资料或技能，把内容放进当前聊天输入框。',
           en: 'When needed, choose preferences, project material, or skills in the panel and place them into the current input box.',
         },
       },
     ],
     testPrompt: {
-      zh: '打开扩展面板，导入当前对话，然后在 neuDrive Data Explorer 里查看结果。',
+      zh: '打开扩展面板，导入当前对话，然后在 neuDrive 文件管理器里查看结果。',
       en: 'Open the extension panel, import the current chat, then review the result in neuDrive Data Explorer.',
     },
     afterConnection: [
       { zh: '导入当前 Claude 或 ChatGPT 对话。', en: 'Import the current Claude or ChatGPT chat.' },
-      { zh: '在 Data Explorer 里查看导入结果。', en: 'Review the imported result in Data Explorer.' },
+      { zh: '在文件管理器里查看导入结果。', en: 'Review the imported result in Data Explorer.' },
       { zh: '把重要对话转成 Memory。', en: 'Convert important chats into Memory.' },
     ],
     detailSummary: {
@@ -521,7 +521,7 @@ const integrations: IntegrationGuide[] = [
     },
     detailHighlights: [
       { zh: '支持 Claude、ChatGPT、Gemini、Kimi 等网页聊天。', en: 'Supports web chats such as Claude, ChatGPT, Gemini, and Kimi.' },
-      { zh: '导入当前对话后，可在 Data Explorer 查看。', en: 'After importing the current chat, review it in Data Explorer.' },
+      { zh: '导入当前对话后，可在文件管理器查看。', en: 'After importing the current chat, review it in Data Explorer.' },
       { zh: '可把重要对话转成 Memory。', en: 'Important chats can become Memory.' },
     ],
     detailLimits: [
@@ -548,11 +548,11 @@ const integrations: IntegrationGuide[] = [
     setup: { zh: '约 5 分钟', en: '~5 min' },
     accent: 'API',
     audience: {
-      zh: '适合自研 Agent、内部系统和自动化脚本。',
+      zh: '适合自研 AI 工具、内部系统和自动化脚本。',
       en: 'For custom agents, internal systems, and automation scripts.',
     },
     demo: {
-      zh: '为自定义 Agent 创建访问凭证，复制服务地址，然后接入 MCP 或 REST API。',
+      zh: '为自定义 AI 工具创建访问凭证，复制服务地址，然后接入 MCP 或 REST API。',
       en: 'Create an access credential for a custom agent, copy the service URL, then connect to MCP or REST API.',
     },
     workflowSummary: {
@@ -560,14 +560,14 @@ const integrations: IntegrationGuide[] = [
       en: 'This path is for developers. Create a connection for the intended use.',
     },
     guideTitle: {
-      zh: '用 MCP / REST API 构建自定义 Agent',
+      zh: '用 MCP / REST API 构建自定义 AI 工具',
       en: 'Build custom agents with MCP / REST API',
     },
     steps: [
       {
         title: { zh: '选择用途模板', en: 'Choose a purpose template' },
         copy: {
-          zh: '进入 Settings -> Developer Access，选择 Custom Agent。',
+          zh: '进入 Settings -> Developer Access，选择 Custom Agent（自定义工具）。',
           en: 'Open Settings -> Developer Access and choose Custom Agent.',
         },
       },
@@ -581,7 +581,7 @@ const integrations: IntegrationGuide[] = [
       {
         title: { zh: '接入 MCP 或 REST', en: 'Connect through MCP or REST' },
         copy: {
-          zh: '复制下面的服务地址，填到你的 Agent 或内部系统里。',
+          zh: '复制下面的服务地址，填到你的 AI 工具或内部系统里。',
           en: 'Copy the service URL below and add it to your agent or internal system.',
         },
         codes: [{ label: { zh: 'neuDrive 服务地址', en: 'neuDrive service URL' }, language: 'text', value: MCP_URL }],
@@ -595,31 +595,31 @@ const integrations: IntegrationGuide[] = [
       },
     ],
     testPrompt: {
-      zh: '让自定义 Agent 读取 neuDrive profile 摘要，并返回读取结果。',
+      zh: '让自定义 AI 工具读取 neuDrive 个人资料摘要，并返回读取结果。',
       en: 'Ask the custom agent to read a neuDrive profile summary and return the result.',
     },
     afterConnection: [
-      { zh: '为每个 Agent 单独创建凭证。', en: 'Create a separate credential for each agent.' },
+      { zh: '为每个 AI 工具单独创建凭证。', en: 'Create a separate credential for each agent.' },
       { zh: '在 Recent Activity 查看写入记录。', en: 'Review writes in Recent Activity.' },
       { zh: '不再使用时撤销连接。', en: 'Revoke the connection when it is no longer used.' },
     ],
     detailSummary: {
-      zh: 'MCP / REST API 面向自研 Agent、内部系统和自动化脚本，用独立访问凭证连接 neuDrive。',
+      zh: 'MCP / REST API 面向自研 AI 工具、内部系统和自动化脚本，用独立访问凭证连接 neuDrive。',
       en: 'MCP / REST API is for custom agents, internal systems, and automation scripts using separate access credentials.',
     },
     detailHighlights: [
-      { zh: '按用途创建 Custom Agent 凭证。', en: 'Create Custom Agent credentials by purpose.' },
+      { zh: '按用途创建自定义工具凭证。', en: 'Create Custom Agent credentials by purpose.' },
       { zh: '接入 MCP 或 REST 服务地址。', en: 'Connect through the MCP or REST service URL.' },
       { zh: '可审计、轮换和撤销访问。', en: 'Access can be audited, rotated, and revoked.' },
     ],
     detailLimits: [
       { zh: 'API 接入需要你自己处理凭证保存和调用逻辑。', en: 'API setup requires you to handle credential storage and calls.' },
-      { zh: '生产系统建议为每个 Agent 单独创建凭证。', en: 'For production systems, create a separate credential for each agent.' },
+      { zh: '生产系统建议为每个 AI 工具单独创建凭证。', en: 'For production systems, create a separate credential for each agent.' },
     ],
     detailFaq: [
       {
         question: { zh: '什么时候用 API 而不是平台接入？', en: 'When should I use API instead of a platform setup?' },
-        answer: { zh: '当你在构建自研 Agent、内部自动化或自定义系统时，API 更合适。', en: 'Use API when building custom agents, internal automation, or custom systems.' },
+        answer: { zh: '当你在构建自研 AI 工具、内部自动化或自定义系统时，API 更合适。', en: 'Use API when building custom agents, internal automation, or custom systems.' },
       },
       {
         question: { zh: 'Token 可以撤销吗？', en: 'Can tokens be revoked?' },
@@ -803,7 +803,7 @@ export function MarketingHomePage() {
   const { tx, isZh } = useI18n()
   useDocumentTitle(
     tx('别让 AI 工具每次重新认识你 — neuDrive', 'Your AI tools should not have to meet you again every time — neuDrive'),
-    tx('neuDrive 让 Claude、ChatGPT、Cursor 等 AI 工具共用同一份记忆、文件、技能和私密数据层。', DEFAULT_SEO_DESCRIPTION),
+    tx('neuDrive 让 Claude、ChatGPT、Cursor 等 AI 工具共用同一份记忆、文件、技能和私密资料中枢。', DEFAULT_SEO_DESCRIPTION),
   )
   const [activeKey, setActiveKey] = useState('claude')
   const [activeHeroPanel, setActiveHeroPanel] = useState<'memory' | 'files' | 'skills'>('memory')
@@ -814,7 +814,7 @@ export function MarketingHomePage() {
       label: tx('记忆', 'Memory'),
       source: 'Claude',
       prompt: tx('读取我的工作偏好和项目上下文。', 'Read my working preferences and project context.'),
-      response: tx('返回已授权的 Profile Memory、项目资料和可用 Skills。', 'Returns approved profile memory, project files, and available skills.'),
+      response: tx('返回已授权的个人记忆、项目资料和可用技能。', 'Returns approved profile memory, project files, and available skills.'),
       meta: [
         tx('长期偏好', 'Stable preferences'),
         tx('项目上下文', 'Project context'),
@@ -824,8 +824,8 @@ export function MarketingHomePage() {
     files: {
       label: tx('文件', 'Files'),
       source: 'Cursor',
-      prompt: tx('查找这个项目里和接入配置有关的资料。', 'Find the project material related to setup configuration.'),
-      response: tx('从 Data Explorer 返回匹配文件、来源和可访问范围。', 'Returns matching files, sources, and access ranges from Data Explorer.'),
+      prompt: tx('帮我找项目里关于接入配置的资料。', 'Find the project material related to setup configuration.'),
+      response: tx('返回匹配的文件、来源和访问范围。', 'Returns matching files, sources, and access ranges from Data Explorer.'),
       meta: [
         tx('会话资料', 'Conversations'),
         tx('项目文件', 'Project files'),
@@ -835,12 +835,12 @@ export function MarketingHomePage() {
     skills: {
       label: tx('技能', 'Skills'),
       source: 'ChatGPT',
-      prompt: tx('查看我有哪些可以复用的工作技能。', 'Show the reusable work skills I can use.'),
-      response: tx('列出已启用的 Skills，并说明哪些 Agent 可以使用。', 'Lists enabled Skills and which agents can use them.'),
+      prompt: tx('看看我有哪些可复用的工作技能。', 'Show the reusable work skills I can use.'),
+      response: tx('列出已启用的技能，并说明哪些 AI 工具可以使用。', 'Lists enabled Skills and which agents can use them.'),
       meta: [
-        tx('一次注册', 'Register once'),
-        tx('多端复用', 'Reuse across agents'),
-        tx('可测试', 'Testable'),
+        tx('接入一次', 'Register once'),
+        tx('多工具复用', 'Reuse across agents'),
+        tx('可验证', 'Testable'),
       ],
     },
   }
@@ -860,9 +860,9 @@ export function MarketingHomePage() {
     },
   ]
   const modules = [
-    { name: tx('记忆', 'Memory'), label: tx('档案 / 项目 / 临时记忆', 'Profile / Projects / Scratch'), copy: tx('保存个人偏好、项目上下文和短期工作记忆。', 'Store profile, project, and scratch working memory.') },
+    { name: tx('记忆', 'Memory'), label: tx('个人偏好 / 项目 / 临时记忆', 'Profile / Projects / Scratch'), copy: tx('保存个人偏好、项目上下文和短期工作记忆。', 'Store profile, project, and scratch working memory.') },
     { name: tx('文件', 'Files'), label: tx('数据浏览器', 'Data Explorer'), copy: tx('统一管理 AI 可读取的文件、会话和资料。', 'Manage files, conversations, and references your AI can read.') },
-    { name: tx('技能', 'Skills'), label: tx('技能路由', '.skill routing'), copy: tx('一次注册，多个 Agent 复用。', 'Register once and reuse across multiple agents.') },
+    { name: tx('技能', 'Skills'), label: tx('技能复用', '.skill routing'), copy: tx('接入一次，多个 AI 工具都能复用。', 'Register once and reuse across multiple agents.') },
     { name: tx('私密数据', 'Private data'), label: tx('访问控制', 'Access control'), copy: tx('决定每个 AI 工具能看到哪些资料。', 'Decide which material each AI tool can see.') },
   ]
   return (
@@ -870,7 +870,7 @@ export function MarketingHomePage() {
       <main>
         <section className="public-hero">
           <div className="public-hero-copy">
-            <p className="public-kicker">{tx('AI 数据层', 'AI data layer')}</p>
+            <p className="public-kicker">{tx('AI 资料中枢', 'AI data layer')}</p>
             <h1 className="public-hero-title">
               {isZh ? (
                 <>
@@ -883,21 +883,21 @@ export function MarketingHomePage() {
             </h1>
             <p>
               {tx(
-                'neuDrive 把你的会话、项目上下文、技能、文件和私密数据统一存放，并连接 Claude、ChatGPT、Cursor、Windsurf 等 AI 工具。',
+                'neuDrive 统一保存你的会话、项目资料、技能、文件和私密数据，再安全提供给 Claude、ChatGPT、Cursor、Windsurf 等 AI 工具。',
                 'neuDrive stores your conversations, project context, skills, files, and private data in one layer for Claude, ChatGPT, Cursor, Windsurf, and more.',
               )}
             </p>
             <div className="public-hero-actions">
-              <Link to="/signup" className="btn btn-primary">{tx('3 分钟接入第一个 AI 工具', 'Connect your first agent in 3 min')}</Link>
-              <a href="#how-it-works" className="btn btn-outline">{tx('查看如何接入', 'See how it works')}</a>
+              <Link to="/signup" className="btn btn-primary">{tx('3 分钟连接第一个 AI 工具', 'Connect your first agent in 3 min')}</Link>
+              <a href="#how-it-works" className="btn btn-outline">{tx('查看接入方式', 'See how it works')}</a>
             </div>
             <div className="public-hero-proof" aria-label={tx('产品能力', 'Product capabilities')}>
-              <span>{tx('档案记忆', 'Profile memory')}</span>
-              <span>{tx('私密数据控制', 'Private data control')}</span>
-              <span>{tx('技能路由', 'Skill routing')}</span>
+              <span>{tx('个人记忆', 'Profile memory')}</span>
+              <span>{tx('访问权限控制', 'Private data control')}</span>
+              <span>{tx('技能复用', 'Skill routing')}</span>
             </div>
             <a href="#product" className="public-scroll-cue">
-              {tx('继续看 neuDrive 如何工作', 'Explore how the layer works')}
+              {tx('看看 neuDrive 怎么工作', 'Explore how the layer works')}
               <span />
             </a>
           </div>
@@ -956,7 +956,7 @@ export function MarketingHomePage() {
           <div>
             <span>01</span>
             <strong>{tx('连接一次', 'Connect once')}</strong>
-            <p>{tx('把 Claude、ChatGPT、Cursor 等工具指向同一个数据层。', 'Point Claude, ChatGPT, Cursor, and other tools at one data layer.')}</p>
+            <p>{tx('把 Claude、ChatGPT、Cursor 等工具连接到同一个资料库。', 'Point Claude, ChatGPT, Cursor, and other tools at one data layer.')}</p>
           </div>
           <div>
             <span>02</span>
@@ -966,7 +966,7 @@ export function MarketingHomePage() {
           <div>
             <span>03</span>
             <strong>{tx('跨工具复用', 'Reuse everywhere')}</strong>
-            <p>{tx('记忆、文件和技能跟着你的工作流走，而不是锁在某一个 AI 工具里。', 'Memory, files, and skills follow your workflow instead of staying locked inside one AI tool.')}</p>
+            <p>{tx('记忆、文件和技能跟着你走，而不是锁在某一个 AI 工具里。', 'Memory, files, and skills follow your workflow instead of staying locked inside one AI tool.')}</p>
           </div>
         </section>
 
@@ -989,7 +989,7 @@ export function MarketingHomePage() {
         <section id="product" className="public-band product-split-band">
           <div className="product-story">
             <p className="public-kicker">{tx('产品能力', 'Product')}</p>
-            <h2>{tx('一个地方管理 AI 工作记忆。', 'One place for your AI working memory.')}</h2>
+            <h2>{tx('一个地方管理给 AI 使用的资料。', 'One place for your AI working memory.')}</h2>
             <p>{tx('把偏好、项目资料、会话、文件和技能放在 neuDrive。连接新的 AI 工具时，它可以从同一份资料开始工作。', 'Keep preferences, project material, conversations, files, and skills in neuDrive. When you connect a new AI tool, it can start from the same shared context.')}</p>
           </div>
           <div className="module-board">
@@ -1007,10 +1007,10 @@ export function MarketingHomePage() {
           <div className="public-section-head">
             <div>
               <p className="public-kicker">{tx('接入方式', 'How it works')}</p>
-              <h2>{tx('3 分钟接入第一个 AI 工具。', '3 minutes to connect your first AI agent.')}</h2>
-              <p>{tx('先选择你要连接的工具。指南会给出需要复制的地址、设置路径和连接后的测试问题。', 'Choose the tool you want to connect. The guide gives you the URL to copy, the settings path, and a test question for after connection.')}</p>
+              <h2>{tx('3 分钟连接第一个 AI 工具。', '3 minutes to connect your first AI agent.')}</h2>
+              <p>{tx('先选择你要连接的平台。每个平台都有步骤、可复制内容和连接后的测试问题。', 'Choose the tool you want to connect. The guide gives you the URL to copy, the settings path, and a test question for after connection.')}</p>
             </div>
-            <Link to={`/guides/${activeIntegration.key}`} className="btn btn-outline">{tx('查看演示指南', 'Open demo guide')}</Link>
+            <Link to={`/guides/${activeIntegration.key}`} className="btn btn-outline">{tx('查看接入指南', 'Open demo guide')}</Link>
           </div>
           <div className="workflow-shell">
             <div className="workflow-picker" role="tablist" aria-label={tx('集成接入演示', 'Integration setup demos')}>
@@ -1323,7 +1323,7 @@ export function PricingPage() {
             <div>
               <p className="public-kicker">{tx('自托管', 'Self-hosting')}</p>
               <h2>{tx('开源核心可以自托管。', 'The open-source core can be self-hosted.')}</h2>
-              <p>{tx('如果你只需要核心数据层、MCP 接入和本地控制，可以部署 neuDrive Core。Hosted Pro 则适合想减少运维、直接使用托管同步和备份的个人用户。', 'If you only need the core data layer, MCP access, and local control, you can deploy neuDrive Core. Hosted Pro is for individual users who want less operations work and managed sync and backup.')}</p>
+              <p>{tx('如果你只需要核心资料中枢、MCP 接入和本地控制，可以部署 neuDrive Core。Hosted Pro 则适合想减少运维、直接使用托管同步和备份的个人用户。', 'If you only need the core data layer, MCP access, and local control, you can deploy neuDrive Core. Hosted Pro is for individual users who want less operations work and managed sync and backup.')}</p>
             </div>
             <Link to="/docs" className="btn btn-outline">{tx('查看部署文档', 'View deployment docs')}</Link>
           </div>
@@ -1353,7 +1353,7 @@ export function IntegrationsPage() {
   const { tx } = useI18n()
   useDocumentTitle(
     tx('集成 — neuDrive', 'Integrations — neuDrive'),
-    tx('连接 Claude、ChatGPT、Cursor、Windsurf、命令行 Agent、浏览器扩展、MCP 和 REST API。', 'Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, browser extensions, MCP, and REST API.'),
+    tx('连接 Claude、ChatGPT、Cursor、Windsurf、命令行 AI 工具、浏览器扩展、MCP 和 REST API。', 'Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, browser extensions, MCP, and REST API.'),
   )
   return (
     <PublicShell>
@@ -1569,7 +1569,7 @@ export function DocsLandingPage() {
     },
     {
       title: tx('代码工作流', 'Coding workflows'),
-      copy: tx('Cursor、Windsurf 和 CLI Agent 主要用于读取当前 repo，并把项目上下文写回 neuDrive。', 'Cursor, Windsurf, and CLI agents are best for reading the current repo and writing project context back to neuDrive.'),
+      copy: tx('Cursor、Windsurf 和命令行 AI 工具主要用于读取当前 repo，并把项目上下文写回 neuDrive。', 'Cursor, Windsurf, and CLI agents are best for reading the current repo and writing project context back to neuDrive.'),
       links: [
         { label: tx('Cursor / Windsurf 编辑器', 'Cursor / Windsurf'), href: '/guides/editors' },
         { label: tx('Codex / Claude CLI 命令行', 'Codex / Claude CLI'), href: '/guides/cli' },
@@ -1577,7 +1577,7 @@ export function DocsLandingPage() {
     },
     {
       title: tx('导入与开发者接入', 'Import and developer access'),
-      copy: tx('浏览器插件适合网页对话导入；API 适合自定义 Agent、内部系统和自动化任务。', 'The browser extension is for web-chat import; API is for custom agents, internal systems, and automation.'),
+      copy: tx('浏览器插件适合网页对话导入；API 适合自定义 AI 工具、内部系统和自动化任务。', 'The browser extension is for web-chat import; API is for custom agents, internal systems, and automation.'),
       links: [
         { label: tx('浏览器插件', 'Browser Extension'), href: '/guides/browser' },
         { label: tx('MCP / REST API 开发者接入', 'MCP / REST API'), href: '/guides/api' },
@@ -1741,7 +1741,7 @@ export function SignupPage() {
       <main className="auth-split">
         <section className="auth-copy">
           <p className="public-kicker">{tx('创建账号', 'Create account')}</p>
-          <h1>{tx('3 分钟接入第一个 AI 工具。', 'Connect your first AI tool in 3 minutes.')}</h1>
+          <h1>{tx('3 分钟连接第一个 AI 工具。', 'Connect your first AI tool in 3 minutes.')}</h1>
         </section>
         <section className="auth-card">
           {error && <div className="alert alert-warn">{error}</div>}
