@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test'
-import { registerUser, loginViaUI, setupUser } from './helpers'
+import { registerUser, loginViaUI, setupUser, registerOAuthApp } from './helpers'
 
 test.describe('Dashboard', () => {
   test('login lands on neuDrive overview', async ({ page, request }) => {
@@ -41,6 +41,35 @@ test.describe('Dashboard', () => {
     const filesCard = page.locator('.dashboard-card').filter({ has: page.getByRole('heading', { name: '最近更新' }) })
     await filesCard.getByRole('link', { name: '文件管理器' }).click()
     await expect(page).toHaveURL(/\/data\/files/)
+  })
+
+  test('overview marks Claude connected for claude.ai OAuth grants', async ({ page, request }) => {
+    const user = await setupUser(page, request)
+    const { response, clientID, redirectURI } = await registerOAuthApp(request, user.token, {
+      name: 'claude.ai',
+      redirectURI: 'https://claude.ai/api/mcp/auth_callback',
+      scopes: ['admin'],
+    })
+    expect(response.ok()).toBeTruthy()
+
+    const authorize = await request.post('/oauth/authorize', {
+      form: {
+        client_id: clientID,
+        redirect_uri: redirectURI,
+        scope: 'admin',
+        state: 'dashboard-claude',
+        action: 'approve',
+        _token: user.token,
+      },
+      maxRedirects: 0,
+    })
+    expect(authorize.status()).toBe(302)
+
+    await page.goto('/')
+    const claudeCard = page.locator('.dashboard-platform-card', {
+      has: page.locator('.dashboard-platform-icon.platform-claude'),
+    })
+    await expect(claudeCard.locator('em')).toHaveText(/已连接|Connected/)
   })
 })
 

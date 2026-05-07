@@ -169,7 +169,7 @@ export default function DashboardPage({}: DashboardPageProps) {
       description: tx('连接 Claude 到 neuDrive', 'Connect Claude to neuDrive'),
       to: '/setup/mcp',
       state: { platform: 'claude' },
-      aliases: ['claude', 'claude-web', 'claude-desktop', 'claude-connector'],
+      aliases: ['claude', 'claude.ai', 'claude.com', 'claude-web', 'claude-desktop', 'claude-connector'],
     },
     {
       id: 'chatgpt',
