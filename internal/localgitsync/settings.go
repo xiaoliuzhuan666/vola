@@ -525,12 +525,12 @@ func mirrorSummaryMessage(mirror models.LocalGitMirror, commitCreated, pushAttem
 		switch mirror.SyncState {
 		case SyncStateQueued:
 			if mirror.ForceRemoteOverwrite {
-				return "已确认用 neuDrive 覆盖远端，等待后台 worker 推送。"
+				return "已提交覆盖远端的同步请求，后台正在处理。"
 			}
 			if mirror.SyncNextAttemptAt != nil && !mirror.SyncNextAttemptAt.IsZero() {
 				return fmt.Sprintf("Git Mirror 已排队，将在 %s 重试。", mirror.SyncNextAttemptAt.UTC().Format(time.RFC3339))
 			}
-			return "Git Mirror 已排队，等待后台 worker 处理。"
+			return "同步请求已提交，后台正在处理。完成后状态会自动更新。"
 		case SyncStateRunning:
 			return "Git Mirror 正在后台同步。"
 		case SyncStateError:

@@ -18,7 +18,7 @@ RUN CGO_ENABLED=0 GOOS=linux go build -o /neudrive ./cmd/neudrive
 
 # ---- Final image: just the binary + migrations ----
 FROM alpine:3.19
-RUN apk add --no-cache ca-certificates tzdata
+RUN apk add --no-cache ca-certificates git tzdata
 WORKDIR /app
 COPY --from=builder /neudrive .
 COPY migrations/ ./migrations/

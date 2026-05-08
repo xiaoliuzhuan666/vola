@@ -86,6 +86,13 @@ PUBLIC_BASE_URL=https://your-neudrive-host
 JWT_SECRET=...
 ```
 
+GitHub App 还必须申请这些 repository 权限：
+
+- Administration: read and write。neuDrive 创建私有 `neudrive-backup` 仓库时会调用 GitHub 的 `POST /user/repos` API，这个权限是必需的。
+- Contents: read and write。后续把备份内容 push 到仓库时需要这个权限。
+
+在 GitHub 里修改 App 权限后，用户需要批准新的权限，或重新连接 GitHub，然后再重试创建仓库。
+
 ## 本地模式
 
 本地部署可以选择三种认证方式：

@@ -456,6 +456,46 @@ func TestHostedGitMirrorDefaultBackupRepoCreatesAndReuses(t *testing.T) {
 	}
 }
 
+func TestHostedGitMirrorDefaultBackupRepoExplainsMissingGitHubAppCreatePermission(t *testing.T) {
+	ghState := &fakeGitHubAppOAuthState{
+		login:           "octocat",
+		permission:      "write",
+		createForbidden: true,
+	}
+	gh := newFakeGitHubAppOAuthServer(t, ghState)
+	cfg := &config.Config{
+		JWTSecret:             testJWTSecret,
+		VaultMasterKey:        strings.Repeat("0", 64),
+		CORSOrigins:           []string{"http://localhost:3000"},
+		RateLimit:             100,
+		MaxBodySize:           10 * 1024 * 1024,
+		PublicBaseURL:         "http://127.0.0.1:0",
+		GitHubAppClientID:     "client-id",
+		GitHubAppClientSecret: "client-secret",
+		GitHubAppSlug:         "neudrive",
+	}
+	ts, _, adminToken := newHostedTestHTTPServerWithConfig(
+		t,
+		cfg,
+		localgitsync.WithGitHubAPIBaseURL(gh.URL),
+		localgitsync.WithGitHubBaseURL(gh.URL),
+		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+		localgitsync.WithHTTPClient(gh.Client()),
+	)
+	connectGitHubAppUserForTest(t, ts.URL, adminToken)
+
+	status, failed := doJSON(t, http.MethodPost, ts.URL+"/api/git-mirror/github-app/default-backup-repo", adminToken, []byte(`{}`))
+	if status != http.StatusBadRequest || failed.OK {
+		t.Fatalf("expected default backup repo create to fail: status=%d body=%+v", status, failed)
+	}
+	if !strings.Contains(failed.Message, "Repository Administration write permission") {
+		t.Fatalf("expected actionable GitHub App permission error, got %+v", failed)
+	}
+	if got := ghState.createCountValue(); got != 0 {
+		t.Fatalf("create count after forbidden create = %d, want 0", got)
+	}
+}
+
 func TestHostedGitMirrorDefaultBackupRepoRequiresGitHubAppConnection(t *testing.T) {
 	cfg := &config.Config{
 		JWTSecret:             testJWTSecret,
@@ -1699,11 +1739,12 @@ func newFakeGitHubServer(t *testing.T, states map[string]fakeGitHubTokenState) *
 }
 
 type fakeGitHubAppOAuthState struct {
-	mu          sync.Mutex
-	login       string
-	permission  string
-	repoExists  bool
-	createCount int
+	mu              sync.Mutex
+	login           string
+	permission      string
+	repoExists      bool
+	createForbidden bool
+	createCount     int
 }
 
 func (s *fakeGitHubAppOAuthState) createCountValue() int {
@@ -1798,6 +1839,14 @@ func newFakeGitHubAppOAuthServer(t *testing.T, state *fakeGitHubAppOAuthState) *
 				},
 			})
 		case r.Method == http.MethodPost && r.URL.Path == "/user/repos":
+			state.mu.Lock()
+			createForbidden := state.createForbidden
+			state.mu.Unlock()
+			if createForbidden {
+				w.WriteHeader(http.StatusForbidden)
+				_, _ = w.Write([]byte(`{"message":"Resource not accessible by integration","documentation_url":"https://docs.github.com/rest/repos/repos#create-a-repository-for-the-authenticated-user","status":"403"}`))
+				return
+			}
 			var body struct {
 				Name    string `json:"name"`
 				Private bool   `json:"private"`

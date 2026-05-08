@@ -3,6 +3,7 @@ package localgitsync
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -75,6 +76,23 @@ type gitHubCreateRepoRequest struct {
 	Description string `json:"description,omitempty"`
 	Private     bool   `json:"private"`
 	AutoInit    bool   `json:"auto_init"`
+}
+
+type gitHubAPIError struct {
+	StatusCode int
+	Status     string
+	Body       string
+}
+
+func (e *gitHubAPIError) Error() string {
+	if e == nil {
+		return ""
+	}
+	msg := strings.TrimSpace(e.Body)
+	if msg == "" {
+		msg = strings.TrimSpace(e.Status)
+	}
+	return fmt.Sprintf("github api returned %s: %s", e.Status, msg)
 }
 
 func defaultAuthModeForExecution(executionMode string) string {
@@ -306,6 +324,9 @@ func (s *Service) CreateGitHubAppRepo(ctx context.Context, userID uuid.UUID, req
 	}
 	created := gitHubRepoItem{}
 	if err := s.githubRequestWithTokenJSON(ctx, token, http.MethodPost, path, body, &created); err != nil {
+		if isGitHubAppRepoCreatePermissionError(err) {
+			return nil, gitHubAppRepoCreatePermissionError()
+		}
 		return nil, err
 	}
 
@@ -368,6 +389,9 @@ func (s *Service) CreateOrReuseDefaultGitHubAppBackupRepo(ctx context.Context, u
 			Private:     true,
 			AutoInit:    false,
 		}, &created); err != nil {
+			if isGitHubAppRepoCreatePermissionError(err) {
+				return nil, gitHubAppRepoCreatePermissionError()
+			}
 			return nil, err
 		}
 		repoItem = &created
@@ -414,7 +438,11 @@ func (s *Service) fetchGitHubAppRepo(ctx context.Context, token, ownerLogin, rep
 		if msg == "" {
 			msg = resp.Status
 		}
-		return nil, false, fmt.Errorf("github api returned %s: %s", resp.Status, msg)
+		return nil, false, &gitHubAPIError{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Body:       msg,
+		}
 	}
 	repo := gitHubRepoItem{}
 	if err := json.NewDecoder(resp.Body).Decode(&repo); err != nil {
@@ -627,7 +655,11 @@ func (s *Service) githubRequestWithTokenJSON(ctx context.Context, token, method,
 		if msg == "" {
 			msg = resp.Status
 		}
-		return fmt.Errorf("github api returned %s: %s", resp.Status, msg)
+		return &gitHubAPIError{
+			StatusCode: resp.StatusCode,
+			Status:     resp.Status,
+			Body:       msg,
+		}
 	}
 	if out == nil {
 		return nil
@@ -764,4 +796,16 @@ func mapGitHubRepo(repo gitHubRepoItem) GitHubMirrorRepo {
 		CloneURL:         strings.TrimSpace(repo.CloneURL),
 		ViewerPermission: githubPermissionFromFlags(repo.Permissions.Admin, repo.Permissions.Push, repo.Permissions.Pull),
 	}
+}
+
+func isGitHubAppRepoCreatePermissionError(err error) bool {
+	var apiErr *gitHubAPIError
+	if !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusForbidden {
+		return false
+	}
+	return strings.Contains(strings.ToLower(apiErr.Body), "resource not accessible by integration")
+}
+
+func gitHubAppRepoCreatePermissionError() error {
+	return fmt.Errorf("GitHub App cannot create the backup repository because it is missing Repository Administration write permission. Update the GitHub App permissions, have the user approve the new permissions or reconnect GitHub, then try again")
 }

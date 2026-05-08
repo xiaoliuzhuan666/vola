@@ -10,6 +10,12 @@ import { useI18n } from '../i18n'
 import { formatDateTime } from './data/DataShared'
 
 type AuthMode = UpdateGitMirrorRequest['auth_mode']
+type AuthHelp = {
+  title: string
+  intro: string
+  steps?: string[]
+  footer?: string
+}
 
 const DEFAULT_AUTH_MODE: AuthMode = 'local_credentials'
 const DEFAULT_REMOTE_NAME = 'origin'
@@ -42,6 +48,17 @@ function isGitHubHTTPSURL(value: string) {
   } catch {
     return false
   }
+}
+
+function authModeForExecution(mode: AuthMode | undefined, executionMode: string, tokenConfigured?: boolean): AuthMode {
+  if (executionMode === 'hosted' && mode === 'local_credentials') {
+    return tokenConfigured ? 'github_token' : 'github_app_user'
+  }
+  return mode || (executionMode === 'hosted' ? 'github_app_user' : DEFAULT_AUTH_MODE)
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
 function PencilIcon() {
@@ -91,9 +108,10 @@ export default function GitMirrorPage() {
         api.getGitMirror(),
         api.getPublicConfig().catch(() => ({} as PublicConfig)),
       ])
+      const nextExecutionMode = settings.execution_mode || config.git_mirror_execution_mode || 'hosted'
       setMirror(settings)
       setPublicConfig(config)
-      setAuthMode(settings.auth_mode || DEFAULT_AUTH_MODE)
+      setAuthMode(authModeForExecution(settings.auth_mode, nextExecutionMode, settings.github_token_configured))
       setRemoteURL(settings.remote_url || '')
       setUrlEditing(!(settings.remote_url || '').trim() && settings.auth_mode !== 'github_app_user')
       setTokenInput('')
@@ -142,19 +160,48 @@ export default function GitMirrorPage() {
   )
   const remoteRepoURL = mirror?.remote_url || ''
   const lastUpdate = latestUpdateTime(mirror)
-  const authHelp = authMode === 'local_credentials'
+  const authHelp: AuthHelp = authMode === 'local_credentials'
     ? {
         title: tx('本机 Git 凭证', 'Local Git credentials'),
-        body: tx('本机 Git 凭证使用本机 SSH Key。', 'Local Git credentials use this machine’s SSH key.'),
+        intro: tx(
+          '仅本机模式适用。neuDrive 会复用这台机器已有的 Git SSH key 或 credential helper，适合你已经在本机配置好 GitHub 推送权限的情况。',
+          'Available in local mode only. neuDrive reuses this machine’s Git SSH key or credential helper, which is best when GitHub push access is already configured locally.',
+        ),
       }
     : authMode === 'github_token'
       ? {
           title: tx('GitHub Token', 'GitHub token'),
-          body: tx('GitHub Token 使用你保存的 token 访问目标仓库。', 'GitHub token uses the saved token to access the target repository.'),
+          intro: tx(
+            '适合你想自己创建备份仓库，并把权限精确控制在某一个仓库里的情况。',
+            'Use this when you want to create the backup repository yourself and keep the token scoped to that single repository.',
+          ),
+          steps: [
+            tx('先在 GitHub 新建一个私有仓库，例如 neudrive-backup。', 'Create a private GitHub repository first, for example neudrive-backup.'),
+            tx('进入 GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens，创建新 token。', 'Go to GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens, then generate a new token.'),
+            tx('Repository access 只选择这个备份仓库。', 'For Repository access, select only this backup repository.'),
+            tx('Repository permissions 里给 Contents 读写权限；Metadata 保持默认只读。', 'For Repository permissions, set Contents to Read and write; keep Metadata at the default read-only access.'),
+            tx('回到这里填写仓库 URL 和 token，先测试 token，通过后保存。', 'Come back here, enter the repository URL and token, test the token, then save after it passes.'),
+          ],
+          footer: tx(
+            'Token 只显示一次，neuDrive 会加密保存，不会在页面回显原值。',
+            'GitHub only shows the token once. neuDrive stores it encrypted and will not show the raw value again.',
+          ),
         }
       : {
-          title: tx('GitHub App 用户', 'GitHub App user'),
-          body: tx('GitHub App 用户通过 GitHub 授权，不需要手动保存 token。', 'GitHub App user authorizes through GitHub without manually saving a token.'),
+          title: tx('GitHub App 授权', 'GitHub App authorization'),
+          intro: tx(
+            '推荐的一键方式。连接 GitHub 后，neuDrive 会自动创建或复用你的私有 neudrive-backup 仓库，不需要你手动保存 token。',
+            'Recommended for the easiest setup. After you connect GitHub, neuDrive creates or reuses your private neudrive-backup repository without asking you to manage a token.',
+          ),
+          steps: [
+            tx('点击连接 GitHub，在 GitHub 授权页批准 neuDrive App。', 'Click Connect GitHub and approve the neuDrive App on GitHub.'),
+            tx('回到 neuDrive 后点击创建私有备份仓库。', 'Back in neuDrive, click Create private backup repo.'),
+            tx('之后点击立即同步，后台会把 neuDrive 数据推送到这个仓库。', 'Then click Sync now; the worker pushes your neuDrive data to that repository.'),
+          ],
+          footer: tx(
+            '如果 GitHub 提示批准新权限，批准后再回到这里重试。',
+            'If GitHub asks you to approve updated permissions, approve them and then retry here.',
+          ),
         }
   const retrySeconds = useMemo(() => {
     if (!syncRetryUntil) return 0
@@ -169,6 +216,7 @@ export default function GitMirrorPage() {
   const syncDisabled = working || retrySeconds > 0 || !remoteRepoURL
   const destinationConfigured = !!remoteRepoURL
   const syncAvailable = destinationConfigured && selectedAuthCanSync
+  const tokenModeNeedsTokenBeforeSave = authMode === 'github_token' && !mirror?.github_token_configured && !tokenInput.trim()
   const remotePlaceholder = authMode === 'local_credentials'
     ? 'git@github.com:owner/neudrive-backup.git'
     : 'https://github.com/owner/neudrive-backup.git'
@@ -182,6 +230,37 @@ export default function GitMirrorPage() {
   const setInlineError = (nextError: string) => {
     setError(nextError)
     setMessage('')
+  }
+
+  const hostedSyncSettledMessage = (settings: GitMirrorSettings) => {
+    if (settings.sync_state === 'error' || settings.remote_conflict || settings.last_error || settings.last_push_error) {
+      return settings.message || tx('最近一次后台同步需要处理。', 'The latest background sync needs attention.')
+    }
+    const requestedAt = Date.parse(settings.sync_requested_at || '')
+    const lastSyncedAt = Date.parse(settings.last_synced_at || '')
+    const lastCommitAt = Date.parse(settings.last_commit_at || '')
+    const requestCompleted = Number.isFinite(requestedAt) && Number.isFinite(lastSyncedAt) && lastSyncedAt >= requestedAt
+    const noNewCommit = requestCompleted && (!Number.isFinite(lastCommitAt) || lastCommitAt < requestedAt)
+    if (noNewCommit) {
+      return tx(
+        '已检查，没有新的变更需要提交；备份仓库已是最新状态。',
+        'Checked: no new changes to commit; the backup repository is up to date.',
+      )
+    }
+    return settings.message || tx('后台同步已完成。', 'Background sync completed.')
+  }
+
+  const pollHostedSyncUntilSettled = async () => {
+    for (let attempt = 0; attempt < 12; attempt += 1) {
+      await delay(1500)
+      const next = await api.getGitMirror()
+      setMirror(next)
+      const state = next.sync_state || 'idle'
+      if (state !== 'queued' && state !== 'running') {
+        setInlineMessage(hostedSyncSettledMessage(next))
+        return
+      }
+    }
   }
 
   const handleConnectGitHubApp = async () => {
@@ -377,7 +456,13 @@ export default function GitMirrorPage() {
       const result = await api.syncGitMirror({ force_remote_overwrite: forceRemoteOverwrite || undefined })
       await loadPage()
       setSyncRetryUntil(syncCooldownSeconds > 0 ? Date.now() + syncCooldownSeconds * 1000 : 0)
-      setInlineMessage(result.message || tx('已触发同步。', 'Sync started.'))
+      const queuedHostedSync = result.execution_mode === 'hosted' && (result.sync_state === 'queued' || result.sync_state === 'running')
+      setInlineMessage(queuedHostedSync
+        ? tx('同步请求已提交，后台正在处理。完成后页面会自动更新状态。', 'Sync request submitted. The background worker is processing it, and this page will update when it finishes.')
+        : result.message || tx('已触发同步。', 'Sync started.'))
+      if (queuedHostedSync) {
+        void pollHostedSyncUntilSettled().catch(() => undefined)
+      }
     } catch (err: any) {
       if (err?.code === 'rate_limit_exceeded' && err.retry_after_sec) {
         setSyncRetryUntil(Date.now() + Number(err.retry_after_sec) * 1000)
@@ -487,9 +572,11 @@ export default function GitMirrorPage() {
                 setTokenEditing(next === 'github_token' && !mirror?.github_token_configured)
               }}
             >
-              <option value="local_credentials">{tx('本机 Git 凭证', 'Local Git credentials')}</option>
+              {isLocalExecution && (
+                <option value="local_credentials">{tx('本机 Git 凭证', 'Local Git credentials')}</option>
+              )}
               <option value="github_token">{tx('GitHub Token', 'GitHub token')}</option>
-              <option value="github_app_user">{tx('GitHub App 用户', 'GitHub App user')}</option>
+              <option value="github_app_user">{tx('GitHub App 授权', 'GitHub App authorization')}</option>
             </select>
             <div className="git-mirror-auth-help">
               <button
@@ -504,7 +591,17 @@ export default function GitMirrorPage() {
               {authHelpOpen && (
                 <div className="git-mirror-help-popover" role="dialog">
                   <div className="data-record-title">{authHelp.title}</div>
-                  <div className="data-record-secondary">{authHelp.body}</div>
+                  <div className="data-record-secondary">{authHelp.intro}</div>
+                  {authHelp.steps && (
+                    <ol className="git-mirror-help-steps">
+                      {authHelp.steps.map((step) => (
+                        <li key={step}>{step}</li>
+                      ))}
+                    </ol>
+                  )}
+                  {authHelp.footer && (
+                    <div className="data-record-secondary git-mirror-help-footer">{authHelp.footer}</div>
+                  )}
                 </div>
               )}
             </div>
@@ -527,7 +624,7 @@ export default function GitMirrorPage() {
                   }}
                   placeholder={remotePlaceholder}
                 />
-                <button className="btn btn-primary" type="button" disabled={working || !remoteURL.trim()} onClick={handleSaveLocalDestination}>
+                <button className="btn btn-primary" type="button" disabled={working || !remoteURL.trim() || tokenModeNeedsTokenBeforeSave} onClick={handleSaveLocalDestination}>
                   {working ? tx('保存中...', 'Saving...') : tx('保存备份目标', 'Save backup destination')}
                 </button>
               </div>
@@ -558,8 +655,8 @@ export default function GitMirrorPage() {
           <div className="data-record-title">{tx('GitHub Token', 'GitHub token')}</div>
           <div className="data-sync-field-note">
             {mirror?.github_token_configured
-              ? tx('Token 已配置；输入新 token 后可替换。', 'A token is configured; enter a new token to replace it.')
-              : tx('填写有目标仓库写权限的 GitHub token。', 'Enter a GitHub token with write access to the target repository.')}
+              ? tx('Token 已配置；输入新 token 后可替换。建议使用只授权这个备份仓库的 fine-grained token。', 'A token is configured; enter a new token to replace it. A fine-grained token scoped only to this backup repository is recommended.')
+              : tx('建议使用 fine-grained token，只给这个备份仓库 Contents 读写权限。具体步骤见认证方式旁边的 ?。', 'Use a fine-grained token scoped only to this backup repository with Contents read/write access. See the ? next to Auth mode for the steps.')}
           </div>
           {tokenEditing || !mirror?.github_token_configured ? (
             <>
@@ -653,11 +750,10 @@ export default function GitMirrorPage() {
         {renderStatus()}
         {renderRemoteConflict()}
 
-        {isLocalExecution ? renderLocalAuthControls() : renderGitHubAppFlow()}
-        {!isLocalExecution && renderFeedback()}
+        {renderLocalAuthControls()}
         {renderSyncActions()}
 
-        {mirror?.github_app_user_connected && (
+        {authMode === 'github_app_user' && mirror?.github_app_user_connected && (
           <div className="data-sync-actions data-sync-actions-compact" style={{ marginTop: 16 }}>
             <button className="btn-text" type="button" disabled={working} onClick={handleDisconnectGitHubApp}>
               {tx('断开 GitHub', 'Disconnect GitHub')}

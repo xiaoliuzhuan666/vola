@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/agi-bar/neudrive/internal/models"
 	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
 	"github.com/agi-bar/neudrive/internal/vault"
 	"github.com/google/uuid"
@@ -101,6 +102,107 @@ func TestUpdateMirrorSettingsGitHubAppUserRejectsReadOnlyAutoPush(t *testing.T) 
 	})
 	if err == nil || !strings.Contains(err.Error(), "does not have push access") {
 		t.Fatalf("expected push access error, got %v", err)
+	}
+}
+
+func TestHostedGitMirrorAuthModesReuseSameRootPath(t *testing.T) {
+	ctx := context.Background()
+	store, err := sqlitestorage.Open(filepath.Join(t.TempDir(), "hosted.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	v, err := vault.NewVault(strings.Repeat("0", 64))
+	if err != nil {
+		t.Fatalf("NewVault: %v", err)
+	}
+	server := newFakeGitHubAppServer(t, fakeGitHubAppServerState{
+		login:          "octocat",
+		permission:     "write",
+		repoAccessible: true,
+	})
+	hostedRoot := filepath.Join(t.TempDir(), "hosted-root")
+	svc := New(
+		store,
+		v,
+		WithExecutionMode(ExecutionModeHosted),
+		WithHostedRoot(hostedRoot),
+		WithGitHubAPIBaseURL(server.URL),
+		WithGitHubBaseURL(server.URL),
+		WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+		WithHTTPClient(server.Client()),
+	)
+
+	if _, err := svc.UpdateMirrorSettings(ctx, user.ID, MirrorSettingsUpdate{
+		AutoCommitEnabled: true,
+		AutoPushEnabled:   false,
+		AuthMode:          AuthModeGitHubToken,
+		RemoteName:        DefaultRemoteName,
+		RemoteURL:         "https://github.com/acme/demo.git",
+		RemoteBranch:      DefaultRemoteBranch,
+	}); err != nil {
+		t.Fatalf("UpdateMirrorSettings token mode: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, user.ID, "/notes/token.md", "token mode", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("WriteEntry token: %v", err)
+	}
+	if _, err := svc.MarkMirrorQueued(ctx, user.ID, "manual", false); err != nil {
+		t.Fatalf("MarkMirrorQueued token: %v", err)
+	}
+	if err := svc.RunQueuedGitMirrorSyncs(ctx, 10); err != nil {
+		t.Fatalf("RunQueuedGitMirrorSyncs token: %v", err)
+	}
+	tokenMirror, err := svc.GetActiveMirror(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetActiveMirror token: %v", err)
+	}
+	if tokenMirror == nil {
+		t.Fatal("expected token mirror")
+	}
+	tokenRoot := tokenMirror.RootPath
+	if got, want := tokenRoot, filepath.Join(hostedRoot, user.ID.String()); got != want {
+		t.Fatalf("token root_path = %q, want %q", got, want)
+	}
+
+	if err := svc.writeStoredGitHubAppRefreshToken(ctx, user.ID, "refresh-token"); err != nil {
+		t.Fatalf("writeStoredGitHubAppRefreshToken: %v", err)
+	}
+	if _, err := svc.UpdateMirrorSettings(ctx, user.ID, MirrorSettingsUpdate{
+		AutoCommitEnabled: true,
+		AutoPushEnabled:   false,
+		AuthMode:          AuthModeGitHubAppUser,
+		RemoteName:        DefaultRemoteName,
+		RemoteURL:         "https://github.com/acme/demo.git",
+		RemoteBranch:      DefaultRemoteBranch,
+	}); err != nil {
+		t.Fatalf("UpdateMirrorSettings github app mode: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, user.ID, "/notes/app.md", "app mode", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("WriteEntry app: %v", err)
+	}
+	if _, err := svc.MarkMirrorQueued(ctx, user.ID, "manual", false); err != nil {
+		t.Fatalf("MarkMirrorQueued app: %v", err)
+	}
+	if err := svc.RunQueuedGitMirrorSyncs(ctx, 10); err != nil {
+		t.Fatalf("RunQueuedGitMirrorSyncs app: %v", err)
+	}
+	appMirror, err := svc.GetActiveMirror(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetActiveMirror app: %v", err)
+	}
+	if appMirror == nil {
+		t.Fatal("expected app mirror")
+	}
+	if appMirror.RootPath != tokenRoot {
+		t.Fatalf("root_path changed after switching auth modes: token=%q app=%q", tokenRoot, appMirror.RootPath)
+	}
+	if got := gitOutput(t, "git", "-C", appMirror.RootPath, "rev-list", "--count", "HEAD"); got != "2" {
+		t.Fatalf("hosted mirror commit count = %q, want 2", got)
 	}
 }
 

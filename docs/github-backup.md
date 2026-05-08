@@ -86,6 +86,13 @@ PUBLIC_BASE_URL=https://your-neudrive-host
 JWT_SECRET=...
 ```
 
+The GitHub App must request these repository permissions:
+
+- Administration: read and write. Required by GitHub's `POST /user/repos` API when neuDrive creates the private `neudrive-backup` repository.
+- Contents: read and write. Required for Git push access to the backup repository.
+
+After changing App permissions in GitHub, users must approve the updated permissions or reconnect GitHub before repository creation is retried.
+
 ## Local Mode
 
 Local deployments can choose one of three auth modes:

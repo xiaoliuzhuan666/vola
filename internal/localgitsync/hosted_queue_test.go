@@ -54,6 +54,8 @@ func TestHostedQueuedMirrorSyncProcessesQueuedRows(t *testing.T) {
 		t.Fatalf("MarkMirrorQueued: %v", err)
 	} else if info == nil || info.SyncState != SyncStateQueued {
 		t.Fatalf("expected queued sync info, got %+v", info)
+	} else if strings.Contains(info.Message, "worker") || !strings.Contains(info.Message, "后台正在处理") {
+		t.Fatalf("queued message should be user-facing, got %q", info.Message)
 	}
 	if err := svc.RunQueuedGitMirrorSyncs(ctx, 10); err != nil {
 		t.Fatalf("RunQueuedGitMirrorSyncs: %v", err)
