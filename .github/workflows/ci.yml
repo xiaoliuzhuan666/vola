@@ -99,6 +99,11 @@ jobs:
           python-version: '3.11'
       - run: cd sdk/javascript && npm ci
       - run: cd web && npm ci
+      - run: |
+          cd web
+          npm run build
+          rm -rf ../internal/web/dist
+          cp -r dist ../internal/web/dist
       - run: python -m pip install --upgrade pip
       - run: python -m pip install 'httpx>=0.25.0'
       - run: npx playwright install --with-deps chromium
