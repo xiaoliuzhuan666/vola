@@ -7,7 +7,7 @@ import {
   type UpdateGitMirrorRequest,
 } from '../api'
 import { useI18n } from '../i18n'
-import { formatDateTime } from './data/DataShared'
+import { formatDateTime, localizeGitHubAccessMessage } from './data/DataShared'
 
 type AuthMode = UpdateGitMirrorRequest['auth_mode']
 type AuthHelp = {
@@ -723,7 +723,7 @@ export default function GitMirrorPage() {
           )}
           {tokenTest && (
             <div className={tokenTest.ok ? 'alert alert-ok' : 'alert alert-warn'} style={{ marginTop: 12 }}>
-              {tokenTest.message}
+              {localizeGitHubAccessMessage(tokenTest.message, locale)}
             </div>
           )}
         </div>

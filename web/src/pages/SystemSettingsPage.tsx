@@ -7,7 +7,7 @@ import {
   type UpdateGitMirrorRequest,
 } from '../api'
 import { useI18n } from '../i18n'
-import { formatDateTime } from './data/DataShared'
+import { formatDateTime, localizeGitHubAccessMessage } from './data/DataShared'
 
 type ConfigViewMode = 'settings' | 'raw'
 
@@ -396,9 +396,9 @@ export default function SystemSettingsPage() {
         setGitMirrorDraft((prev) => ({ ...prev, remote_url: result.normalized_remote_url || prev.remote_url }))
       }
       if (result.ok) {
-        setGitMirrorMessage(result.message || tx('GitHub token 可用', 'GitHub token is valid'))
+        setGitMirrorMessage(localizeGitHubAccessMessage(result.message, locale) || tx('GitHub token 可用', 'GitHub token is valid'))
       } else {
-        setGitMirrorError(result.message || tx('GitHub token 校验失败', 'GitHub token validation failed'))
+        setGitMirrorError(localizeGitHubAccessMessage(result.message, locale) || tx('GitHub token 校验失败', 'GitHub token validation failed'))
       }
     } catch (err: any) {
       setGitMirrorError(err.message || tx('GitHub token 测试失败', 'Failed to test GitHub token'))

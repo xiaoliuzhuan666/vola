@@ -30,6 +30,23 @@ function text(locale: AppLocale, zh: string, en: string) {
   return locale === 'zh-CN' ? zh : en
 }
 
+export function localizeGitHubAccessMessage(message: string | undefined, locale: AppLocale) {
+  const trimmed = (message || '').trim()
+  if (!trimmed) return ''
+  const translations: Record<string, string> = {
+    'GitHub token is required.': '请填写 GitHub token。',
+    'GitHub token validation failed. Please check the token and try again.': 'GitHub token 验证失败。请检查 token 后再试。',
+    'GitHub token cannot access this repository.': '这个 GitHub token 无法访问该仓库。请确认仓库 URL 正确，并且 token 已授权这个仓库。',
+    'GitHub token is valid and has push access to this repository.': 'GitHub token 可用，并且拥有这个仓库的推送权限。',
+    'GitHub token is valid, but it does not have push access to this repository.': 'GitHub token 可用，但没有这个仓库的推送权限。请给该仓库 Contents 读写权限。',
+    'GitHub App user validation failed. Reconnect GitHub and try again.': 'GitHub App 授权验证失败。请重新连接 GitHub 后再试。',
+    'GitHub App user cannot access this repository.': 'GitHub App 当前无法访问这个仓库。请确认仓库权限或重新授权。',
+    'GitHub App user is valid and has push access to this repository.': 'GitHub App 授权可用，并且拥有这个仓库的推送权限。',
+    'GitHub App user is connected, but it does not have push access to this repository.': 'GitHub App 已连接，但没有这个仓库的推送权限。请调整 App 仓库权限后再试。',
+  }
+  return locale === 'zh-CN' ? translations[trimmed] || trimmed : trimmed
+}
+
 const SOURCE_PRIORITY = [
   'manual',
   'upload',
