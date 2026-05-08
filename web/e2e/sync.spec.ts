@@ -113,6 +113,36 @@ test.describe('Bundle Sync', () => {
   })
 
   test('legacy sync route redirects according to public config', async ({ page, request }) => {
+    await mockPublicConfig(page, {
+      git_mirror_execution_mode: 'local',
+      github_app_enabled: false,
+      local_mode: true,
+    })
+    await page.route('**/api/git-mirror', async (route) => {
+      if (route.request().method() !== 'GET') {
+        await route.fallback()
+        return
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: true,
+          data: {
+            enabled: true,
+            execution_mode: 'local',
+            sync_state: 'idle',
+            auto_commit_enabled: true,
+            auto_push_enabled: true,
+            auth_mode: 'local_credentials',
+            remote_name: 'origin',
+            remote_branch: 'main',
+            github_token_configured: false,
+            github_app_user_connected: false,
+          },
+        }),
+      })
+    })
     await setupUser(page, request)
 
     await page.goto('/data/sync')
@@ -127,7 +157,6 @@ test.describe('Bundle Sync', () => {
   })
 
   test('hosted GitHub Backup hides advanced auth and sync internals', async ({ page, request }) => {
-    await setupUser(page, request)
     await mockPublicConfig(page, {
       git_mirror_execution_mode: 'hosted',
       github_app_enabled: true,
@@ -162,6 +191,7 @@ test.describe('Bundle Sync', () => {
         }),
       })
     })
+    await setupUser(page, request)
 
     await page.goto('/sync-backup')
     await expect(page.getByRole('heading', { name: 'Backup destination' })).toBeVisible()
