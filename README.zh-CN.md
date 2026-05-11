@@ -23,7 +23,7 @@ neuDrive 给每个人一个 Hub。Claude、ChatGPT、Codex、Cursor、Copilot、
 ## 功能特性
 
 - **一个人的 AI Hub**：集中保存 profile、偏好、memory、projects、skills 和 Agent 通信记录，让上下文跟着你跨工具流动。
-- **跨平台 AI 接入**：通过 hosted OAuth、Remote MCP、本地 adapter 或浏览器插件连接 Claude、ChatGPT、Cursor、Windsurf、Codex CLI、Gemini CLI、飞书和自定义 MCP 客户端。
+- **跨平台 AI 接入**：通过 hosted OAuth、Remote MCP 或本地 adapter 连接 Claude、ChatGPT、Cursor、Windsurf、Codex CLI、Gemini CLI、飞书和自定义 MCP 客户端。
 - **记忆和技能迁移**：从 Agent 工具导入 skills、项目上下文、profile/preferences 和 notes，也可以通过 CLI、API、Bundle Sync 导出或恢复。
 - **秘密和信任控制**：secrets 放在统一 vault 中，通过 scoped token 和 trust level 控制每个 Agent 能访问什么。
 - **Agent 协作**：Agent 可以互发消息、写入项目日志、交接任务，不需要你在工具之间手动复制上下文。
@@ -40,17 +40,14 @@ neuDrive 给每个人一个 Hub。Claude、ChatGPT、Codex、Cursor、Copilot、
 
 按你的接入方式选第一个合适的入口：
 
-1. **浏览器插件**：面向 Chrome / Edge，在 Claude、ChatGPT、Gemini、Kimi 页面里完成官方登录、上下文注入和对话导入。[查看文档](docs/browser-extension.zh-CN.md)
-2. **Web / Desktop Apps**：最快接入 Claude、ChatGPT、Cursor、Windsurf 等图形界面，并使用官方云服务 + 浏览器授权。[查看文档](docs/setup.zh-CN.md#web-and-desktop-apps)
-3. **CLI Apps**：使用 Claude Code、Codex CLI、Gemini CLI、Cursor Agent，通过 Remote HTTP MCP + OAuth 接入。[查看文档](docs/setup.zh-CN.md#cli-apps)
-4. **本地模式**：仓库内本地开发、局域网环境，或者当前还没有公网 HTTPS 地址。[查看文档](docs/setup.zh-CN.md#local-mode)
-5. **高级模式 / GPT Actions / Adapters**：通用 MCP 客户端、自定义 GPT、Feishu / webhook 等更进阶的接法。[查看文档](docs/setup.zh-CN.md#advanced-mode)
+1. **Web / Desktop Apps**：最快接入 Claude、ChatGPT、Cursor、Windsurf 等图形界面，并使用官方云服务 + 浏览器授权。[查看文档](docs/setup.zh-CN.md#web-and-desktop-apps)
+2. **CLI Apps**：使用 Claude Code、Codex CLI、Gemini CLI、Cursor Agent，通过 Remote HTTP MCP + OAuth 接入。[查看文档](docs/setup.zh-CN.md#cli-apps)
+3. **本地模式**：仓库内本地开发、局域网环境，或者当前还没有公网 HTTPS 地址。[查看文档](docs/setup.zh-CN.md#local-mode)
+4. **高级模式 / GPT Actions / Adapters**：通用 MCP 客户端、自定义 GPT、Feishu / webhook 等更进阶的接法。[查看文档](docs/setup.zh-CN.md#advanced-mode)
 
 ## Web / Desktop Apps
 
 如果你是从 Claude 网页版、ChatGPT、Cursor 或 Windsurf 这类图形界面发起连接，先看这一节。
-
-如果你更希望在现有聊天网页里直接使用一个 sidecar，而不是通过 MCP / Apps 原生接入，优先看[浏览器插件指南](docs/browser-extension.zh-CN.md)。
 
 ### Claude Connectors
 
@@ -113,7 +110,6 @@ neu login
 
 先看这些：
 
-- [浏览器插件指南](docs/browser-extension.zh-CN.md)
 - [接入说明](docs/setup.zh-CN.md)
 - [GitHub Backup 指南](docs/github-backup.zh-CN.md)
 - [CLI 使用手册](docs/cli.zh-CN.md)
@@ -122,7 +118,6 @@ neu login
 英文文档：
 
 - [README](README.md)
-- [Browser Extension Guide](docs/browser-extension.md)
 - [Setup Guide](docs/setup.md)
 - [GitHub Backup Guide](docs/github-backup.md)
 - [CLI Guide](docs/cli.md)

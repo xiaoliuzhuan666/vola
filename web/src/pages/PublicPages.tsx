@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Link, useLocation, useParams } from 'react-router-dom'
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, type AuthProvider } from '../api'
 import GitHubRepoLink from '../components/GitHubRepoLink'
 import LanguageToggle from '../components/LanguageToggle'
@@ -213,7 +213,7 @@ const integrations: IntegrationGuide[] = [
     afterConnection: [
       { zh: '把重要对话保存到 Conversations。', en: 'Save important chats to Conversations.' },
       { zh: '在 Connections 里查看 ChatGPT 连接状态。', en: 'Check ChatGPT connection status in Connections.' },
-      { zh: '需要网页导入时，继续安装浏览器插件。', en: 'Install the browser extension when you need web-chat import.' },
+      { zh: '把需要复用的资料整理成 Memory 或 Projects。', en: 'Turn reusable material into Memory or Projects.' },
     ],
     detailSummary: {
       zh: 'ChatGPT Apps 接入适合希望在 ChatGPT 里调用 neuDrive 记忆、文件和技能的用户。',
@@ -222,11 +222,11 @@ const integrations: IntegrationGuide[] = [
     detailHighlights: [
       { zh: '创建 neuDrive App 并粘贴 MCP Server URL。', en: 'Create a neuDrive App and paste the MCP Server URL.' },
       { zh: '授权后在新会话里测试读取。', en: 'After authorization, test from a fresh chat.' },
-      { zh: '浏览器插件可以补充网页对话导入。', en: 'The browser extension can add web-chat import when needed.' },
+      { zh: '可与 Claude、编辑器和 CLI 接入共享同一份资料。', en: 'Shares the same neuDrive data with Claude, editors, and CLI tools.' },
     ],
     detailLimits: [
       { zh: 'ChatGPT Apps 入口取决于账号计划和开放范围。', en: 'The ChatGPT Apps entry depends on account plan and rollout availability.' },
-      { zh: '如果暂时没有 Create app，可以先使用 Claude、编辑器或浏览器插件。', en: 'If Create app is unavailable, start with Claude, editors, or the browser extension.' },
+      { zh: '如果暂时没有 Create app，可以先使用 Claude、编辑器或 CLI 接入。', en: 'If Create app is unavailable, start with Claude, editors, or CLI setup.' },
     ],
     detailFaq: [
       {
@@ -453,93 +453,6 @@ const integrations: IntegrationGuide[] = [
     ],
   },
   {
-    key: 'browser',
-    name: 'Browser Extension',
-    shortName: 'Browser Import',
-    method: { zh: 'Chrome / Edge 插件', en: 'Chrome / Edge sidecar' },
-    setup: { zh: '约 2 分钟', en: '~2 min' },
-    accent: 'B',
-    audience: {
-      zh: '适合想在 Claude、ChatGPT、Gemini、Kimi 网页里导入当前对话的用户。',
-      en: 'For users who want to import the current chat from Claude, ChatGPT, Gemini, or Kimi web pages.',
-    },
-    demo: {
-      zh: '安装扩展、登录 neuDrive、打开聊天页面，然后点击导入。',
-      en: 'Install the extension, sign in to neuDrive, open a chat page, then click import.',
-    },
-    workflowSummary: {
-      zh: '安装扩展后，聊天页面里会出现 neuDrive 面板。',
-      en: 'After installing the extension, a neuDrive panel appears inside supported chat pages.',
-    },
-    guideTitle: {
-      zh: '用 Browser Extension 导入网页对话',
-      en: 'Use the Browser Extension to import web chats',
-    },
-    steps: [
-      {
-        title: { zh: '安装 Chrome / Edge 扩展', en: 'Install the Chrome / Edge extension' },
-        copy: {
-          zh: '打开 `chrome://extensions`，开启 Developer mode，点击 Load unpacked，选择 `extension/`。',
-          en: 'Open `chrome://extensions`, enable Developer mode, click Load unpacked, and choose `extension/`.',
-        },
-      },
-      {
-        title: { zh: '连接 neuDrive', en: 'Connect to neuDrive' },
-        copy: {
-          zh: '点击扩展图标，选择“登录官方 neuDrive”，按浏览器提示完成登录。',
-          en: 'Click the extension icon, choose “Sign in to official neuDrive”, and finish sign-in in the browser.',
-        },
-        codes: [{ label: { zh: 'Hosted Hub URL', en: 'Hosted Hub URL' }, language: 'text', value: HUB_URL }],
-      },
-      {
-        title: { zh: '导入当前对话', en: 'Import the current conversation' },
-        copy: {
-          zh: '打开 Claude 或 ChatGPT 对话页，点击页面里的 neuDrive 面板，再点击导入当前对话。',
-          en: 'Open a Claude or ChatGPT chat page, open the neuDrive panel, then click import current chat.',
-        },
-      },
-      {
-        title: { zh: '插入偏好、项目资料和技能', en: 'Inject preferences, project, and skills' },
-        copy: {
-          zh: '需要时，在面板里选择偏好、项目资料或技能，把内容放进当前聊天输入框。',
-          en: 'When needed, choose preferences, project material, or skills in the panel and place them into the current input box.',
-        },
-      },
-    ],
-    testPrompt: {
-      zh: '打开扩展面板，导入当前对话，然后在 neuDrive 文件管理器里查看结果。',
-      en: 'Open the extension panel, import the current chat, then review the result in neuDrive Data Explorer.',
-    },
-    afterConnection: [
-      { zh: '导入当前 Claude 或 ChatGPT 对话。', en: 'Import the current Claude or ChatGPT chat.' },
-      { zh: '在文件管理器里查看导入结果。', en: 'Review the imported result in Data Explorer.' },
-      { zh: '把重要对话转成 Memory。', en: 'Convert important chats into Memory.' },
-    ],
-    detailSummary: {
-      zh: '浏览器插件适合把网页聊天里的当前对话导入 neuDrive，也适合把偏好、项目资料或技能注入当前输入框。',
-      en: 'The browser extension imports the current web chat into neuDrive and can inject preferences, project material, or skills into the current input box.',
-    },
-    detailHighlights: [
-      { zh: '支持 Claude、ChatGPT、Gemini、Kimi 等网页聊天。', en: 'Supports web chats such as Claude, ChatGPT, Gemini, and Kimi.' },
-      { zh: '导入当前对话后，可在文件管理器查看。', en: 'After importing the current chat, review it in Data Explorer.' },
-      { zh: '可把重要对话转成 Memory。', en: 'Important chats can become Memory.' },
-    ],
-    detailLimits: [
-      { zh: '插件依赖网页结构，平台改版后可能需要更新。', en: 'The extension depends on page structure and may need updates when platforms change their UI.' },
-      { zh: '批量历史迁移建议使用官方导出导入器。', en: 'For large history migration, prefer the official export importer.' },
-    ],
-    detailFaq: [
-      {
-        question: { zh: '导入会自动发送给聊天平台吗？', en: 'Does import automatically send content to the chat platform?' },
-        answer: { zh: '不会。导入保存到 neuDrive；注入内容也只有你点击发送后才会发给当前聊天平台。', en: 'No. Import saves to neuDrive; injected content is sent only if you send the message yourself.' },
-      },
-      {
-        question: { zh: '能导入整个 ChatGPT 历史吗？', en: 'Can it import all ChatGPT history?' },
-        answer: { zh: '当前重点是当前对话导入。大量历史迁移更适合使用平台导出文件。', en: 'The current focus is current-chat import. Large history migration is better handled through platform export files.' },
-      },
-    ],
-  },
-  {
     key: 'api',
     aliases: ['rest', 'developer'],
     name: 'MCP / REST API',
@@ -631,7 +544,8 @@ const integrations: IntegrationGuide[] = [
 
 function getIntegration(key?: string) {
   const normalized = (key || '').toLowerCase()
-  return integrations.find((item) => item.key === normalized || item.aliases?.includes(normalized)) || integrations[0]
+  if (normalized === 'browser') return undefined
+  return integrations.find((item) => item.key === normalized || item.aliases?.includes(normalized))
 }
 
 function tr(tx: (zh: string, en: string) => string, text: LocalizedText) {
@@ -807,7 +721,7 @@ export function MarketingHomePage() {
   )
   const [activeKey, setActiveKey] = useState('claude')
   const [activeHeroPanel, setActiveHeroPanel] = useState<'memory' | 'files' | 'skills'>('memory')
-  const activeIntegration = getIntegration(activeKey)
+  const activeIntegration = getIntegration(activeKey) || integrations[0]
   const firstCode = activeIntegration.steps.flatMap((step) => step.codes || [])[0]
   const heroPanels = {
     memory: {
@@ -1353,7 +1267,7 @@ export function IntegrationsPage() {
   const { tx } = useI18n()
   useDocumentTitle(
     tx('集成 — neuDrive', 'Integrations — neuDrive'),
-    tx('连接 Claude、ChatGPT、Cursor、Windsurf、命令行 AI 工具、浏览器扩展、MCP 和 REST API。', 'Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, browser extensions, MCP, and REST API.'),
+    tx('连接 Claude、ChatGPT、Cursor、Windsurf、命令行 AI 工具、MCP 和 REST API。', 'Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, MCP, and REST API.'),
   )
   return (
     <PublicShell>
@@ -1396,9 +1310,14 @@ export function IntegrationDetailPage() {
   const { tx } = useI18n()
   const item = getIntegration(platform)
   useDocumentTitle(
-    tx(`${item.shortName} 集成 — neuDrive`, `${item.shortName} Integration — neuDrive`),
-    tx(`了解如何把 ${item.shortName} 连接到 neuDrive，共用记忆、文件和技能。`, `Learn how to connect ${item.shortName} to neuDrive so it can use shared memory, files, and skills.`),
+    item
+      ? tx(`${item.shortName} 集成 — neuDrive`, `${item.shortName} Integration — neuDrive`)
+      : tx('集成 — neuDrive', 'Integrations — neuDrive'),
+    item
+      ? tx(`了解如何把 ${item.shortName} 连接到 neuDrive，共用记忆、文件和技能。`, `Learn how to connect ${item.shortName} to neuDrive so it can use shared memory, files, and skills.`)
+      : tx('选择 Claude、ChatGPT、Cursor、Windsurf、CLI 或 API 接入 neuDrive。', 'Choose Claude, ChatGPT, Cursor, Windsurf, CLI, or API setup for neuDrive.'),
   )
+  if (!item) return <Navigate to="/integrations" replace />
   const codeSnippets = item.steps.flatMap((step) => step.codes || [])
   const previewCode = codeSnippets[0]
   return (
@@ -1482,9 +1401,14 @@ export function GuidePage() {
   const { tx } = useI18n()
   const guide = getIntegration(platform)
   useDocumentTitle(
-    tx(`${guide.shortName} 接入指南 — neuDrive`, `${guide.shortName} Setup Guide — neuDrive`),
-    tx(`${guide.shortName} 接入 neuDrive 的设置步骤、可复制内容、授权流程和测试问题。`, `Follow the neuDrive setup guide for ${guide.shortName}, including copyable URLs, authorization steps, and a test prompt.`),
+    guide
+      ? tx(`${guide.shortName} 接入指南 — neuDrive`, `${guide.shortName} Setup Guide — neuDrive`)
+      : tx('接入指南 — neuDrive', 'Setup Guide — neuDrive'),
+    guide
+      ? tx(`${guide.shortName} 接入 neuDrive 的设置步骤、可复制内容、授权流程和测试问题。`, `Follow the neuDrive setup guide for ${guide.shortName}, including copyable URLs, authorization steps, and a test prompt.`)
+      : tx('选择 Claude、ChatGPT、Cursor、Windsurf、CLI 或 API 接入 neuDrive。', 'Choose Claude, ChatGPT, Cursor, Windsurf, CLI, or API setup for neuDrive.'),
   )
+  if (!guide) return <Navigate to="/integrations" replace />
   return (
     <PublicShell>
       <main className="public-simple guide-page">
@@ -1556,12 +1480,12 @@ export function DocsLandingPage() {
   const { tx } = useI18n()
   useDocumentTitle(
     tx('文档 — neuDrive', 'Docs — neuDrive'),
-    tx('neuDrive 文档包含 Claude、ChatGPT、代码编辑器、CLI、浏览器扩展和自定义 MCP 客户端接入指南。', 'Setup guides for connecting neuDrive to Claude, ChatGPT, coding editors, CLI agents, browser extensions, and custom MCP clients.'),
+    tx('neuDrive 文档包含 Claude、ChatGPT、代码编辑器、CLI 和自定义 MCP 客户端接入指南。', 'Setup guides for connecting neuDrive to Claude, ChatGPT, coding editors, CLI agents, and custom MCP clients.'),
   )
   const docsGroups = [
     {
       title: tx('快速开始', 'Quick start'),
-      copy: tx('先确认你要接入的是网页平台、代码编辑器、CLI 还是浏览器导入。', 'First decide whether you are connecting a web platform, coding editor, CLI, or browser import flow.'),
+      copy: tx('先确认你要接入的是网页平台、代码编辑器、CLI 还是开发者 API。', 'First decide whether you are connecting a web platform, coding editor, CLI, or developer API.'),
       links: [
         { label: tx('Claude Connectors 接入', 'Claude Connectors'), href: '/guides/claude' },
         { label: tx('ChatGPT Apps 接入', 'ChatGPT Apps'), href: '/guides/chatgpt' },
@@ -1576,10 +1500,9 @@ export function DocsLandingPage() {
       ],
     },
     {
-      title: tx('导入与开发者接入', 'Import and developer access'),
-      copy: tx('浏览器插件适合网页对话导入；API 适合自定义 AI 工具、内部系统和自动化任务。', 'The browser extension is for web-chat import; API is for custom agents, internal systems, and automation.'),
+      title: tx('开发者接入', 'Developer access'),
+      copy: tx('API 适合自定义 AI 工具、内部系统和自动化任务。', 'API setup is for custom agents, internal systems, and automation.'),
       links: [
-        { label: tx('浏览器插件', 'Browser Extension'), href: '/guides/browser' },
         { label: tx('MCP / REST API 开发者接入', 'MCP / REST API'), href: '/guides/api' },
       ],
     },

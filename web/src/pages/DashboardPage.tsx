@@ -220,13 +220,6 @@ export default function DashboardPage({}: DashboardPageProps) {
       aliases: ['gemini'],
     },
     {
-      id: 'browser',
-      name: tx('浏览器扩展', 'Browser Extension'),
-      description: tx('导入网页会话', 'Import web chats'),
-      to: '/setup/web-apps',
-      aliases: ['browser', 'extension'],
-    },
-    {
       id: 'mcp',
       name: tx('其他 MCP 客户端', 'Other MCP Client'),
       description: tx('连接其他 AI 工具', 'Connect another AI tool'),

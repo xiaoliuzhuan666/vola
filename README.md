@@ -25,7 +25,7 @@ Your identity, preferences, secrets, and skills follow the person, not the platf
 ## Features
 
 - **One personal AI hub**: Keep profile data, preferences, memory, projects, skills, and agent communication in one place, so context can follow you across tools.
-- **Cross-platform AI connections**: Connect Claude, ChatGPT, Cursor, Windsurf, Codex CLI, Gemini CLI, Feishu, and custom MCP clients through hosted OAuth, Remote MCP, local adapters, or the browser extension.
+- **Cross-platform AI connections**: Connect Claude, ChatGPT, Cursor, Windsurf, Codex CLI, Gemini CLI, Feishu, and custom MCP clients through hosted OAuth, Remote MCP, or local adapters.
 - **Memory and skill portability**: Import skills, project context, profile/preferences, and notes from agent tools, then export or restore them through the CLI, API, and Bundle Sync.
 - **Secrets and trust controls**: Store secrets in one vault, issue scoped tokens, and control what each agent can access by trust level.
 - **Agent collaboration**: Let agents exchange messages, append project logs, and hand off work without making you copy context between tools.
@@ -42,17 +42,14 @@ Hosted service examples in this repo use:
 
 Choose the first path that matches how you want to connect:
 
-1. **Browser Extension**: Chrome / Edge sidecar for Claude, ChatGPT, Gemini, and Kimi with hosted login, context injection, and conversation import. [Open guide](docs/browser-extension.md)
-2. **Web / Desktop Apps**: fastest path for Claude, ChatGPT, Cursor, and Windsurf through hosted neuDrive with browser auth. [Open guide](docs/setup.md#web-and-desktop-apps)
-3. **CLI Apps**: Claude Code, Codex CLI, Gemini CLI, and Cursor Agent with remote HTTP MCP + OAuth. [Open guide](docs/setup.md#cli-apps)
-4. **Local Mode**: repo-first local development, LAN setups, or any environment without a public HTTPS URL yet. [Open guide](docs/setup.md#local-mode)
-5. **Advanced Mode / GPT Actions / Adapters**: generic HTTP MCP clients, custom GPTs, and webhook-style integrations such as Feishu. [Open guide](docs/setup.md#advanced-mode)
+1. **Web / Desktop Apps**: fastest path for Claude, ChatGPT, Cursor, and Windsurf through hosted neuDrive with browser auth. [Open guide](docs/setup.md#web-and-desktop-apps)
+2. **CLI Apps**: Claude Code, Codex CLI, Gemini CLI, and Cursor Agent with remote HTTP MCP + OAuth. [Open guide](docs/setup.md#cli-apps)
+3. **Local Mode**: repo-first local development, LAN setups, or any environment without a public HTTPS URL yet. [Open guide](docs/setup.md#local-mode)
+4. **Advanced Mode / GPT Actions / Adapters**: generic HTTP MCP clients, custom GPTs, and webhook-style integrations such as Feishu. [Open guide](docs/setup.md#advanced-mode)
 
 ## Web and Desktop Apps
 
 Use this when the connection starts from a graphical interface such as Claude web, ChatGPT, Cursor, or Windsurf.
-
-If you want a lighter-weight sidecar experience inside existing chat pages instead of MCP / Apps, use the [Browser Extension Guide](docs/browser-extension.md).
 
 ### Claude Connectors
 
@@ -115,7 +112,6 @@ This opens a browser login flow, saves the hosted profile locally, and switches 
 
 Start here:
 
-- [Browser Extension Guide](docs/browser-extension.md)
 - [Setup Guide](docs/setup.md)
 - [GitHub Backup Guide](docs/github-backup.md)
 - [CLI Guide](docs/cli.md)
@@ -124,7 +120,6 @@ Start here:
 Chinese docs:
 
 - [Chinese README](README.zh-CN.md)
-- [Chinese Browser Extension Guide](docs/browser-extension.zh-CN.md)
 - [Chinese Setup Guide](docs/setup.zh-CN.md)
 - [Chinese GitHub Backup Guide](docs/github-backup.zh-CN.md)
 - [Chinese CLI Guide](docs/cli.zh-CN.md)

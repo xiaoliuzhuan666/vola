@@ -3,7 +3,7 @@ import { api, type ScopedTokenResponse } from '../api'
 import { useI18n } from '../i18n'
 import { formatDateTime } from './data/DataShared'
 
-type TokenPurpose = 'browser' | 'cli' | 'api' | 'custom'
+type TokenPurpose = 'cli' | 'api' | 'custom'
 type TokenFilter = 'active' | 'all' | 'revoked'
 type AccessChoice = 'readonly' | 'readwrite' | 'custom'
 
@@ -37,10 +37,6 @@ const purposePresets: Record<TokenPurpose, {
   name: string
   days: number
 }> = {
-  browser: {
-    name: 'Browser Extension',
-    days: 90,
-  },
   cli: {
     name: 'CLI Local App',
     days: 90,
@@ -89,7 +85,7 @@ function tokenStatus(token: ScopedTokenResponse) {
 
 function tokenPurpose(scopes: string[]) {
   if (scopes.includes('write:projects')) return 'CLI / Local app'
-  if (scopes.includes('write:tree')) return 'Browser / API'
+  if (scopes.includes('write:tree')) return 'API / Local app'
   if (scopes.length === 0) return 'Unknown'
   return 'Custom Agent'
 }
@@ -208,8 +204,8 @@ export default function DeveloperAccessPage() {
           <h2>{tx('开发者访问用于什么？', 'What is Developer Access for?')}</h2>
           <p>
             {tx(
-              '这里用来为命令行工具、本地应用、浏览器扩展或自定义 Agent 创建访问凭证。',
-              'Create access credentials here for CLI tools, local apps, browser extensions, or custom agents.',
+              '这里用来为命令行工具、本地应用或自定义 Agent 创建访问凭证。',
+              'Create access credentials here for CLI tools, local apps, or custom agents.',
             )}
           </p>
         </div>
