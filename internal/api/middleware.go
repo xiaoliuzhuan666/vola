@@ -111,7 +111,7 @@ func bodySizeLimitForPath(path string, fallback int64) int64 {
 		if limit < maxMCPArchiveRequestBytes {
 			limit = maxMCPArchiveRequestBytes
 		}
-	case path == "/api/import/skills", path == "/agent/import/skills", path == "/agent/import/preview", path == "/agent/import/bundle":
+	case path == "/api/import/skills", path == "/api/backup/restore/preview", path == "/api/backup/restore/apply", path == "/agent/import/skills", path == "/agent/import/preview", path == "/agent/import/bundle":
 		if limit < maxSkillsArchiveRequestBytes {
 			limit = maxSkillsArchiveRequestBytes
 		}

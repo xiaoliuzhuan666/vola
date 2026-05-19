@@ -7,11 +7,39 @@ CREATE TABLE IF NOT EXISTS users (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     slug VARCHAR(64) UNIQUE NOT NULL,
     display_name VARCHAR(256),
+    account_type VARCHAR(16) NOT NULL DEFAULT 'person' CHECK (account_type IN ('person', 'team_hub')),
+    storage_quota_bytes BIGINT CHECK (storage_quota_bytes IS NULL OR storage_quota_bytes >= 0),
     timezone VARCHAR(64) DEFAULT 'UTC',
     language VARCHAR(16) DEFAULT 'zh-CN',
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+
+-- Teams use a dedicated hub user row for their shared file tree.
+CREATE TABLE IF NOT EXISTS teams (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    slug VARCHAR(64) UNIQUE NOT NULL,
+    name VARCHAR(256) NOT NULL,
+    description TEXT DEFAULT '',
+    hub_user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+    created_by_user_id UUID REFERENCES users(id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS team_members (
+    team_id UUID NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role VARCHAR(16) NOT NULL CHECK (role IN ('owner', 'admin', 'member', 'viewer')),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (team_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_team_members_user
+    ON team_members(user_id);
+CREATE INDEX IF NOT EXISTS idx_team_members_team_role
+    ON team_members(team_id, role);
 
 -- Auth bindings (GitHub, WeChat, Email, etc.)
 CREATE TABLE IF NOT EXISTS auth_bindings (
@@ -243,6 +271,10 @@ $$ LANGUAGE plpgsql;
 
 -- Apply updated_at triggers
 CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_teams_updated_at BEFORE UPDATE ON teams
+    FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+CREATE TRIGGER update_team_members_updated_at BEFORE UPDATE ON team_members
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 CREATE TRIGGER update_connections_updated_at BEFORE UPDATE ON connections
     FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();

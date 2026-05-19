@@ -20,7 +20,10 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-const MaxSkillsArchiveBytes = 50 << 20
+const (
+	MaxSkillsArchiveBytes      = 50 << 20
+	MaxExternalSkillAssetBytes = 5 << 20
+)
 
 // ImportService handles bulk import and export operations.
 type ImportService struct {
@@ -96,10 +99,20 @@ func (s *ImportService) ImportSkill(ctx context.Context, userID uuid.UUID, skill
 }
 
 type SkillsArchiveImportResult struct {
-	Imported int      `json:"imported"`
-	Skipped  int      `json:"skipped"`
-	Errors   []string `json:"errors,omitempty"`
-	Skills   []string `json:"skills,omitempty"`
+	Imported       int                                  `json:"imported"`
+	Skipped        int                                  `json:"skipped"`
+	ManifestFiles  int                                  `json:"manifest_files,omitempty"`
+	Errors         []string                             `json:"errors,omitempty"`
+	Skills         []string                             `json:"skills,omitempty"`
+	SkillManifests []skillsarchive.SkillManifest        `json:"skill_manifests,omitempty"`
+	Warnings       []skillsarchive.SkillManifestWarning `json:"warnings,omitempty"`
+}
+
+type ExternalSkillAssetImportResult struct {
+	SkillName string                               `json:"skill_name"`
+	Path      string                               `json:"path"`
+	Manifest  skillsarchive.SkillManifest          `json:"manifest"`
+	Warnings  []skillsarchive.SkillManifestWarning `json:"warnings,omitempty"`
 }
 
 // ImportSkillsArchive imports a zip archive that contains one or more skills.
@@ -178,11 +191,6 @@ func (s *ImportService) importSkillsArchiveEntries(ctx context.Context, userID u
 		return nil, false, fmt.Errorf("import.ImportSkillsArchiveEntries: no archive entries provided")
 	}
 
-	if s.fileTree.db != nil && s.fileTree.repo == nil {
-		result, err := s.importSkillsArchiveEntriesOptimized(ctx, userID, entries, platform, archiveName)
-		return result, true, err
-	}
-
 	if strings.TrimSpace(platform) == "" {
 		if inferred := SourceFromContext(ctx); !IsGenericSource(inferred) {
 			platform = inferred
@@ -196,7 +204,25 @@ func (s *ImportService) importSkillsArchiveEntries(ctx context.Context, userID u
 		archiveName = "skills.zip"
 	}
 
-	result := &SkillsArchiveImportResult{}
+	manifests := skillsarchive.BuildManifests(entries, platform, archiveName)
+	entries, err := skillsarchive.AppendManifestEntries(entries, manifests)
+	if err != nil {
+		return nil, false, fmt.Errorf("import.ImportSkillsArchiveEntries: build skill manifests: %w", err)
+	}
+
+	if s.fileTree.db != nil && s.fileTree.repo == nil {
+		result, err := s.importSkillsArchiveEntriesOptimized(ctx, userID, entries, platform, archiveName)
+		if result != nil {
+			result.SkillManifests = manifests
+			result.Warnings = skillsarchive.ManifestWarnings(manifests)
+		}
+		return result, true, err
+	}
+
+	result := &SkillsArchiveImportResult{
+		SkillManifests: manifests,
+		Warnings:       skillsarchive.ManifestWarnings(manifests),
+	}
 	for _, entry := range entries {
 		fullPath := filepath.ToSlash(filepath.Join("/skills", entry.SkillName, entry.RelPath))
 		metadata := map[string]interface{}{
@@ -224,11 +250,182 @@ func (s *ImportService) importSkillsArchiveEntries(ctx context.Context, userID u
 				continue
 			}
 		}
-		result.Imported++
-		result.Skills = appendUniqueString(result.Skills, entry.SkillName)
+		if entry.Generated {
+			result.ManifestFiles++
+		} else {
+			result.Imported++
+			result.Skills = appendUniqueString(result.Skills, entry.SkillName)
+		}
 	}
 
 	return result, false, nil
+}
+
+func (s *ImportService) ImportExternalSkillAsset(ctx context.Context, userID uuid.UUID, skillName, sourceRef, filename string, data []byte, contentType, platform string) (*ExternalSkillAssetImportResult, error) {
+	if s.fileTree == nil {
+		return nil, fmt.Errorf("import.ImportExternalSkillAsset: file tree service not configured")
+	}
+	safeSkillName, err := validateSinglePathComponent(skillName, "skill name")
+	if err != nil {
+		return nil, err
+	}
+	sourceRef = strings.TrimSpace(sourceRef)
+	if sourceRef == "" {
+		return nil, fmt.Errorf("import.ImportExternalSkillAsset: source_ref is required")
+	}
+	if len(data) > MaxExternalSkillAssetBytes {
+		return nil, fmt.Errorf("import.ImportExternalSkillAsset: file exceeds 5 MB limit")
+	}
+
+	targetRel, ok := skillsarchive.ExternalAssetPathForClaudeReference(sourceRef)
+	if !ok {
+		return nil, fmt.Errorf("import.ImportExternalSkillAsset: unsupported Claude external reference")
+	}
+	if strings.TrimSpace(platform) == "" {
+		if inferred := SourceFromContext(ctx); !IsGenericSource(inferred) {
+			platform = inferred
+		}
+	}
+	if strings.TrimSpace(platform) == "" {
+		platform = "skills-archive"
+	}
+	targetPath := hubpath.NormalizeStorage(filepath.ToSlash(filepath.Join("/skills", safeSkillName, targetRel)))
+	if contentType == "" || strings.EqualFold(contentType, "application/octet-stream") {
+		contentType = skillsarchive.DetectContentType(targetRel, data)
+	}
+	uploadedName := filepath.Base(strings.TrimSpace(filename))
+	if uploadedName == "." {
+		uploadedName = ""
+	}
+	metadata := map[string]interface{}{
+		"source_platform": platform,
+		"source_ref":      sourceRef,
+		"capture_mode":    "external-upload",
+	}
+	if uploadedName != "" {
+		metadata["uploaded_filename"] = uploadedName
+	}
+	if skillsarchive.LooksBinary(targetRel, data) {
+		if _, err := s.fileTree.WriteBinaryEntry(ctx, userID, targetPath, data, contentType, models.FileTreeWriteOptions{
+			Kind:          "skill_asset",
+			Metadata:      metadata,
+			MinTrustLevel: models.TrustLevelGuest,
+		}); err != nil {
+			return nil, fmt.Errorf("import.ImportExternalSkillAsset: write %s: %w", targetRel, err)
+		}
+	} else {
+		if _, err := s.fileTree.WriteEntry(ctx, userID, targetPath, string(data), contentType, models.FileTreeWriteOptions{
+			Kind:          "skill_file",
+			Metadata:      metadata,
+			MinTrustLevel: models.TrustLevelGuest,
+		}); err != nil {
+			return nil, fmt.Errorf("import.ImportExternalSkillAsset: write %s: %w", targetRel, err)
+		}
+	}
+
+	manifest, err := s.rebuildSkillManifest(ctx, userID, safeSkillName, platform, "external-upload")
+	if err != nil {
+		return nil, err
+	}
+	return &ExternalSkillAssetImportResult{
+		SkillName: safeSkillName,
+		Path:      targetRel,
+		Manifest:  *manifest,
+		Warnings:  manifest.Warnings,
+	}, nil
+}
+
+func (s *ImportService) rebuildSkillManifest(ctx context.Context, userID uuid.UUID, skillName, platform, archiveName string) (*skillsarchive.SkillManifest, error) {
+	basePath := hubpath.NormalizeStorage(filepath.ToSlash(filepath.Join("/skills", skillName)))
+	snapshot, err := s.fileTree.Snapshot(ctx, userID, basePath, models.TrustLevelFull)
+	if err != nil {
+		return nil, fmt.Errorf("import.rebuildSkillManifest: snapshot %s: %w", basePath, err)
+	}
+
+	prefix := strings.TrimSuffix(basePath, "/") + "/"
+	entries := make([]skillsarchive.Entry, 0, len(snapshot.Entries))
+	hasEntryFile := false
+	for _, entry := range snapshot.Entries {
+		if entry.IsDirectory || !strings.HasPrefix(entry.Path, prefix) {
+			continue
+		}
+		relPath := strings.TrimPrefix(entry.Path, prefix)
+		relPath = strings.TrimPrefix(filepath.ToSlash(relPath), "/")
+		if relPath == "" || strings.EqualFold(relPath, skillsarchive.ManifestFile) {
+			continue
+		}
+		if relPath == "SKILL.md" {
+			hasEntryFile = true
+		}
+
+		data := []byte(entry.Content)
+		if isBinaryFileTreeEntry(entry) {
+			binaryData, _, err := s.fileTree.ReadBinary(ctx, userID, entry.Path, models.TrustLevelFull)
+			if err != nil {
+				return nil, fmt.Errorf("import.rebuildSkillManifest: read binary %s: %w", relPath, err)
+			}
+			data = binaryData
+		}
+		entries = append(entries, skillsarchive.Entry{
+			SkillName: skillName,
+			RelPath:   relPath,
+			Data:      data,
+		})
+	}
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("import.rebuildSkillManifest: skill %s has no files", skillName)
+	}
+	if !hasEntryFile {
+		return nil, fmt.Errorf("import.rebuildSkillManifest: skill %s is missing SKILL.md", skillName)
+	}
+
+	manifests := skillsarchive.BuildManifests(entries, platform, archiveName)
+	if len(manifests) == 0 {
+		return nil, fmt.Errorf("import.rebuildSkillManifest: no manifest generated for %s", skillName)
+	}
+	manifest := manifests[0]
+	manifestData, err := json.MarshalIndent(manifest, "", "  ")
+	if err != nil {
+		return nil, fmt.Errorf("import.rebuildSkillManifest: marshal manifest: %w", err)
+	}
+	manifestData = append(manifestData, '\n')
+	manifestPath := filepath.ToSlash(filepath.Join(basePath, skillsarchive.ManifestFile))
+	if _, err := s.fileTree.WriteEntry(ctx, userID, manifestPath, string(manifestData), "application/json", models.FileTreeWriteOptions{
+		Kind: "skill_file",
+		Metadata: map[string]interface{}{
+			"source_platform": platform,
+			"source_archive":  archiveName,
+			"capture_mode":    "generated-manifest",
+		},
+		MinTrustLevel: models.TrustLevelGuest,
+	}); err != nil {
+		return nil, fmt.Errorf("import.rebuildSkillManifest: write manifest: %w", err)
+	}
+	return &manifest, nil
+}
+
+func validateSinglePathComponent(value, label string) (string, error) {
+	clean := strings.TrimSpace(value)
+	if clean == "" {
+		return "", fmt.Errorf("import.ImportExternalSkillAsset: %s is required", label)
+	}
+	if clean == "." || clean == ".." || strings.ContainsAny(clean, `/\`) || strings.ContainsRune(clean, 0) {
+		return "", fmt.Errorf("import.ImportExternalSkillAsset: invalid %s", label)
+	}
+	return clean, nil
+}
+
+func isBinaryFileTreeEntry(entry models.FileTreeEntry) bool {
+	if entry.Metadata == nil {
+		return false
+	}
+	if value, ok := entry.Metadata["binary"].(bool); ok && value {
+		return true
+	}
+	if storage, ok := entry.Metadata["blob_storage"].(string); ok && storage != "" {
+		return true
+	}
+	return false
 }
 
 func appendUniqueString(items []string, value string) []string {

@@ -762,8 +762,9 @@ export function encodeHubRoutePath(path: string) {
   return encodeURIComponent(path.replace(/^\/+/, ''))
 }
 
-export function dataFileEditorRoute(path: string) {
-  return `/data/files/edit/${encodeHubRoutePath(path)}`
+export function dataFileEditorRoute(path: string, teamID?: string) {
+  const route = `/data/files/edit/${encodeHubRoutePath(path)}`
+  return teamID ? `${route}?team=${encodeURIComponent(teamID)}` : route
 }
 
 export function dataFileBrowseRoute(path: string) {
@@ -794,10 +795,14 @@ export function bundleRelativeDirFromPath(bundlePath: string, targetPath: string
   return target.startsWith(prefix) ? target.slice(prefix.length) : ''
 }
 
-export function dataSkillBundleRoute(bundleKey: string, relativeDir?: string | null) {
-  const base = `/data/skills/${encodeURIComponent(bundleKey)}`
+export function dataSkillBundleRoute(bundleKey: string, relativeDir?: string | null, teamID?: string) {
+  const base = `/skills/${encodeURIComponent(bundleKey)}`
   const relative = normalizeBundleRelativeDir(relativeDir)
-  return relative ? `${base}?dir=${encodeURIComponent(relative)}` : base
+  const params = new URLSearchParams()
+  if (relative) params.set('dir', relative)
+  if (teamID) params.set('team', teamID)
+  const search = params.toString()
+  return search ? `${base}?${search}` : base
 }
 
 export function dataProjectBundleRoute(projectName: string, relativeDir?: string | null) {

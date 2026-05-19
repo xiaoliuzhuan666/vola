@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 
@@ -40,11 +41,15 @@ func (s *FileTreeService) enforceStorageQuotaTx(
 	current *models.FileTreeEntry,
 	requestedBytes int64,
 ) error {
-	if s == nil || s.userStorageQuotaBytes <= 0 {
+	if s == nil {
 		return nil
 	}
-	if err := s.lockUserStorageQuotaTx(ctx, tx, userID); err != nil {
+	limitBytes, err := s.lockUserStorageQuotaTx(ctx, tx, userID)
+	if err != nil {
 		return err
+	}
+	if limitBytes <= 0 {
+		return nil
 	}
 
 	currentBytes, err := s.entryStorageUsageTx(ctx, tx, current)
@@ -57,29 +62,32 @@ func (s *FileTreeService) enforceStorageQuotaTx(
 	}
 
 	projectedBytes := totalBytes - currentBytes + requestedBytes
-	if projectedBytes <= s.userStorageQuotaBytes {
+	if projectedBytes <= limitBytes {
 		return nil
 	}
 	return &StorageQuotaExceededError{
-		LimitBytes:     s.userStorageQuotaBytes,
+		LimitBytes:     limitBytes,
 		CurrentBytes:   totalBytes,
 		RequestedBytes: requestedBytes,
 		ProjectedBytes: projectedBytes,
 	}
 }
 
-func (s *FileTreeService) lockUserStorageQuotaTx(ctx context.Context, tx pgx.Tx, userID uuid.UUID) error {
-	if s == nil || s.userStorageQuotaBytes <= 0 {
-		return nil
+func (s *FileTreeService) lockUserStorageQuotaTx(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (int64, error) {
+	if s == nil {
+		return 0, nil
 	}
-	var locked uuid.UUID
-	if err := tx.QueryRow(ctx, `SELECT id FROM users WHERE id = $1 FOR UPDATE`, userID).Scan(&locked); err != nil {
+	var quota sql.NullInt64
+	if err := tx.QueryRow(ctx, `SELECT storage_quota_bytes FROM users WHERE id = $1 FOR UPDATE`, userID).Scan(&quota); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return fmt.Errorf("filetree.storageQuota: user %s not found", userID)
+			return 0, fmt.Errorf("filetree.storageQuota: user %s not found", userID)
 		}
-		return fmt.Errorf("filetree.storageQuota: lock user: %w", err)
+		return 0, fmt.Errorf("filetree.storageQuota: lock user: %w", err)
 	}
-	return nil
+	if quota.Valid {
+		return quota.Int64, nil
+	}
+	return s.userStorageQuotaBytes, nil
 }
 
 func (s *FileTreeService) totalStorageUsageTx(ctx context.Context, tx pgx.Tx, userID uuid.UUID) (int64, error) {

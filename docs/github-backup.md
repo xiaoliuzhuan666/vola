@@ -4,17 +4,81 @@ English | [简体中文](github-backup.zh-CN.md)
 
 GitHub Backup mirrors the user-visible neuDrive file tree into a Git repository. It is meant for recoverable version history: your skills, memory files, project notes, and other public Hub files can be backed up to GitHub and inspected with normal Git tools.
 
+## Storage Model
+
+neuDrive data has three layers:
+
+- Primary storage: hosted deployments usually use Postgres, and local mode usually uses SQLite. The current Hub state is written here first.
+- Git working tree: neuDrive writes the user-visible file tree into a Git working copy so it can create version history.
+- Remote backup: GitHub Backup pushes the Git working tree to GitHub. WebDAV, S3-compatible, OSS, and R2 targets upload a neuDrive export zip so the backup leaves the current machine or server.
+
+GitHub Backup does not replace database backups. It stores the user-visible file tree and is useful for recovering skills, team library files, memory files, project notes, and similar content. Accounts, connections, billing, vault scope metadata, and secrets still require database backups or service configuration for recovery.
+
+The current remote backup options are GitHub version history and WebDAV / S3-compatible export archive upload. R2, OSS, and similar object stores should be configured through an endpoint that supports S3 Signature Version 4.
+
 ## What Gets Backed Up
 
 GitHub Backup writes the same path structure shown in neuDrive, for example:
 
 ```text
 skills/...
+team/...
 memory/...
 project/...
 ```
 
 Secrets are not exported. Internal account metadata, connection records, vault scope metadata, billing state, and service implementation details are not written to the backup repository.
+
+## Recovery
+
+After GitHub sync has succeeded, clone the remote repository to inspect historical versions:
+
+```bash
+git clone https://github.com/<owner>/neudrive-backup.git
+```
+
+To recover a single Skill, memory file, or project file, retrieve the relevant path from Git history and write it back through neuDrive import or sync commands. Full service recovery still needs a database backup because GitHub Backup does not contain internal account data or secrets.
+
+You can import a recovered local file tree with:
+
+```bash
+neu sync push --source ./recovered-neudrive-files
+```
+
+Check the directory before running the command so it contains only the files you want to write back into neuDrive.
+
+If the backup was uploaded to WebDAV or an S3-compatible target, download the matching `neudrive-export-*.zip`. This zip is a neuDrive export archive containing recoverable file tree content, profile, memory, projects, roles, inbox data, and vault scope metadata. It does not contain secret plaintext.
+
+Recovery flow:
+
+1. Download the zip from WebDAV or object storage.
+2. Unzip it and review the `export/` directory.
+3. Import the files you need back into neuDrive, or prepare a local directory and run `neu sync push --source <dir>`.
+
+Full service recovery still needs a database backup. GitHub / WebDAV / S3-compatible backups cover user-visible data and portable export archives, not login sessions, connection tokens, billing state, or secret plaintext.
+
+## WebDAV / S3-Compatible External Backups
+
+You can add a target from the `External backup targets` section at the bottom of `GitHub Backup`.
+
+WebDAV targets need:
+
+- A WebDAV folder URL, such as a Nextcloud folder, Nutstore folder, or self-hosted WebDAV directory.
+- Username.
+- Password or app password. It is not shown again after saving.
+
+When you upload, neuDrive creates `neudrive-export-YYYYMMDD-HHMMSSZ.zip` and uploads it with WebDAV `PUT`. If the object path includes nested folders, the service tries to create them with `MKCOL`.
+
+S3-compatible targets need:
+
+- Endpoint, such as Cloudflare R2, MinIO, or an OSS endpoint that supports the S3 API.
+- Bucket.
+- Region. R2 can use `auto`; other services should use the region required by that provider.
+- Optional prefix.
+- Access key ID and secret access key. The secret is not shown again after saving.
+- URL style. Path-style is the default: `<endpoint>/<bucket>/<prefix>/<object>`. Turn off Path-style URL when a provider requires virtual-hosted style.
+
+S3-compatible upload uses AWS Signature Version 4. Object names use the same `neudrive-export-YYYYMMDD-HHMMSSZ.zip` format.
 
 ## Hosted Mode
 
@@ -51,11 +115,13 @@ Hosted Git working trees live under:
 $GIT_MIRROR_HOSTED_ROOT/<user_id>
 ```
 
-`GIT_MIRROR_HOSTED_ROOT` has no built-in default in hosted mode. If it is missing, sync returns:
+The app itself has no built-in `GIT_MIRROR_HOSTED_ROOT` default in hosted mode. If it is missing, sync returns:
 
 ```text
 GIT_MIRROR_HOSTED_ROOT is not configured
 ```
+
+`deploy/prod/deploy.sh` writes `/data/git-mirrors` into the production ConfigMap by default. If you deploy another way, set this environment variable yourself and mount a writable directory.
 
 Recommended Kubernetes shape:
 
@@ -71,7 +137,7 @@ volumeMounts:
 volumes:
   - name: git-mirror-data
     persistentVolumeClaim:
-      claimName: neudrive-git-mirror
+      claimName: neudrive-git-mirrors
 ```
 
 The sync code creates each user directory if it does not already exist, but the process must be able to write to the mounted parent path. For multi-pod deployments, use an RWX volume or make sure only one pod runs Git mirror sync workers against a given root.

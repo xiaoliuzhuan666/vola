@@ -60,6 +60,39 @@ func (s *Server) handleTreeDownloadZip(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (s *Server) handleTeamTreeDownloadZip(w http.ResponseWriter, r *http.Request) {
+	team, ok := s.currentTeam(w, r)
+	if !ok {
+		return
+	}
+
+	rawPath := strings.TrimSpace(r.URL.Query().Get("path"))
+	if rawPath == "" {
+		respondValidationError(w, "path", "query parameter 'path' is required")
+		return
+	}
+	trustLevel := trustLevelFromCtx(r.Context())
+	publicPath, isDir, err := s.resolveTreeDownloadPath(r.Context(), team.HubUserID, trustLevel, rawPath)
+	if err != nil {
+		respondNotFound(w, "file")
+		return
+	}
+
+	filename := treeDownloadArchiveName(publicPath)
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, filename))
+
+	zw := zip.NewWriter(w)
+	if err := s.writeTreeDownloadArchive(r.Context(), zw, team.HubUserID, trustLevel, publicPath, isDir); err != nil {
+		http.Error(w, "download failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := zw.Close(); err != nil {
+		http.Error(w, "download failed: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+}
+
 func (s *Server) resolveTreeDownloadPath(ctx context.Context, userID uuid.UUID, trustLevel int, rawPath string) (string, bool, error) {
 	publicPath := hubpath.NormalizePublic(rawPath)
 	storagePath := hubpath.NormalizeStorage(rawPath)

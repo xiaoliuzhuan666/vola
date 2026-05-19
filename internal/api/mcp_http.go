@@ -147,6 +147,7 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		Dashboard:   s.DashboardService,
 		Import:      s.ImportService,
 		Token:       s.TokenService,
+		Team:        s.TeamService,
 		Source:      source,
 	}
 

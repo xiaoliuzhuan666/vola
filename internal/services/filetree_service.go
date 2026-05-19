@@ -11,6 +11,7 @@ import (
 
 	"github.com/agi-bar/neudrive/internal/hubpath"
 	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/neudrive/internal/objectstore"
 	"github.com/agi-bar/neudrive/internal/systemskills"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -38,6 +39,7 @@ type FileTreeService struct {
 	db                    *pgxpool.Pool
 	repo                  FileTreeRepo
 	userStorageQuotaBytes int64
+	blobStore             objectstore.Store
 }
 
 func NewFileTreeService(db *pgxpool.Pool) *FileTreeService {
@@ -56,6 +58,13 @@ func (s *FileTreeService) SetUserStorageQuotaBytes(limit int64) {
 		limit = 0
 	}
 	s.userStorageQuotaBytes = limit
+}
+
+func (s *FileTreeService) SetBlobStore(store objectstore.Store) {
+	if s == nil {
+		return
+	}
+	s.blobStore = store
 }
 
 // List returns immediate children under the requested directory path.

@@ -67,8 +67,8 @@ type pageSEO struct {
 
 const (
 	siteURL            = "https://www.neudrive.ai"
-	defaultTitle       = "Your AI tools should not have to meet you again every time — neuDrive"
-	defaultDescription = "neuDrive lets Claude, ChatGPT, Cursor, and other AI tools share one memory, file, skill, and vault layer."
+	defaultTitle       = "Personal data hub for AI agents — neuDrive"
+	defaultDescription = "neuDrive is a personal data hub for AI agents, connecting profile, memory, projects, conversations, skills, and vault access."
 )
 
 var (
@@ -103,10 +103,10 @@ func seoForPath(rawPath string) pageSEO {
 		seo.Description = "Compare neuDrive Free and Pro plans for storage, sync, backup, and AI tool connections."
 	case cleanPath == "/integrations":
 		seo.Title = "Integrations — neuDrive"
-		seo.Description = "Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, browser extensions, MCP, and REST API."
+		seo.Description = "Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, MCP, and REST API."
 	case cleanPath == "/docs":
 		seo.Title = "Docs — neuDrive"
-		seo.Description = "Setup guides for connecting neuDrive to Claude, ChatGPT, coding editors, CLI agents, browser extensions, and custom MCP clients."
+		seo.Description = "Setup guides for connecting neuDrive to Claude, ChatGPT, coding editors, CLI agents, and custom MCP clients."
 	case strings.HasPrefix(cleanPath, "/integrations/"):
 		name := integrationName(strings.TrimPrefix(cleanPath, "/integrations/"))
 		seo.Title = name + " Integration — neuDrive"
@@ -139,8 +139,6 @@ func integrationName(key string) string {
 		return "Cursor and Windsurf"
 	case "cli", "codex", "claude-code", "gemini":
 		return "CLI Agents"
-	case "browser":
-		return "Browser Extension"
 	case "api", "mcp", "sdk":
 		return "MCP and REST API"
 	default:

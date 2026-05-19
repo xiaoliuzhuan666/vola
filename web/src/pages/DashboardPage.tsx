@@ -266,8 +266,8 @@ export default function DashboardPage({}: DashboardPageProps) {
       <section className="dashboard-platform-panel" aria-label={tx('连接方式', 'Connection methods')}>
         <div className="dashboard-section-head">
           <div>
-            <h3>{tx('连接方式', 'Connection methods')}</h3>
-            <p>{tx('绿色表示当前账户已经有这种类型的连接。', 'Green means this account already has that connection type.')}</p>
+            <h3>{tx('连接 Agent 到个人数据 Hub', 'Connect agents to your data hub')}</h3>
+            <p>{tx('连接后，Agent 可以读取被授权的 profile、memory、projects、skills 和 vault 资料。绿色表示当前账户已有这种连接。', 'After connection, agents can read authorized profile, memory, projects, skills, and vault material. Green means this account already has that connection type.')}</p>
           </div>
           <Link to="/connections" className="dashboard-card-link">{tx('管理连接', 'Manage connections')}</Link>
         </div>

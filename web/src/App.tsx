@@ -25,6 +25,7 @@ const DataMemoryPage = lazy(() => import('./pages/data/DataMemoryPage'))
 const DataConversationsPage = lazy(() => import('./pages/data/DataConversationsPage'))
 const ClaudeImportPage = lazy(() => import('./pages/ClaudeImportPage'))
 const SystemSettingsPage = lazy(() => import('./pages/SystemSettingsPage'))
+const TeamLibraryPage = lazy(() => import('./pages/TeamLibraryPage'))
 const SyncLoginPage = lazy(() => import('./pages/SyncLoginPage'))
 const SkillsImportPage = lazy(() => import('./pages/SkillsImportPage'))
 const GitMirrorPage = lazy(() => import('./pages/GitMirrorPage'))
@@ -278,6 +279,7 @@ function App() {
       path.startsWith('/settings/developer-access') || path.startsWith('/settings/developer') ? 'Developer Access' :
       path.startsWith('/settings/security') ? 'System Settings' :
       path.startsWith('/settings/profile') || path.startsWith('/info') ? 'My Profile' :
+      path.startsWith('/team') ? 'Team AI Library' :
       path.startsWith('/cli') ? 'Command Line Tools' :
       path.startsWith('/setup') ? 'Setup Guide' :
       path.startsWith('/data/conversations') ? 'Conversations' :
@@ -414,6 +416,11 @@ function App() {
             <span>{tx('概览', 'Home')}</span>
           </NavLink>
 
+          <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <span className="nav-icon">▦</span>
+            <span>{tx('团队资料', 'Team Library')}</span>
+          </NavLink>
+
           <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <span className="nav-icon">⌘</span>
             <span>{tx('开发者访问', 'Developer Access')}</span>
@@ -504,6 +511,7 @@ function App() {
             <Route path="/settings/developer-access" element={<DeveloperAccessPage />} />
             <Route path="/settings/security" element={systemSettingsEnabled ? <SystemSettingsPage /> : <Navigate to="/settings/profile" replace />} />
             <Route path="/settings/developer" element={<Navigate to="/settings/developer-access" replace />} />
+            <Route path="/team" element={<TeamLibraryPage />} />
             <Route path="/cli" element={<CommandLineToolsPage />} />
             <Route path="/command-line-tools" element={<Navigate to="/cli" replace />} />
 
@@ -558,7 +566,7 @@ function App() {
             <Route path="/docs" element={<Navigate to="/onboarding" replace />} />
             <Route path="/info" element={<Navigate to="/settings/profile" replace />} />
             <Route path="/projects" element={<Navigate to="/data/projects" replace />} />
-            <Route path="/collaborations" element={<Navigate to="/" replace />} />
+            <Route path="/collaborations" element={<Navigate to="/team" replace />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </Suspense>

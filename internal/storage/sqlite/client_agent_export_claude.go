@@ -12,6 +12,7 @@ import (
 
 	"github.com/agi-bar/neudrive/internal/hubpath"
 	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/neudrive/internal/skillsarchive"
 )
 
 func (c *Client) importClaudeInventory(ctx context.Context, platform string, inventory ClaudeInventory, result *AgentImportResult) error {
@@ -123,6 +124,7 @@ func (c *Client) importClaudeBundle(ctx context.Context, platform string, bundle
 		return nil
 	}
 	hasSkill := false
+	manifestFiles := append([]ClaudeFileRecord{}, bundle.Files...)
 	for _, file := range bundle.Files {
 		relPath := normalizeClaudeRelativePath(file.Path, file.SourcePath)
 		if relPath == "" {
@@ -140,6 +142,13 @@ func (c *Client) importClaudeBundle(ctx context.Context, platform string, bundle
 	if !hasSkill {
 		target := filepath.ToSlash(filepath.Join("/skills", bundleName, "SKILL.md"))
 		content := renderSyntheticClaudeSkill(bundle, bundleName)
+		syntheticFile := ClaudeFileRecord{
+			Path:        "SKILL.md",
+			Content:     content,
+			ContentType: "text/markdown",
+			Exactness:   "derived",
+			SourcePaths: bundle.SourcePaths,
+		}
 		if _, err := c.store.WriteEntry(ctx, c.userID, target, content, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "skill_file",
 			MinTrustLevel: models.TrustLevelWork,
@@ -154,10 +163,64 @@ func (c *Client) importClaudeBundle(ctx context.Context, platform string, bundle
 			return err
 		}
 		result.Paths = append(result.Paths, target)
+		manifestFiles = append(manifestFiles, syntheticFile)
+	}
+	manifestPath, err := c.writeBundleSkillManifest(ctx, platform, bundleName, normalizeClaudeKind(bundle.Kind), bundle, manifestFiles)
+	if err != nil {
+		return err
+	}
+	if manifestPath != "" {
+		result.Paths = append(result.Paths, manifestPath)
 	}
 	result.Bundles++
 	result.Imported++
 	return nil
+}
+
+func (c *Client) writeBundleSkillManifest(ctx context.Context, platform, bundleName, sourceKind string, bundle ClaudeBundle, files []ClaudeFileRecord) (string, error) {
+	if bundleName == "" || len(files) == 0 {
+		return "", nil
+	}
+	entries := make([]skillsarchive.Entry, 0, len(files))
+	for _, file := range files {
+		relPath := normalizeClaudeRelativePath(file.Path, file.SourcePath)
+		if relPath == "" || strings.EqualFold(relPath, skillsarchive.ManifestFile) {
+			continue
+		}
+		data, _, err := decodeClaudeFileRecord(file)
+		if err != nil {
+			return "", err
+		}
+		entries = append(entries, skillsarchive.Entry{
+			SkillName: bundleName,
+			RelPath:   relPath,
+			Data:      data,
+		})
+	}
+	manifests := skillsarchive.BuildManifests(entries, platform, "local-agent")
+	if len(manifests) == 0 {
+		return "", nil
+	}
+	data, err := json.MarshalIndent(manifests[0], "", "  ")
+	if err != nil {
+		return "", err
+	}
+	content := string(append(data, '\n'))
+	target := filepath.ToSlash(filepath.Join("/skills", bundleName, skillsarchive.ManifestFile))
+	if _, err := c.store.WriteEntry(ctx, c.userID, target, content, "application/json", models.FileTreeWriteOptions{
+		Kind:          "skill_file",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata: map[string]interface{}{
+			"source_platform": platform,
+			"capture_mode":    "agent",
+			"exactness":       "derived",
+			"source_kind":     sourceKind,
+			"source_paths":    bundle.SourcePaths,
+		},
+	}); err != nil {
+		return "", err
+	}
+	return target, nil
 }
 
 func (c *Client) importClaudeConversations(ctx context.Context, platform string, conversations []ClaudeConversation, result *AgentImportResult) error {

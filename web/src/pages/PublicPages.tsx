@@ -7,7 +7,7 @@ import { useI18n } from '../i18n'
 
 const HUB_URL = 'https://www.neudrive.ai'
 const MCP_URL = `${HUB_URL}/mcp`
-const DEFAULT_SEO_DESCRIPTION = 'neuDrive lets Claude, ChatGPT, Cursor, and other AI tools share one memory, file, skill, and vault layer.'
+const DEFAULT_SEO_DESCRIPTION = 'neuDrive is a personal data hub for AI agents, connecting profile, memory, projects, conversations, skills, and vault access.'
 
 type LocalizedText = {
   zh: string
@@ -673,7 +673,7 @@ function PublicFooter() {
       <div className="public-footer-main">
         <div className="public-footer-brand">
           <Link to="/" className="public-brand">neuDrive</Link>
-          <p>{tx('让 Claude、ChatGPT、Cursor 等 AI 工具共用同一份记忆、文件和技能。', 'One shared memory, file, and skill layer for Claude, ChatGPT, Cursor, and other AI tools.')}</p>
+          <p>{tx('让 Claude、ChatGPT、Cursor 等 AI 工具共用同一份个人数据 Hub。', 'One personal data hub for Claude, ChatGPT, Cursor, and other AI tools.')}</p>
           <a className="public-footer-support" href="mailto:support@neudrive.ai">support@neudrive.ai</a>
         </div>
         <nav className="public-footer-columns" aria-label={tx('页脚导航', 'Footer navigation')}>
@@ -716,8 +716,8 @@ function PublicFooter() {
 export function MarketingHomePage() {
   const { tx, isZh } = useI18n()
   useDocumentTitle(
-    tx('别让 AI 工具每次重新认识你 — neuDrive', 'Your AI tools should not have to meet you again every time — neuDrive'),
-    tx('neuDrive 让 Claude、ChatGPT、Cursor 等 AI 工具共用同一份记忆、文件、技能和私密资料中枢。', DEFAULT_SEO_DESCRIPTION),
+    tx('Agent 个人数据 Hub — neuDrive', 'Personal data hub for AI agents — neuDrive'),
+    tx('neuDrive 统一管理 Agent 可使用的 profile、memory、projects、conversations、skills 和 vault 权限。', DEFAULT_SEO_DESCRIPTION),
   )
   const [activeKey, setActiveKey] = useState('claude')
   const [activeHeroPanel, setActiveHeroPanel] = useState<'memory' | 'files' | 'skills'>('memory')
@@ -761,44 +761,44 @@ export function MarketingHomePage() {
   const activeHero = heroPanels[activeHeroPanel]
   const pains = [
     {
-      title: tx('上下文散落', 'Context is scattered'),
-      copy: tx('Claude、ChatGPT、Cursor 各有各的上下文。', 'Claude, ChatGPT, and Cursor each keep separate context.'),
+      title: tx('Agent 数据分散', 'Agent data is scattered'),
+      copy: tx('Claude、ChatGPT、Cursor 各自保存 profile、项目资料和会话。', 'Claude, ChatGPT, and Cursor each keep their own profile, project material, and chats.'),
     },
     {
-      title: tx('记忆不能迁移', 'Memory is not portable'),
-      copy: tx('会话、偏好、项目资料很难迁移和复用。', 'Conversations, preferences, and project notes are hard to reuse.'),
+      title: tx('只同步 Skill 目录不够', 'Syncing skill folders is not enough'),
+      copy: tx('脚本、依赖、项目背景、会话和访问权限也需要被记录。', 'Scripts, dependencies, project background, chats, and access rules also need to be recorded.'),
     },
     {
-      title: tx('私密信息不该到处粘贴', 'Secrets are unsafe to paste'),
-      copy: tx('API Key、账号、私密信息不应该到处复制。', 'API keys, accounts, and private data should not be pasted everywhere.'),
+      title: tx('私密信息需要权限边界', 'Private material needs access rules'),
+      copy: tx('API Key、账号和私密资料应按 Agent 授权访问。', 'API keys, accounts, and private material should be accessed by agent-specific authorization.'),
     },
   ]
   const modules = [
-    { name: tx('记忆', 'Memory'), label: tx('个人偏好 / 项目 / 临时记忆', 'Profile / Projects / Scratch'), copy: tx('保存个人偏好、项目上下文和短期工作记忆。', 'Store profile, project, and scratch working memory.') },
-    { name: tx('文件', 'Files'), label: tx('数据浏览器', 'Data Explorer'), copy: tx('统一管理 AI 可读取的文件、会话和资料。', 'Manage files, conversations, and references your AI can read.') },
-    { name: tx('技能', 'Skills'), label: tx('技能复用', '.skill routing'), copy: tx('接入一次，多个 AI 工具都能复用。', 'Register once and reuse across multiple agents.') },
-    { name: tx('私密数据', 'Private data'), label: tx('访问控制', 'Access control'), copy: tx('决定每个 AI 工具能看到哪些资料。', 'Decide which material each AI tool can see.') },
+    { name: tx('Profile', 'Profile'), label: tx('偏好 / 身份 / 工作方式', 'Preferences / Identity / Work style'), copy: tx('保存 Agent 需要长期记住的个人资料。', 'Store the personal context agents should remember over time.') },
+    { name: tx('Projects', 'Projects'), label: tx('项目上下文 / 会话', 'Project context / Conversations'), copy: tx('统一管理 AI 可读取的项目资料、会话和文件。', 'Manage project material, conversations, and files your AI can read.') },
+    { name: tx('Skills', 'Skills'), label: tx('技能 / 脚本 / 依赖', 'Skills / Scripts / Dependencies'), copy: tx('保存可复用技能，并记录复杂 Skill 的配套资产。', 'Store reusable skills and the assets that complex skills need.') },
+    { name: tx('Vault', 'Vault'), label: tx('访问权限', 'Access rules'), copy: tx('决定每个 Agent 能看到哪些私密资料。', 'Decide which private material each agent can see.') },
   ]
   return (
     <PublicShell>
       <main>
         <section className="public-hero">
           <div className="public-hero-copy">
-            <p className="public-kicker">{tx('AI 资料中枢', 'AI data layer')}</p>
+            <p className="public-kicker">{tx('Agent 个人数据 Hub', 'Personal data hub for agents')}</p>
             <h1 className="public-hero-title">
               {isZh ? (
                 <>
-                  <span>别让 AI 工具</span>
-                  <span>每次重新认识你</span>
+                  <span>把 AI 工作资料</span>
+                  <span>放在你名下</span>
                 </>
               ) : (
-                'Your AI tools should not have to meet you again every time.'
+                'Keep your AI working data under your name.'
               )}
             </h1>
             <p>
               {tx(
-                'neuDrive 统一保存你的会话、项目资料、技能、文件和私密数据，再安全提供给 Claude、ChatGPT、Cursor、Windsurf 等 AI 工具。',
-                'neuDrive stores your conversations, project context, skills, files, and private data in one layer for Claude, ChatGPT, Cursor, Windsurf, and more.',
+                'neuDrive 统一管理 profile、memory、projects、conversations、skills 和 vault 权限，再提供给 Claude、ChatGPT、Cursor、Windsurf 等 AI 工具。',
+                'neuDrive manages profile, memory, projects, conversations, skills, and vault access for Claude, ChatGPT, Cursor, Windsurf, and more.',
               )}
             </p>
             <div className="public-hero-actions">
@@ -806,9 +806,9 @@ export function MarketingHomePage() {
               <a href="#how-it-works" className="btn btn-outline">{tx('查看接入方式', 'See how it works')}</a>
             </div>
             <div className="public-hero-proof" aria-label={tx('产品能力', 'Product capabilities')}>
-              <span>{tx('个人记忆', 'Profile memory')}</span>
-              <span>{tx('访问权限控制', 'Private data control')}</span>
-              <span>{tx('技能复用', 'Skill routing')}</span>
+              <span>{tx('Profile / Memory', 'Profile / Memory')}</span>
+              <span>{tx('Projects / Conversations', 'Projects / Conversations')}</span>
+              <span>{tx('Skills / Vault', 'Skills / Vault')}</span>
             </div>
             <a href="#product" className="public-scroll-cue">
               {tx('看看 neuDrive 怎么工作', 'Explore how the layer works')}
@@ -830,7 +830,7 @@ export function MarketingHomePage() {
               ))}
               <div className="orbit-core">
                 <strong>neuDrive</strong>
-                <span>{tx('记忆 / 文件 / 技能 / 私密数据', 'Memory / Files / Skills / Private data')}</span>
+                <span>{tx('Profile / Memory / Projects / Skills / Vault', 'Profile / Memory / Projects / Skills / Vault')}</span>
               </div>
             </div>
             <div className="hero-window">
@@ -880,7 +880,7 @@ export function MarketingHomePage() {
           <div>
             <span>03</span>
             <strong>{tx('跨工具复用', 'Reuse everywhere')}</strong>
-            <p>{tx('记忆、文件和技能跟着你走，而不是锁在某一个 AI 工具里。', 'Memory, files, and skills follow your workflow instead of staying locked inside one AI tool.')}</p>
+            <p>{tx('profile、memory、projects、skills 和 vault 权限跟着你走，而不是锁在某一个 AI 工具里。', 'Profile, memory, projects, skills, and vault access follow your workflow instead of staying locked inside one AI tool.')}</p>
           </div>
         </section>
 
@@ -903,8 +903,8 @@ export function MarketingHomePage() {
         <section id="product" className="public-band product-split-band">
           <div className="product-story">
             <p className="public-kicker">{tx('产品能力', 'Product')}</p>
-            <h2>{tx('一个地方管理给 AI 使用的资料。', 'One place for your AI working memory.')}</h2>
-            <p>{tx('把偏好、项目资料、会话、文件和技能放在 neuDrive。连接新的 AI 工具时，它可以从同一份资料开始工作。', 'Keep preferences, project material, conversations, files, and skills in neuDrive. When you connect a new AI tool, it can start from the same shared context.')}</p>
+            <h2>{tx('一个 Hub 管理 Agent 可使用的资料。', 'One hub for the data your agents can use.')}</h2>
+            <p>{tx('把 profile、memory、projects、conversations、skills 和 vault 权限放在 neuDrive。连接新的 AI 工具时，它可以从同一份个人数据开始工作。', 'Keep profile, memory, projects, conversations, skills, and vault access in neuDrive. When you connect a new AI tool, it can start from the same personal data hub.')}</p>
           </div>
           <div className="module-board">
             {modules.map((item, index) => (
@@ -1086,7 +1086,7 @@ function PricingSection() {
         <div>
           <p className="public-kicker">{tx('价格', 'Pricing')}</p>
           <h2>{tx('默认年付，省下 50%。', 'Yearly by default. Save 50%.')}</h2>
-          <p>{tx('Free 适合试用和自托管评估。Pro 提供更多存储、自动同步和备份。', 'Free is for trying neuDrive or evaluating self-hosting. Pro adds more storage, auto sync, and backup.')}</p>
+          <p>{tx('Free 适合试用和自托管评估。Pro 提供更多存储、托管同步和自动备份。', 'Free is for trying neuDrive or evaluating self-hosting. Pro adds more storage, hosted sync, and scheduled backup.')}</p>
         </div>
         <Link to="/pricing" className="btn btn-outline">{tx('比较套餐', 'Compare plans')}</Link>
       </div>
@@ -1100,7 +1100,7 @@ function PricingSection() {
           <span className="recommended-chip">{tx('推荐', 'Recommended')}</span>
           <h3>{tx('Pro 年付', 'Pro Yearly')}</h3>
           <div className="pricing-price">{tx('$60 / 年', '$60 / year')}</div>
-          <p>{tx('1 GiB 存储 · 自动同步 · Git 备份 · 优先导入', '1 GiB storage · Auto sync · Git backup · Priority import')}</p>
+          <p>{tx('1 GiB 存储 · 托管同步 · Git 备份 · 优先导入', '1 GiB storage · Hosted sync · Git backup · Priority import')}</p>
           <Link to="/signup?plan=pro_yearly" className="btn btn-primary">{tx('年付 Pro', 'Start Pro yearly')}</Link>
         </article>
         <article className="pricing-public-card">
@@ -1123,7 +1123,7 @@ export function PricingPage() {
   const comparisonRows = [
     [tx('存储空间', 'Storage'), '10 MiB', '1 GiB', '1 GiB'],
     [tx('AI 工具连接', 'AI connections'), tx('不限连接', 'Unlimited'), tx('不限连接', 'Unlimited'), tx('不限连接', 'Unlimited')],
-    [tx('同步方式', 'Sync'), tx('手动同步', 'Manual sync'), tx('自动同步', 'Auto sync'), tx('自动同步', 'Auto sync')],
+    [tx('同步方式', 'Sync'), tx('手动同步', 'Manual sync'), tx('托管同步', 'Hosted sync'), tx('托管同步', 'Hosted sync')],
     [tx('备份', 'Backup'), tx('ZIP 导出', 'ZIP export'), tx('ZIP + Git backup', 'ZIP + Git backup'), tx('ZIP + Git backup', 'ZIP + Git backup')],
     [tx('导入', 'Import'), tx('基础导入', 'Basic import'), tx('优先导入大批量会话', 'Priority large conversation import'), tx('优先导入大批量会话', 'Priority large conversation import')],
     [tx('私密数据控制', 'Private data controls'), tx('基础控制', 'Basic controls'), tx('完整控制', 'Full controls'), tx('完整控制', 'Full controls')],
@@ -1146,8 +1146,8 @@ export function PricingPage() {
     {
       question: tx('是否支持团队？', 'Do you support teams?'),
       answer: tx(
-        '当前公开价格面向个人工作流。团队、企业部署、更高存储、审计和统一管理可以联系我们单独配置。',
-        'The public plans are designed for individual workflows. Teams, enterprise deployment, higher storage, audit, and centralized administration can be arranged with us.',
+        '当前公开价格面向个人工作流。Team Library 可用于小团队共享 Skill、MCP 配置说明、提示词和 AI 使用技巧；企业级组织管理、审计、SSO 和审批流需要单独评估。',
+        'The public plans are designed for individual workflows. Team Library can be used for small-team shared skills, MCP configuration notes, prompts, and AI playbooks; enterprise org management, audit, SSO, and approval workflows require a separate review.',
       ),
     },
     {
@@ -1174,7 +1174,7 @@ export function PricingPage() {
             <div>
               <p className="public-kicker">{tx('年付价值', 'Yearly value')}</p>
               <h2>{tx('年付 Pro 相当于每月 $5。', 'Pro Yearly is effectively $5 per month.')}</h2>
-              <p>{tx('按月一年是 $120，年付是 $60。省下来的 $60 可以覆盖一整年的托管同步、备份和更大的 AI 工作记忆空间。', 'Monthly for a full year is $120; yearly is $60. The $60 saved covers a year of managed sync, backup, and a larger AI working-memory space.')}</p>
+              <p>{tx('按月一年是 $120，年付是 $60。省下来的 $60 可以覆盖一整年的托管同步、自动备份和更大的 AI 工作记忆空间。', 'Monthly for a full year is $120; yearly is $60. The $60 saved covers a year of managed sync, scheduled backup, and a larger AI working-memory space.')}</p>
             </div>
             <div className="pricing-roi-metrics" aria-label={tx('年付节省', 'Yearly savings')}>
               <span>
@@ -1187,7 +1187,7 @@ export function PricingPage() {
               </span>
               <span>
                 <strong>{tx('自动', 'Auto')}</strong>
-                {tx('同步与备份', 'sync and backup')}
+                {tx('托管同步与自动备份', 'hosted sync and scheduled backup')}
               </span>
             </div>
           </div>
@@ -1226,8 +1226,8 @@ export function PricingPage() {
           <article className="pricing-team-card">
             <div>
               <p className="public-kicker">{tx('团队与企业', 'Team and Enterprise')}</p>
-              <h2>{tx('需要共享工作区、审计或更高存储？', 'Need shared workspaces, audit, or higher storage?')}</h2>
-              <p>{tx('我们可以为团队配置更高存储、统一管理、部署支持和安全审查材料。', 'We can configure higher storage, centralized administration, deployment support, and security review materials for teams.')}</p>
+              <h2>{tx('需要团队资料库或更高存储？', 'Need a team library or higher storage?')}</h2>
+              <p>{tx('当前团队能力适合共享 Skill、MCP 配置说明、提示词和 AI 使用技巧。企业级组织管理、审计、SSO 和审批流需要单独评估。', 'The current team capability fits shared skills, MCP configuration notes, prompts, and AI playbooks. Enterprise org management, audit, SSO, and approval workflows require a separate review.')}</p>
             </div>
             <a className="btn btn-primary" href="mailto:support@neudrive.ai?subject=neuDrive%20Team%20or%20Enterprise">{tx('联系团队方案', 'Contact for teams')}</a>
           </article>

@@ -1,9 +1,9 @@
 import { Suspense, lazy, useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import type { EditorView } from '@codemirror/view'
 import { api, type FileNode } from '../../api'
 import { useI18n } from '../../i18n'
-import { fileNamespaceLabel, formatDateTime, isTextLikeFile, sourceLabel } from './DataShared'
+import { dataFileEditorRoute, fileNamespaceLabel, formatDateTime, isTextLikeFile, sourceLabel } from './DataShared'
 import '@uiw/react-markdown-preview/markdown.css'
 
 const WorkbenchCodeEditor = lazy(() => import('./WorkbenchCodeEditor'))
@@ -241,6 +241,8 @@ export default function DataFileEditorPage() {
   const { locale, tx } = useI18n()
   const params = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const teamID = searchParams.get('team') || ''
   const raw = params['*'] || ''
   const path = useMemo(() => {
     const decoded = decodeURIComponent(raw)
@@ -272,7 +274,7 @@ export default function DataFileEditorPage() {
       setError('')
       setSuccess('')
       try {
-        const data = await api.getTree(path)
+        const data = teamID ? await api.getTeamTree(teamID, path) : await api.getTree(path)
         if (!mounted) return
         setNode(data)
         setContent(data.content || '')
@@ -287,7 +289,7 @@ export default function DataFileEditorPage() {
     }
     load()
     return () => { mounted = false }
-  }, [path, tx])
+  }, [path, teamID, tx])
 
   useEffect(() => {
     const onResize = () => {
@@ -303,7 +305,7 @@ export default function DataFileEditorPage() {
     setMobileSplitPane('editor')
     allowNavigationRef.current = false
     setIsEditorReady(false)
-  }, [path])
+  }, [path, teamID])
 
   useEffect(() => {
     if (!isMarkdownFile) setViewMode('write')
@@ -315,7 +317,14 @@ export default function DataFileEditorPage() {
     setError('')
     setSuccess('')
     try {
-      const saved = await api.writeTree(path, {
+      const saved = teamID ? await api.writeTeamTree(teamID, path, {
+        content,
+        mimeType: mimeTypeForPath(path, node.mime_type),
+        isDir: false,
+        metadata: node.metadata,
+        expectedVersion: node.version,
+        expectedChecksum: node.checksum,
+      }) : await api.writeTree(path, {
         content,
         mimeType: mimeTypeForPath(path, node.mime_type),
         isDir: false,
@@ -339,7 +348,7 @@ export default function DataFileEditorPage() {
     } finally {
       setSaving(false)
     }
-  }, [content, node, path, tx])
+  }, [content, node, path, teamID, tx])
 
   const handleRename = useCallback(async () => {
     if (!node) return
@@ -360,15 +369,25 @@ export default function DataFileEditorPage() {
     setError('')
     setSuccess('')
     try {
-      await api.writeTree(nextPath, {
-        content,
-        mimeType: mimeTypeForPath(nextPath, node.mime_type),
-        isDir: false,
-        metadata: node.metadata,
-      })
-      await api.deleteTree(path)
+      if (teamID) {
+        await api.writeTeamTree(teamID, nextPath, {
+          content,
+          mimeType: mimeTypeForPath(nextPath, node.mime_type),
+          isDir: false,
+          metadata: node.metadata,
+        })
+        await api.deleteTeamTree(teamID, path)
+      } else {
+        await api.writeTree(nextPath, {
+          content,
+          mimeType: mimeTypeForPath(nextPath, node.mime_type),
+          isDir: false,
+          metadata: node.metadata,
+        })
+        await api.deleteTree(path)
+      }
       allowNavigationRef.current = true
-      navigate(`/data/files/edit/${encodeURIComponent(nextPath.replace(/^\/+/, ''))}`, { replace: true })
+      navigate(dataFileEditorRoute(nextPath, teamID), { replace: true })
       setEditingTitle(false)
       setSuccess(tx('已重命名', 'Renamed'))
     } catch (err: any) {
@@ -381,7 +400,7 @@ export default function DataFileEditorPage() {
     } finally {
       setSaving(false)
     }
-  }, [content, navigate, node, path, renameName, tx])
+  }, [content, navigate, node, path, renameName, teamID, tx])
 
   // 保存快捷键 Cmd/Ctrl+S
   useEffect(() => {

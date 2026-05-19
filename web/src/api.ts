@@ -224,6 +224,189 @@ export interface SkillSummary {
   min_trust_level?: number;
 }
 
+export type TeamRole = "owner" | "admin" | "member" | "viewer";
+
+export interface Team {
+  id: string;
+  slug: string;
+  name: string;
+  description?: string;
+  role?: TeamRole;
+  can_manage_members: boolean;
+  can_write: boolean;
+  storage_used_bytes?: number;
+  storage_quota_bytes?: number | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface TeamMember {
+  team_id: string;
+  user_id: string;
+  user_slug: string;
+  display_name: string;
+  email?: string;
+  role: TeamRole;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SkillAgentTarget {
+  id: string;
+  name: string;
+  platform: string;
+  install_path_hint?: string;
+  supports_apply: boolean;
+  support_status?: string;
+  apply_mode?: string;
+  export_supported?: boolean;
+  auto_apply_reason?: string;
+  docs_path?: string;
+  directory_rules?: string[];
+}
+
+export interface SkillAgentAssignment {
+  agent_id: string;
+  skill_paths: string[];
+}
+
+export interface SkillAssignmentsState {
+  version: string;
+  scope?: "personal" | "team";
+  team?: Team;
+  storage_path: string;
+  updated_at?: string;
+  agents: SkillAgentTarget[];
+  assignments: SkillAgentAssignment[];
+}
+
+export interface LocalSkillSyncSummary {
+  add: number;
+  update: number;
+  unchanged: number;
+  missing: number;
+  conflict: number;
+  removable: number;
+  export: number;
+  written: number;
+  deleted: number;
+}
+
+export interface LocalSkillSyncChange {
+  action: "add" | "update" | "unchanged" | "missing" | "conflict" | "delete" | "marker" | "export";
+  skill_path?: string;
+  rel_path?: string;
+  target_path?: string;
+  reason?: string;
+  size_bytes?: number;
+}
+
+export interface LocalSkillDetectedRoot {
+  path: string;
+  role?: string;
+  exists: boolean;
+  writable: boolean;
+  is_dir: boolean;
+  message?: string;
+}
+
+export interface LocalSkillSyncAgentPlan {
+  agent_id: string;
+  name: string;
+  target_root?: string;
+  supported: boolean;
+  support_status: string;
+  apply_mode?: string;
+  export_supported: boolean;
+  export_available: boolean;
+  export_file_name?: string;
+  auto_apply_reason?: string;
+  docs_path?: string;
+  directory_rules?: string[];
+  detected_roots?: LocalSkillDetectedRoot[];
+  message?: string;
+  assigned_skill_paths: string[];
+  summary: LocalSkillSyncSummary;
+  changes: LocalSkillSyncChange[];
+  errors?: string[];
+}
+
+export interface LocalSkillSyncResponse {
+  version: string;
+  scope?: "personal" | "team";
+  team?: Team;
+  mode: "preview" | "apply" | "cleanup";
+  applied: boolean;
+  cleanup: boolean;
+  updated_at: string;
+  agents: LocalSkillSyncAgentPlan[];
+}
+
+export interface SkillConversionRequest {
+  source_path: string;
+  source_platform?: "claude-code" | "codex";
+  target_platform: "claude-code" | "codex";
+  target_path?: string;
+  overwrite?: boolean;
+  team_id?: string;
+}
+
+export interface SkillConversionResponse {
+  version: string;
+  scope?: "personal" | "team";
+  team?: Team;
+  applied: boolean;
+  converted_at: string;
+  source_path: string;
+  target_path: string;
+  source_platform: "claude-code" | "codex";
+  target_platform: "claude-code" | "codex";
+  summary: SkillConversionSummary;
+  files: SkillConversionFileChange[];
+  auto_items?: SkillConversionReportItem[];
+  manual_items?: SkillConversionReportItem[];
+  unsupported?: SkillConversionReportItem[];
+  warnings?: SkillConversionReportItem[];
+}
+
+export interface SkillCopyToPersonalResponse {
+  version: string;
+  applied: boolean;
+  copied_at: string;
+  team?: Team;
+  source_path: string;
+  target_path: string;
+  files: number;
+  bytes: number;
+  overwrite: boolean;
+}
+
+export interface SkillConversionSummary {
+  converted: number;
+  copied: number;
+  generated: number;
+  conflicts: number;
+  auto: number;
+  manual: number;
+  warnings: number;
+}
+
+export interface SkillConversionFileChange {
+  action: "convert" | "copy" | "generate" | "conflict";
+  source_path?: string;
+  target_path: string;
+  rel_path: string;
+  reason?: string;
+  size_bytes?: number;
+}
+
+export interface SkillConversionReportItem {
+  code: string;
+  severity: string;
+  path?: string;
+  message: string;
+}
+
 export interface BundleContext {
   kind: "skill" | "project" | "conversation";
   name: string;
@@ -276,6 +459,92 @@ export interface LocalGitSyncInfo {
 export interface RequestEnvelope<T> {
   data: T;
   localGitSync?: LocalGitSyncInfo;
+}
+
+export type OpsStatusLevel = "ok" | "warning" | "critical";
+
+export interface OpsCheck {
+  id: string;
+  status: OpsStatusLevel;
+  message: string;
+  action?: string;
+}
+
+export interface OpsGitMirrorStatus {
+  service_configured: boolean;
+  execution_mode?: "local" | "hosted";
+  hosted_root?: string;
+  hosted_root_set: boolean;
+  remote_url?: string;
+  auto_push_enabled: boolean;
+  sync_state?: string;
+  last_synced_at?: string;
+  last_push_at?: string;
+  last_error?: string;
+  last_push_error?: string;
+  remote_conflict?: boolean;
+  github_app_connected: boolean;
+  github_token_set: boolean;
+}
+
+export interface OpsBackupTargetState {
+  id: string;
+  kind: BackupTargetKind;
+  name: string;
+  enabled: boolean;
+  secret_configured: boolean;
+  auto_backup_enabled?: boolean;
+  auto_backup_interval_hours?: number;
+  retention_keep_last?: number;
+  retention_keep_days?: number;
+  last_auto_backup_at?: string;
+  last_backup_at?: string;
+  last_backup_object?: string;
+  last_backup_error?: string;
+}
+
+export interface OpsBackupRunState {
+  id: string;
+  target_id: string;
+  target_name: string;
+  target_kind: BackupTargetKind;
+  trigger: "manual" | "auto";
+  status: "success" | "failed";
+  object_name?: string;
+  size_bytes: number;
+  started_at: string;
+  completed_at?: string;
+  duration_ms: number;
+  error?: string;
+  remote_deleted_at?: string;
+}
+
+export interface OpsBackupStatus {
+  service_configured: boolean;
+  targets_configured: number;
+  enabled_targets: number;
+  targets_with_secrets: number;
+  targets_with_last_backup: number;
+  history_count: number;
+  last_successful_backup_at?: string;
+  last_backup_object?: string;
+  last_run_status?: string;
+  last_run_at?: string;
+  last_error?: string;
+  targets: OpsBackupTargetState[];
+  recent_runs: OpsBackupRunState[];
+}
+
+export interface OpsStatus {
+  status: OpsStatusLevel;
+  generated_at: string;
+  storage?: string;
+  local_mode: boolean;
+  public_url?: string;
+  git_mirror: OpsGitMirrorStatus;
+  backup: OpsBackupStatus;
+  checks: OpsCheck[];
+  docs: Array<{ title: string; path: string }>;
 }
 
 export interface BillingRedirectDetail {
@@ -704,8 +973,111 @@ export const api = {
     }),
 
   // Skills
-  getSkills: () =>
-    request<{ skills: SkillSummary[] }>("/skills").then((r) => r.skills || []),
+  getSkills: (teamID?: string) =>
+    request<{ skills: SkillSummary[] }>(
+      teamID ? `/skills?team_id=${encodeURIComponent(teamID)}` : "/skills",
+    ).then((r) => r.skills || []),
+  getTeams: () =>
+    request<{ teams: Team[] }>("/teams").then((r) => r.teams || []),
+  createTeam: (params: {
+    slug: string;
+    name: string;
+    description?: string;
+    storageQuotaBytes?: number | null;
+  }) =>
+    request<{ team: Team }>("/teams", {
+      method: "POST",
+      body: JSON.stringify({
+        slug: params.slug,
+        name: params.name,
+        description: params.description || "",
+        storage_quota_bytes: params.storageQuotaBytes ?? null,
+      }),
+    }).then((r) => r.team),
+  getTeamMembers: (teamID: string) =>
+    request<{ members: TeamMember[] }>(`/teams/${encodeURIComponent(teamID)}/members`).then((r) => r.members || []),
+  addTeamMember: (teamID: string, userSlug: string, role: TeamRole) =>
+    request<{ member: TeamMember }>(`/teams/${encodeURIComponent(teamID)}/members`, {
+      method: "POST",
+      body: JSON.stringify({ user_slug: userSlug, role }),
+    }).then((r) => r.member),
+  updateTeamMember: (teamID: string, userID: string, role: TeamRole) =>
+    request<{ member: TeamMember }>(`/teams/${encodeURIComponent(teamID)}/members/${encodeURIComponent(userID)}`, {
+      method: "PUT",
+      body: JSON.stringify({ role }),
+    }).then((r) => r.member),
+  removeTeamMember: (teamID: string, userID: string) =>
+    request<{ status: string }>(`/teams/${encodeURIComponent(teamID)}/members/${encodeURIComponent(userID)}`, {
+      method: "DELETE",
+    }),
+  getTeamSkills: (teamID: string) =>
+    request<{ skills: SkillSummary[] }>(`/teams/${encodeURIComponent(teamID)}/skills`).then((r) => r.skills || []),
+  getSkillAssignments: (teamID?: string) =>
+    request<SkillAssignmentsState>(
+      teamID ? `/skills/assignments?team_id=${encodeURIComponent(teamID)}` : "/skills/assignments",
+    ),
+  saveSkillAssignments: (assignments: SkillAgentAssignment[], teamID?: string) =>
+    requestEnvelope<SkillAssignmentsState>(teamID ? `/skills/assignments?team_id=${encodeURIComponent(teamID)}` : "/skills/assignments", {
+      method: "PUT",
+      body: JSON.stringify({ assignments, team_id: teamID || undefined }),
+    }),
+  previewLocalSkillSync: (teamID?: string) =>
+    request<LocalSkillSyncResponse>("/local/skills/sync/preview", {
+      method: "POST",
+      body: JSON.stringify({ team_id: teamID || undefined }),
+    }),
+  applyLocalSkillSync: (teamID?: string) =>
+    request<LocalSkillSyncResponse>("/local/skills/sync/apply", {
+      method: "POST",
+      body: JSON.stringify({ team_id: teamID || undefined }),
+    }),
+  cleanupLocalSkillSync: (teamID?: string) =>
+    request<LocalSkillSyncResponse>("/local/skills/sync/cleanup", {
+      method: "POST",
+      body: JSON.stringify({ team_id: teamID || undefined }),
+    }),
+  downloadLocalSkillSyncExport: async (agentId: string, teamID?: string) => {
+    const token = localStorage.getItem("token");
+    const res = await fetch(`${API_BASE}/local/skills/sync/export`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+      body: JSON.stringify({ agent_id: agentId, team_id: teamID || undefined }),
+    });
+    if (!res.ok) {
+      const err = await buildAPIErrorFromResponse(res)
+      notifyBillingRedirect(err)
+      throw err
+    }
+    const blob = await res.blob();
+    const filename = parseDownloadFilename(
+      res.headers.get("Content-Disposition"),
+      `neudrive-skills-${agentId}.zip`,
+    );
+    triggerBrowserDownload(blob, filename);
+  },
+  previewSkillConversion: (req: SkillConversionRequest) =>
+    request<SkillConversionResponse>("/skills/convert/preview", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+  applySkillConversion: (req: SkillConversionRequest) =>
+    requestEnvelope<SkillConversionResponse>("/skills/convert/apply", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+  copyTeamSkillToPersonal: (teamID: string, sourcePath: string, targetPath?: string, overwrite = false) =>
+    requestEnvelope<SkillCopyToPersonalResponse>("/skills/copy-to-personal", {
+      method: "POST",
+      body: JSON.stringify({
+        team_id: teamID,
+        source_path: sourcePath,
+        target_path: targetPath || undefined,
+        overwrite,
+      }),
+    }),
 
   // File tree
   getTree: (path = "/"): Promise<FileNode> => {
@@ -736,9 +1108,41 @@ export const api = {
     );
     triggerBrowserDownload(blob, filename);
   },
+  downloadTeamTreeZip: async (teamID: string, path: string) => {
+    const normalized = path.startsWith("/") ? path : `/${path}`;
+    const token = localStorage.getItem("token");
+    const fallbackName = `${normalized.split("/").filter(Boolean).slice(-1)[0] || "root"}.zip`;
+    const res = await fetch(
+      `${API_BASE}/teams/${encodeURIComponent(teamID)}/tree/archive?path=${encodeURIComponent(normalized)}`,
+      {
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      },
+    );
+    if (!res.ok) {
+      const err = await buildAPIErrorFromResponse(res)
+      notifyBillingRedirect(err)
+      throw err
+    }
+    const blob = await res.blob();
+    const filename = parseDownloadFilename(
+      res.headers.get("Content-Disposition"),
+      fallbackName,
+    );
+    triggerBrowserDownload(blob, filename);
+  },
   getTreeSnapshot: (path = "/"): Promise<TreeSnapshotResponse> =>
     request<TreeSnapshotResponse>(
       `/tree/snapshot?path=${encodeURIComponent(path)}`,
+    ),
+  getTeamTree: (teamID: string, path = "/"): Promise<FileNode> => {
+    const normalized = path.startsWith("/") ? path : `/${path}`;
+    return request<FileNode>(`/teams/${encodeURIComponent(teamID)}/tree${normalized}`);
+  },
+  getTeamTreeSnapshot: (teamID: string, path = "/"): Promise<TreeSnapshotResponse> =>
+    request<TreeSnapshotResponse>(
+      `/teams/${encodeURIComponent(teamID)}/tree/snapshot?path=${encodeURIComponent(path)}`,
     ),
 
   search: (
@@ -793,9 +1197,43 @@ export const api = {
       body: JSON.stringify(body),
     });
   },
+  writeTeamTree: (
+    teamID: string,
+    path: string,
+    params: {
+      content: string;
+      mimeType?: string;
+      isDir?: boolean;
+      metadata?: Record<string, any>;
+      expectedVersion?: number;
+      expectedChecksum?: string;
+      minTrustLevel?: number;
+    },
+  ): Promise<FileNode> => {
+    const normalized = path.startsWith("/") ? path : `/${path}`;
+    const body = {
+      content: params.content,
+      mime_type: params.mimeType || "text/plain",
+      is_dir: params.isDir || false,
+      metadata: params.metadata,
+      expected_version: params.expectedVersion,
+      expected_checksum: params.expectedChecksum,
+      min_trust_level: params.minTrustLevel,
+    };
+    return request<FileNode>(`/teams/${encodeURIComponent(teamID)}/tree${normalized}`, {
+      method: "PUT",
+      body: JSON.stringify(body),
+    });
+  },
   deleteTree: (path: string): Promise<{ status: string; path: string }> => {
     const normalized = path.startsWith("/") ? path : `/${path}`;
     return request<{ status: string; path: string }>(`/tree${normalized}`, {
+      method: "DELETE",
+    });
+  },
+  deleteTeamTree: (teamID: string, path: string): Promise<{ status: string; path: string }> => {
+    const normalized = path.startsWith("/") ? path : `/${path}`;
+    return request<{ status: string; path: string }>(`/teams/${encodeURIComponent(teamID)}/tree${normalized}`, {
       method: "DELETE",
     });
   },
@@ -821,10 +1259,10 @@ export const api = {
   requestEnvelope,
 
   // Import / Export
-  importSkills: (skills: SkillFile[]) =>
-    request<ImportResult>("/import/skills", {
+  importSkills: (skills: SkillFile[], teamID?: string) =>
+    request<ImportResult>(teamID ? `/import/skills?team_id=${encodeURIComponent(teamID)}` : "/import/skills", {
       method: "POST",
-      body: JSON.stringify({ skills }),
+      body: JSON.stringify({ skills, team_id: teamID || undefined }),
     }),
   importClaudeMemory: (memories: ClaudeMemoryItem[]) =>
     request<ImportResult>("/import/claude-memory", {
@@ -912,11 +1350,13 @@ export const api = {
     categories: Record<string, string[]>;
     bundles: Record<string, string[]>;
   }> => request("/tokens/scopes"),
-  uploadSkillsZip: (file: File) => {
+  uploadSkillsZip: (file: File, teamID?: string) => {
     const formData = new FormData();
     formData.append("file", file);
+    if (teamID) formData.append("team_id", teamID);
     const token = localStorage.getItem("token");
-    return fetch(`${API_BASE}/import/skills`, {
+    const query = teamID ? `?team_id=${encodeURIComponent(teamID)}` : "";
+    return fetch(`${API_BASE}/import/skills${query}`, {
       method: "POST",
       headers: {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -928,7 +1368,8 @@ export const api = {
         notifyBillingRedirect(err)
         throw err
       }
-      return res.json() as Promise<ImportResult>;
+      const payload = await res.json();
+      return (payload && payload.ok === true && payload.data !== undefined ? payload.data : payload) as ImportResult;
     });
   },
 
@@ -1101,6 +1542,9 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  getOpsStatus: (): Promise<OpsStatus> =>
+    request<OpsStatus>("/ops/status"),
+
   testGitMirrorGitHubTokenGeneric: (
     req: GitMirrorGitHubTestRequest,
   ): Promise<GitMirrorGitHubTestResult> =>
@@ -1146,6 +1590,46 @@ export const api = {
           body: JSON.stringify({}),
         },
       ),
+
+  listBackupTargets: (): Promise<BackupTarget[]> =>
+    request<BackupTarget[]>("/backup/targets"),
+
+  saveBackupTarget: (req: SaveBackupTargetRequest): Promise<BackupTarget> =>
+    request<BackupTarget>("/backup/targets", {
+      method: "POST",
+      body: JSON.stringify(req),
+    }),
+
+  runBackupTarget: (id: string): Promise<BackupRunResult> =>
+    request<BackupRunResult>(`/backup/targets/${encodeURIComponent(id)}/run`, {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  listBackupRuns: (limit = 20): Promise<BackupRun[]> =>
+    request<BackupRun[]>(`/backup/runs?limit=${encodeURIComponent(String(limit))}`),
+
+  previewBackupRestore: (file: File): Promise<BackupRestorePreview> => {
+    const form = new FormData();
+    form.append("file", file);
+    return request<BackupRestorePreview>("/backup/restore/preview", {
+      method: "POST",
+      body: form,
+    });
+  },
+
+  applyBackupRestore: (
+    file: File,
+    mode: "skip" | "overwrite",
+  ): Promise<BackupRestoreApplyResult> => {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("mode", mode);
+    return request<BackupRestoreApplyResult>("/backup/restore/apply", {
+      method: "POST",
+      body: form,
+    });
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -1196,8 +1680,67 @@ export interface FullHubExport {
 export interface ImportResult {
   imported: number;
   skipped: number;
+  manifest_files?: number;
   errors?: string[];
   skills?: string[];
+  skill_manifests?: SkillManifest[];
+  warnings?: SkillManifestWarning[];
+}
+
+export interface ExternalSkillAssetUploadResult {
+  skill_name: string;
+  path: string;
+  manifest: SkillManifest;
+  warnings?: SkillManifestWarning[];
+}
+
+export interface SkillManifest {
+  version: string;
+  skill_name: string;
+  entry_file: string;
+  source_platform?: string;
+  source_archive?: string;
+  files: SkillManifestFile[];
+  external_references?: SkillExternalReference[];
+  env_vars?: string[];
+  supported_platforms?: string[];
+  warnings?: SkillManifestWarning[];
+  summary: SkillManifestSummary;
+}
+
+export interface SkillManifestFile {
+  path: string;
+  kind: string;
+  size_bytes: number;
+  content_type?: string;
+  sha256?: string;
+  included: boolean;
+}
+
+export interface SkillExternalReference {
+  path: string;
+  source_file: string;
+  scope: string;
+  included: boolean;
+  status: string;
+}
+
+export interface SkillManifestWarning {
+  code: string;
+  severity: string;
+  path?: string;
+  message: string;
+}
+
+export interface SkillManifestSummary {
+  files: number;
+  scripts: number;
+  dependency_files: number;
+  resources: number;
+  binary_files: number;
+  large_files: number;
+  secret_risk_files: number;
+  external_references: number;
 }
 
 export interface LocalPlatformPreviewCategory {
@@ -1496,6 +2039,120 @@ export interface GitMirrorGitHubTestResult {
   normalized_remote_url?: string;
   permission?: string;
   message?: string;
+}
+
+export type BackupTargetKind = "webdav" | "s3";
+
+export interface BackupTarget {
+  id: string;
+  kind: BackupTargetKind;
+  name: string;
+  enabled: boolean;
+  webdav_url?: string;
+  webdav_username?: string;
+  s3_endpoint?: string;
+  s3_bucket?: string;
+  s3_region?: string;
+  s3_prefix?: string;
+  s3_access_key_id?: string;
+  s3_path_style?: boolean;
+  secret_configured: boolean;
+  auto_backup_enabled?: boolean;
+  auto_backup_interval_hours?: number;
+  retention_keep_last?: number;
+  retention_keep_days?: number;
+  last_auto_backup_at?: string;
+  last_backup_at?: string;
+  last_backup_object?: string;
+  last_backup_error?: string;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface SaveBackupTargetRequest {
+  id?: string;
+  kind: BackupTargetKind;
+  name: string;
+  enabled: boolean;
+  webdav_url?: string;
+  webdav_username?: string;
+  webdav_password?: string;
+  s3_endpoint?: string;
+  s3_bucket?: string;
+  s3_region?: string;
+  s3_prefix?: string;
+  s3_access_key_id?: string;
+  s3_secret_access_key?: string;
+  s3_path_style?: boolean;
+  auto_backup_enabled?: boolean;
+  auto_backup_interval_hours?: number;
+  retention_keep_last?: number;
+  retention_keep_days?: number;
+}
+
+export interface BackupRunResult {
+  target: BackupTarget;
+  run: BackupRun;
+  object_name: string;
+  location: string;
+  size_bytes: number;
+  completed_at: string;
+  message?: string;
+}
+
+export interface BackupRun {
+  id: string;
+  target_id: string;
+  target_name: string;
+  target_kind: BackupTargetKind;
+  trigger: "manual" | "auto";
+  status: "success" | "failed";
+  object_name?: string;
+  location?: string;
+  size_bytes: number;
+  started_at: string;
+  completed_at?: string;
+  duration_ms: number;
+  error?: string;
+  remote_deleted_at?: string;
+  remote_delete_error?: string;
+}
+
+export interface BackupRestoreCategory {
+  id: string;
+  label: string;
+  files: number;
+  bytes: number;
+}
+
+export interface BackupRestorePreview {
+  recognized: boolean;
+  file_name?: string;
+  size_bytes: number;
+  total_files: number;
+  total_bytes: number;
+  categories: BackupRestoreCategory[];
+  warnings?: string[];
+}
+
+export interface BackupRestoreAppliedEntry {
+  path: string;
+  zip_path: string;
+  category: string;
+  action: "created" | "overwritten" | "skipped" | "error";
+  bytes: number;
+  error?: string;
+}
+
+export interface BackupRestoreApplyResult {
+  recognized: boolean;
+  mode: "skip" | "overwrite";
+  applied: number;
+  skipped: number;
+  overwritten: number;
+  errors?: string[];
+  warnings?: string[];
+  entries: BackupRestoreAppliedEntry[];
 }
 
 // ---------------------------------------------------------------------------

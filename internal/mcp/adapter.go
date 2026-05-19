@@ -131,7 +131,14 @@ type MCPServer struct {
 	Dashboard    *services.DashboardService
 	Import       *services.ImportService
 	Token        *services.TokenService
+	Team         *services.TeamService
 	LocalGitSync *localgitsync.Service
+}
+
+type dataScope struct {
+	Name   string
+	UserID uuid.UUID
+	Team   *models.Team
 }
 
 func (s *MCPServer) writeSource() string {
@@ -156,6 +163,53 @@ func (s *MCPServer) writeHints(args map[string]interface{}) (context.Context, st
 		effective = normalized
 	}
 	return services.ContextWithSource(context.Background(), effective), services.NormalizeSource(source), services.NormalizeSource(platform)
+}
+
+func (s *MCPServer) dataScope(args map[string]interface{}, requireWrite bool) (dataScope, error) {
+	scopeArg := firstMCPStringArg(args, "data_scope", "scope")
+	scopeArg = strings.TrimSpace(strings.ToLower(scopeArg))
+	teamIdentifier := firstMCPStringArg(args, "team_id", "team", "team_slug")
+	if scopeArg != "team" && teamIdentifier == "" {
+		return dataScope{Name: "personal", UserID: s.UserID}, nil
+	}
+	if s.Team == nil {
+		return dataScope{}, fmt.Errorf("team service not configured")
+	}
+	if teamIdentifier == "" {
+		return dataScope{}, fmt.Errorf("team_id or team slug is required when scope=team")
+	}
+	var (
+		team *models.Team
+		err  error
+	)
+	if teamID, parseErr := uuid.Parse(teamIdentifier); parseErr == nil {
+		team, err = s.Team.GetForUser(context.Background(), s.UserID, teamID)
+	} else {
+		team, err = s.Team.GetBySlugForUser(context.Background(), s.UserID, teamIdentifier)
+	}
+	if err != nil {
+		return dataScope{}, fmt.Errorf("team %q not found or not accessible", teamIdentifier)
+	}
+	if requireWrite && !team.CanWrite {
+		return dataScope{}, fmt.Errorf("current team role cannot write files")
+	}
+	return dataScope{Name: "team", UserID: team.HubUserID, Team: team}, nil
+}
+
+func firstMCPStringArg(args map[string]interface{}, keys ...string) string {
+	for _, key := range keys {
+		if value, ok := args[key].(string); ok && strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
+}
+
+func (s *MCPServer) appendScopedLocalGitSyncMessage(ctx context.Context, scope dataScope, result string) string {
+	if scope.Name == "team" {
+		return result
+	}
+	return s.appendLocalGitSyncMessage(ctx, result)
 }
 
 func (s *MCPServer) appendLocalGitSyncMessage(ctx context.Context, result string) string {
@@ -252,11 +306,20 @@ func (s *MCPServer) getTools() []MCPTool {
 		},
 		{
 			Name:        "search_memory",
-			Description: "全文搜索记忆、项目和技能资料",
+			Description: "全文搜索记忆、项目和技能资料；传 data_scope=team 和 team_id/team 可搜索团队 Hub",
 			InputSchema: jsonSchema(map[string]interface{}{
-				"query": prop("string", "搜索关键词"),
-				"scope": prop("string", "搜索范围: memory, projects, skills, all (默认 all)"),
+				"query":      prop("string", "搜索关键词"),
+				"scope":      prop("string", "搜索范围: memory, projects, skills, all, team (默认 all；team 表示团队文件目录)"),
+				"data_scope": prop("string", "数据范围: personal 或 team (默认 personal)"),
+				"team_id":    prop("string", "团队 ID（data_scope=team 时使用）"),
+				"team":       prop("string", "团队 slug（data_scope=team 时可替代 team_id）"),
+				"team_scope": prop("string", "团队内搜索范围: all, skills, team (默认 all)"),
 			}, "query"),
+		},
+		{
+			Name:        "list_teams",
+			Description: "列出当前账号可访问的团队，用于后续 MCP 工具选择 team scope",
+			InputSchema: jsonSchema(map[string]interface{}{}),
 		},
 		{
 			Name:        "list_projects",
@@ -293,24 +356,33 @@ func (s *MCPServer) getTools() []MCPTool {
 		},
 		{
 			Name:        "list_directory",
-			Description: "列出文件树中的目录内容",
+			Description: "列出文件树中的目录内容；传 scope=team 和 team_id/team 可读取团队 Hub",
 			InputSchema: jsonSchema(map[string]interface{}{
-				"path": prop("string", "目录路径 (如 /skills, /memory)"),
+				"path":    prop("string", "目录路径 (如 /skills, /memory, /team/mcp)"),
+				"scope":   prop("string", "数据范围: personal 或 team (默认 personal)"),
+				"team_id": prop("string", "团队 ID（scope=team 时使用）"),
+				"team":    prop("string", "团队 slug（scope=team 时可替代 team_id）"),
 			}, "path"),
 		},
 		{
 			Name:        "read_file",
-			Description: "读取文件树中的文件",
+			Description: "读取文件树中的文件；传 scope=team 和 team_id/team 可读取团队 Hub",
 			InputSchema: jsonSchema(map[string]interface{}{
-				"path": prop("string", "文件路径"),
+				"path":    prop("string", "文件路径"),
+				"scope":   prop("string", "数据范围: personal 或 team (默认 personal)"),
+				"team_id": prop("string", "团队 ID（scope=team 时使用）"),
+				"team":    prop("string", "团队 slug（scope=team 时可替代 team_id）"),
 			}, "path"),
 		},
 		{
 			Name:        "write_file",
-			Description: "写入文件到文件树；适合单文件修补，不作为单个 skill 的正式导入主路径",
+			Description: "写入文件到文件树；适合单文件修补，不作为单个 skill 的正式导入主路径；传 scope=team 和 team_id/team 可写团队 Hub",
 			InputSchema: jsonSchema(map[string]interface{}{
 				"path":            prop("string", "文件路径"),
 				"content":         prop("string", "文件内容"),
+				"scope":           prop("string", "数据范围: personal 或 team (默认 personal)"),
+				"team_id":         prop("string", "团队 ID（scope=team 时使用）"),
+				"team":            prop("string", "团队 slug（scope=team 时可替代 team_id）"),
 				"source":          prop("string", "来源（可选，建议直接传平台名，如 codex / cursor / chatgpt）"),
 				"source_platform": prop("string", "更具体的平台来源（可选，优先级高于 source）"),
 			}, "path", "content"),
@@ -329,14 +401,21 @@ func (s *MCPServer) getTools() []MCPTool {
 		},
 		{
 			Name:        "list_skills",
-			Description: "列出所有可用技能，包含系统级 portability 手册（如 portability/chatgpt）；当任务涉及平台迁移、all skills、或导入前选工具时，应先用它发现并读取对应手册",
-			InputSchema: jsonSchema(map[string]interface{}{}),
+			Description: "列出可用技能，包含系统级 portability 手册；传 scope=team 和 team_id/team 可列团队 Skill",
+			InputSchema: jsonSchema(map[string]interface{}{
+				"scope":   prop("string", "数据范围: personal 或 team (默认 personal)"),
+				"team_id": prop("string", "团队 ID（scope=team 时使用）"),
+				"team":    prop("string", "团队 slug（scope=team 时可替代 team_id）"),
+			}),
 		},
 		{
 			Name:        "read_skill",
-			Description: "读取技能的 SKILL.md；当用户提到平台迁移、skills 全量导入、或导入前选工具时，应先读取 portability/<platform>，未知平台读取 portability/general",
+			Description: "读取技能的 SKILL.md；传 scope=team 和 team_id/team 可读取团队 Skill",
 			InputSchema: jsonSchema(map[string]interface{}{
-				"name": prop("string", "技能名称"),
+				"name":    prop("string", "技能名称"),
+				"scope":   prop("string", "数据范围: personal 或 team (默认 personal)"),
+				"team_id": prop("string", "团队 ID（scope=team 时使用）"),
+				"team":    prop("string", "团队 slug（scope=team 时可替代 team_id）"),
 			}, "name"),
 		},
 		{
@@ -353,10 +432,13 @@ func (s *MCPServer) getTools() []MCPTool {
 		},
 		{
 			Name:        "import_skill",
-			Description: "导入单个完整 skill 目录（正式主路）；只适合一个 skill 的完整文本/代码文件集。不要用于 all skills、workspace zip、multi-skill 批量迁移，也不要只传 SKILL.md 而忽略 scripts、prompts、config、schemas 或其他依赖文件",
+			Description: "导入单个完整 skill 目录（正式主路）；只适合一个 skill 的完整文本/代码文件集。不要用于 all skills、workspace zip、multi-skill 批量迁移，也不要只传 SKILL.md 而忽略 scripts、prompts、config、schemas 或其他依赖文件。传 scope=team 和 team_id/team 可导入团队 Skill",
 			InputSchema: jsonSchema(map[string]interface{}{
-				"name":  prop("string", "技能名称"),
-				"files": propObject("文件内容 map: {路径: 内容}"),
+				"name":    prop("string", "技能名称"),
+				"files":   propObject("文件内容 map: {路径: 内容}"),
+				"scope":   prop("string", "数据范围: personal 或 team (默认 personal)"),
+				"team_id": prop("string", "团队 ID（scope=team 时使用）"),
+				"team":    prop("string", "团队 slug（scope=team 时可替代 team_id）"),
 			}, "name", "files"),
 		},
 		{
@@ -370,11 +452,14 @@ func (s *MCPServer) getTools() []MCPTool {
 		},
 		{
 			Name:        "import_skills_archive",
-			Description: fmt.Sprintf("导入已知足够小的 skills zip archive；仅适合已经确认能安全放进一次 MCP tool call 的 archive。不要把 all skills、workspace zip、或未知大小的 Claude Web archive 默认塞进这里；Claude Web zip 大于 %s 或大小未知时，不要读取或 base64 化，改用 prepare_skills_upload", claudeWebInlineArchiveMaxZipLabel),
+			Description: fmt.Sprintf("导入已知足够小的 skills zip archive；仅适合已经确认能安全放进一次 MCP tool call 的 archive。不要把 all skills、workspace zip、或未知大小的 Claude Web archive 默认塞进这里；Claude Web zip 大于 %s 或大小未知时，不要读取或 base64 化，改用 prepare_skills_upload。传 scope=team 和 team_id/team 可导入团队 Skill", claudeWebInlineArchiveMaxZipLabel),
 			InputSchema: jsonSchema(map[string]interface{}{
 				"archive_base64": prop("string", fmt.Sprintf("仅用于已经在内存中的小型 zip archive 的 base64 内容。Claude Web zip 大于 %s 或大小未知时，不要为了填这个字段而去读取、cat、或 base64 化大文件，也不要把超长 archive 字符串放进对话", claudeWebInlineArchiveMaxZipLabel)),
 				"archive_name":   prop("string", "归档文件名 (默认 skills.zip)"),
 				"platform":       prop("string", "来源平台 (默认 claude-web)"),
+				"scope":          prop("string", "数据范围: personal 或 team (默认 personal)"),
+				"team_id":        prop("string", "团队 ID（scope=team 时使用）"),
+				"team":           prop("string", "团队 slug（scope=team 时可替代 team_id）"),
 			}, "archive_base64"),
 		},
 		{
@@ -413,7 +498,7 @@ func (s *MCPServer) supportsTool(name string) bool {
 	switch name {
 	case "read_profile", "update_profile", "search_memory", "list_projects", "create_project",
 		"get_project", "log_action", "list_directory", "read_file", "write_file",
-		"list_secrets", "read_secret", "list_skills", "read_skill", "get_stats", "save_memory",
+		"list_secrets", "read_secret", "list_skills", "read_skill", "list_teams", "get_stats", "save_memory",
 		"import_skill", "import_skills_archive", "create_sync_token", "prepare_skills_upload", "import_claude_memory":
 	default:
 		return false
@@ -425,6 +510,8 @@ func (s *MCPServer) supportsTool(name string) bool {
 		return s.FileTree != nil
 	case "list_projects", "create_project", "get_project", "log_action":
 		return s.Project != nil
+	case "list_teams":
+		return s.Team != nil
 	case "list_secrets", "read_secret":
 		return s.Vault != nil
 	case "get_stats":
@@ -454,6 +541,7 @@ func (s *MCPServer) toolAllowed(name string) bool {
 		"read_secret":           models.ScopeReadVault,
 		"list_skills":           models.ScopeReadSkills,
 		"read_skill":            models.ScopeReadSkills,
+		"list_teams":            models.ScopeReadTree,
 		"get_stats":             models.ScopeReadProfile,
 		"save_memory":           models.ScopeWriteMemory,
 		"import_skill":          models.ScopeWriteSkills,
@@ -515,27 +603,46 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 
 	case "search_memory":
 		query, _ := args["query"].(string)
-		scope, _ := args["scope"].(string)
-		if scope == "" {
-			scope = "all"
+		scopeArgs := args
+		if firstMCPStringArg(args, "data_scope") == "" && firstMCPStringArg(args, "team_id", "team", "team_slug") == "" {
+			scopeArgs = map[string]interface{}{}
+		}
+		scopeTarget, err := s.dataScope(scopeArgs, false)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		searchScope, _ := args["scope"].(string)
+		if strings.TrimSpace(searchScope) == "" {
+			searchScope = "all"
+		}
+		if scopeTarget.Name == "team" {
+			if teamScope, _ := args["team_scope"].(string); strings.TrimSpace(teamScope) != "" {
+				searchScope = teamScope
+			}
 		}
 
 		var results []interface{}
 		prefixes := []string{}
-		switch scope {
+		switch strings.ToLower(strings.TrimSpace(searchScope)) {
 		case "memory":
 			prefixes = []string{"/memory", "/identity"}
 		case "projects":
 			prefixes = []string{"/projects"}
 		case "skills":
 			prefixes = []string{"/skills"}
+		case "team":
+			prefixes = []string{"/team"}
 		default:
-			prefixes = []string{"/memory", "/identity", "/projects", "/skills"}
+			if scopeTarget.Name == "team" {
+				prefixes = []string{"/skills", "/team"}
+			} else {
+				prefixes = []string{"/memory", "/identity", "/projects", "/skills"}
+			}
 		}
 
 		seen := make(map[string]bool)
 		for _, prefix := range prefixes {
-			entries, err := s.FileTree.Search(ctx, s.UserID, query, s.TrustLevel, prefix)
+			entries, err := s.FileTree.Search(ctx, scopeTarget.UserID, query, s.TrustLevel, prefix)
 			if err != nil {
 				return fmt.Sprintf("error searching %s: %v", prefix, err), true
 			}
@@ -560,6 +667,14 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 			return "no results found", false
 		}
 		result, _ := json.MarshalIndent(results, "", "  ")
+		return string(result), false
+
+	case "list_teams":
+		teams, err := s.Team.ListForUser(ctx, s.UserID)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		result, _ := json.MarshalIndent(teams, "", "  ")
 		return string(result), false
 
 	case "list_projects":
@@ -621,11 +736,15 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 		return s.appendLocalGitSyncMessage(ctx, "log entry added"), false
 
 	case "list_directory":
+		scopeTarget, err := s.dataScope(args, false)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
 		path, _ := args["path"].(string)
 		if isHiddenMCPPath(path) {
 			return fmt.Sprintf("error: path %q is not available on the public MCP surface", path), true
 		}
-		entries, err := s.FileTree.List(ctx, s.UserID, path, s.TrustLevel)
+		entries, err := s.FileTree.List(ctx, scopeTarget.UserID, path, s.TrustLevel)
 		if err != nil {
 			return fmt.Sprintf("error: %v", err), true
 		}
@@ -644,11 +763,15 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 		return string(result), false
 
 	case "read_file":
+		scopeTarget, err := s.dataScope(args, false)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
 		path, _ := args["path"].(string)
 		if isHiddenMCPPath(path) {
 			return fmt.Sprintf("error: path %q is not available on the public MCP surface", path), true
 		}
-		entry, err := s.FileTree.Read(ctx, s.UserID, path, s.TrustLevel)
+		entry, err := s.FileTree.Read(ctx, scopeTarget.UserID, path, s.TrustLevel)
 		if err != nil {
 			return fmt.Sprintf("error: %v", err), true
 		}
@@ -656,6 +779,10 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 		return entry.Content, false
 
 	case "write_file":
+		scopeTarget, err := s.dataScope(args, true)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
 		writeCtx, source, sourcePlatform := s.writeHints(args)
 		path, _ := args["path"].(string)
 		if isHiddenMCPPath(path) {
@@ -664,13 +791,13 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 		content, _ := args["content"].(string)
 		metadata := services.WithSourceMetadata(nil, source)
 		metadata = services.WithSourcePlatformMetadata(metadata, sourcePlatform)
-		if _, err := s.FileTree.WriteEntry(writeCtx, s.UserID, path, content, "text/markdown", models.FileTreeWriteOptions{
+		if _, err := s.FileTree.WriteEntry(writeCtx, scopeTarget.UserID, path, content, "text/markdown", models.FileTreeWriteOptions{
 			Metadata:      metadata,
 			MinTrustLevel: s.TrustLevel,
 		}); err != nil {
 			return fmt.Sprintf("error: %v", err), true
 		}
-		return s.appendLocalGitSyncMessage(ctx, "file written"), false
+		return s.appendScopedLocalGitSyncMessage(ctx, scopeTarget, "file written"), false
 
 	case "list_secrets":
 		scopes, err := s.Vault.ListScopes(ctx, s.UserID, s.TrustLevel)
@@ -689,7 +816,11 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 		return string(data), false
 
 	case "list_skills":
-		entries, err := s.FileTree.ListSkillSummaries(ctx, s.UserID, s.TrustLevel)
+		scopeTarget, err := s.dataScope(args, false)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		entries, err := s.FileTree.ListSkillSummaries(ctx, scopeTarget.UserID, s.TrustLevel)
 		if err != nil {
 			return fmt.Sprintf("error: %v", err), true
 		}
@@ -697,9 +828,13 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 		return string(result), false
 
 	case "read_skill":
+		scopeTarget, err := s.dataScope(args, false)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
 		name, _ := args["name"].(string)
 		path := fmt.Sprintf("/skills/%s/SKILL.md", name)
-		entry, err := s.FileTree.Read(ctx, s.UserID, path, s.TrustLevel)
+		entry, err := s.FileTree.Read(ctx, scopeTarget.UserID, path, s.TrustLevel)
 		if err != nil {
 			return fmt.Sprintf("error: %v", err), true
 		}
@@ -755,19 +890,27 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 		return s.appendLocalGitSyncMessage(ctx, fmt.Sprintf("saved %d memories: %s", len(saved), strings.Join(saved, ", "))), false
 
 	case "import_skill":
+		scopeTarget, err := s.dataScope(args, true)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
 		name, _ := args["name"].(string)
 		filesRaw, _ := args["files"].(map[string]interface{})
 		files := make(map[string]string)
 		for k, v := range filesRaw {
 			files[k], _ = v.(string)
 		}
-		count, err := s.Import.ImportSkill(ctx, s.UserID, name, files)
+		count, err := s.Import.ImportSkill(ctx, scopeTarget.UserID, name, files)
 		if err != nil {
 			return fmt.Sprintf("error: %v", err), true
 		}
-		return s.appendLocalGitSyncMessage(ctx, fmt.Sprintf("imported %d files for skill %q", count, name)), false
+		return s.appendScopedLocalGitSyncMessage(ctx, scopeTarget, fmt.Sprintf("imported %d files for skill %q", count, name)), false
 
 	case "import_skills_archive":
+		scopeTarget, err := s.dataScope(args, true)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
 		archiveBase64, _ := args["archive_base64"].(string)
 		archiveBase64 = strings.TrimSpace(archiveBase64)
 		if archiveBase64 == "" {
@@ -796,12 +939,12 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 			platform = "claude-web"
 		}
 
-		result, err := s.Import.ImportSkillsArchive(ctx, s.UserID, archiveData, platform, archiveName)
+		result, err := s.Import.ImportSkillsArchive(ctx, scopeTarget.UserID, archiveData, platform, archiveName)
 		if err != nil {
 			return fmt.Sprintf("error: %v", err), true
 		}
 		payload, _ := json.MarshalIndent(result, "", "  ")
-		return s.appendLocalGitSyncMessage(ctx, string(payload)), false
+		return s.appendScopedLocalGitSyncMessage(ctx, scopeTarget, string(payload)), false
 
 	case "create_sync_token":
 		if len(s.Scopes) > 0 && !models.HasScope(s.Scopes, models.ScopeAdmin) {
@@ -937,7 +1080,7 @@ func (s *MCPServer) isKnownTool(name string) bool {
 	switch name {
 	case "read_profile", "update_profile", "search_memory", "list_projects", "create_project",
 		"get_project", "log_action", "list_directory", "read_file", "write_file",
-		"list_secrets", "read_secret", "list_skills", "read_skill", "get_stats", "save_memory",
+		"list_secrets", "read_secret", "list_skills", "read_skill", "list_teams", "get_stats", "save_memory",
 		"import_skill", "import_skills_archive", "create_sync_token", "prepare_skills_upload", "import_claude_memory":
 		return true
 	default:

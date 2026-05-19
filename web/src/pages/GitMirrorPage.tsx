@@ -1,9 +1,17 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   api,
+  type BackupRun,
+  type BackupRestoreApplyResult,
+  type BackupRestorePreview,
+  type BackupRunResult,
+  type BackupTarget,
+  type BackupTargetKind,
   type GitMirrorGitHubTestResult,
   type GitMirrorSettings,
+  type OpsStatus,
   type PublicConfig,
+  type SaveBackupTargetRequest,
   type UpdateGitMirrorRequest,
 } from '../api'
 import { useI18n } from '../i18n'
@@ -20,6 +28,20 @@ type AuthHelp = {
 const DEFAULT_AUTH_MODE: AuthMode = 'local_credentials'
 const DEFAULT_REMOTE_NAME = 'origin'
 const DEFAULT_REMOTE_BRANCH = 'main'
+const GITHUB_APP_PERMISSION_UPDATE_REQUIRED_CODE = 'github_app_permission_update_required'
+
+function defaultBackupDraft(): SaveBackupTargetRequest {
+  return {
+    kind: 'webdav',
+    name: 'WebDAV backup',
+    enabled: true,
+    s3_path_style: true,
+    auto_backup_enabled: false,
+    auto_backup_interval_hours: 24,
+    retention_keep_last: 0,
+    retention_keep_days: 0,
+  }
+}
 
 function githubRepoLabel(remoteURL?: string) {
   const value = (remoteURL || '').trim()
@@ -61,6 +83,26 @@ function delay(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms))
 }
 
+function isGitHubAppPermissionUpdateRequiredError(err: any) {
+  const message = String(err?.message || '')
+  return err?.code === GITHUB_APP_PERMISSION_UPDATE_REQUIRED_CODE ||
+    /Repository Administration/i.test(message) ||
+    /Resource not accessible by integration/i.test(message)
+}
+
+function formatBytes(value: number | undefined, locale: 'zh-CN' | 'en') {
+  const bytes = Number(value || 0)
+  if (!Number.isFinite(bytes) || bytes <= 0) return locale === 'zh-CN' ? '0 字节' : '0 bytes'
+  const units = locale === 'zh-CN' ? ['字节', 'KB', 'MB', 'GB'] : ['bytes', 'KB', 'MB', 'GB']
+  let current = bytes
+  let unitIndex = 0
+  while (current >= 1024 && unitIndex < units.length - 1) {
+    current /= 1024
+    unitIndex += 1
+  }
+  return `${current >= 10 || unitIndex === 0 ? current.toFixed(0) : current.toFixed(1)} ${units[unitIndex]}`
+}
+
 function PencilIcon() {
   return (
     <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -90,6 +132,7 @@ export default function GitMirrorPage() {
   const [error, setError] = useState('')
   const [message, setMessage] = useState('')
   const [githubAppError, setGithubAppError] = useState('')
+  const [githubAppReauthRequired, setGithubAppReauthRequired] = useState(false)
   const [authMode, setAuthMode] = useState<AuthMode>(DEFAULT_AUTH_MODE)
   const [authHelpOpen, setAuthHelpOpen] = useState(false)
   const [remoteURL, setRemoteURL] = useState('')
@@ -97,6 +140,22 @@ export default function GitMirrorPage() {
   const [tokenInput, setTokenInput] = useState('')
   const [tokenEditing, setTokenEditing] = useState(false)
   const [tokenTest, setTokenTest] = useState<GitMirrorGitHubTestResult | null>(null)
+  const [backupTargets, setBackupTargets] = useState<BackupTarget[]>([])
+  const [backupRuns, setBackupRuns] = useState<BackupRun[]>([])
+  const [backupDraft, setBackupDraft] = useState<SaveBackupTargetRequest>(() => defaultBackupDraft())
+  const [backupSaving, setBackupSaving] = useState(false)
+  const [backupRunningID, setBackupRunningID] = useState('')
+  const [backupError, setBackupError] = useState('')
+  const [backupMessage, setBackupMessage] = useState('')
+  const [backupResult, setBackupResult] = useState<BackupRunResult | null>(null)
+  const [restoreFile, setRestoreFile] = useState<File | null>(null)
+  const [restorePreview, setRestorePreview] = useState<BackupRestorePreview | null>(null)
+  const [restoreMode, setRestoreMode] = useState<'skip' | 'overwrite'>('skip')
+  const [restoreApplyResult, setRestoreApplyResult] = useState<BackupRestoreApplyResult | null>(null)
+  const [restorePreviewing, setRestorePreviewing] = useState(false)
+  const [restoreApplying, setRestoreApplying] = useState(false)
+  const [restoreError, setRestoreError] = useState('')
+  const [opsStatus, setOpsStatus] = useState<OpsStatus | null>(null)
   const [syncRetryUntil, setSyncRetryUntil] = useState(0)
   const [nowTick, setNowTick] = useState(Date.now())
 
@@ -104,19 +163,28 @@ export default function GitMirrorPage() {
     setBusy(true)
     setError('')
     try {
-      const [settings, config] = await Promise.all([
+      const [settings, config, targets, runs, ops] = await Promise.all([
         api.getGitMirror(),
         api.getPublicConfig().catch(() => ({} as PublicConfig)),
+        api.listBackupTargets().catch(() => [] as BackupTarget[]),
+        api.listBackupRuns(20).catch(() => [] as BackupRun[]),
+        api.getOpsStatus().catch(() => null as OpsStatus | null),
       ])
       const nextExecutionMode = settings.execution_mode || config.git_mirror_execution_mode || 'hosted'
       setMirror(settings)
       setPublicConfig(config)
+      if (settings.github_app_user_connected) {
+        setGithubAppReauthRequired(false)
+      }
       setAuthMode(authModeForExecution(settings.auth_mode, nextExecutionMode, settings.github_token_configured))
       setRemoteURL(settings.remote_url || '')
       setUrlEditing(!(settings.remote_url || '').trim() && settings.auth_mode !== 'github_app_user')
       setTokenInput('')
       setTokenEditing(!settings.github_token_configured)
       setTokenTest(null)
+      setBackupTargets(targets)
+      setBackupRuns(runs)
+      setOpsStatus(ops)
     } catch (err: any) {
       setError(err.message || tx('加载 GitHub Backup 失败', 'Failed to load GitHub Backup'))
     } finally {
@@ -136,6 +204,7 @@ export default function GitMirrorPage() {
     if (callbackError) {
       setGithubAppError(callbackError)
     } else if (status === 'connected') {
+      setGithubAppReauthRequired(false)
       setMessage(tx('GitHub 已连接。现在可以创建备份仓库。', 'GitHub connected. You can create the backup repository now.'))
     }
     void loadPage()
@@ -220,6 +289,45 @@ export default function GitMirrorPage() {
   const remotePlaceholder = authMode === 'local_credentials'
     ? 'git@github.com:owner/neudrive-backup.git'
     : 'https://github.com/owner/neudrive-backup.git'
+  const storageLabel = publicConfig?.storage === 'postgres'
+    ? tx('Postgres 数据库', 'Postgres database')
+    : publicConfig?.storage === 'sqlite'
+      ? tx('SQLite 本地数据库', 'SQLite local database')
+      : tx('服务端存储', 'Server storage')
+  const storageDetail = publicConfig?.local_mode
+    ? tx('本地模式会把 Hub 内容写入这台机器的 SQLite 数据库。', 'Local mode stores Hub content in this machine’s SQLite database.')
+    : tx('Hosted 模式会把 Hub 内容写入服务端数据库；外部备份需要单独配置。', 'Hosted mode stores Hub content in the server database; external backup must be configured separately.')
+  const mirrorPathLabel = mirror?.path || (isLocalExecution
+    ? tx('还没有创建本地 Git mirror', 'No local Git mirror yet')
+    : tx('Hosted Git working tree', 'Hosted Git working tree'))
+  const backupRepoLabel = githubRepoLabel(remoteRepoURL)
+  const backupRepoLink = githubRepoHref(remoteRepoURL)
+  const latestBackupLabel = mirror?.last_push_at
+    ? formatDateTime(mirror.last_push_at, locale)
+    : mirror?.last_synced_at
+      ? tx(`已写入 Git mirror：${formatDateTime(mirror.last_synced_at, locale)}`, `Written to Git mirror: ${formatDateTime(mirror.last_synced_at, locale)}`)
+      : tx('还没有备份记录', 'No backup record yet')
+  const externalTargetsConfigured = backupTargets.length
+  const externalTargetsWithBackup = backupTargets.filter((target) => target.last_backup_at).length
+  const remoteBackupSummary = remoteRepoURL
+    ? backupRepoLabel || remoteRepoURL
+    : externalTargetsConfigured > 0
+      ? tx(`${externalTargetsConfigured} 个外部目标`, `${externalTargetsConfigured} external target${externalTargetsConfigured === 1 ? '' : 's'}`)
+      : tx('尚未配置', 'Not configured')
+  const opsStatusLabel = opsStatus?.status === 'ok'
+    ? tx('备份状态正常', 'Backup status OK')
+    : opsStatus?.status === 'critical'
+      ? tx('有同步或备份错误', 'Sync or backup error')
+      : tx('备份还需要配置或执行', 'Backup needs setup or a first run')
+  const latestOpsBackupLabel = opsStatus?.backup.last_successful_backup_at
+    ? formatDateTime(opsStatus.backup.last_successful_backup_at, locale)
+    : tx('还没有外部上传记录', 'No external upload record yet')
+  const latestGitOpsLabel = opsStatus?.git_mirror.last_push_at
+    ? formatDateTime(opsStatus.git_mirror.last_push_at, locale)
+    : opsStatus?.git_mirror.last_synced_at
+      ? formatDateTime(opsStatus.git_mirror.last_synced_at, locale)
+      : tx('还没有 Git 同步记录', 'No Git sync record yet')
+  const latestFailedBackupRun = backupRuns.find((run) => run.status === 'failed')
 
   const setInlineMessage = (nextMessage: string) => {
     setMessage(nextMessage)
@@ -230,6 +338,16 @@ export default function GitMirrorPage() {
   const setInlineError = (nextError: string) => {
     setError(nextError)
     setMessage('')
+  }
+
+  const refreshOpsStatus = async () => {
+    const next = await api.getOpsStatus().catch(() => null as OpsStatus | null)
+    setOpsStatus(next)
+  }
+
+  const refreshBackupRuns = async () => {
+    const runs = await api.listBackupRuns(20).catch(() => [] as BackupRun[])
+    setBackupRuns(runs)
   }
 
   const hostedSyncSettledMessage = (settings: GitMirrorSettings) => {
@@ -297,8 +415,20 @@ export default function GitMirrorPage() {
       setAuthMode(result.settings.auth_mode || 'github_app_user')
       setRemoteURL(result.settings.remote_url || '')
       setUrlEditing(false)
+      setGithubAppReauthRequired(false)
       setInlineMessage(tx('备份仓库已准备好。', 'Backup repository is ready.'))
+      void refreshOpsStatus()
     } catch (err: any) {
+      if (isGitHubAppPermissionUpdateRequiredError(err)) {
+        await loadPage()
+        setAuthMode('github_app_user')
+        setGithubAppReauthRequired(true)
+        setGithubAppError(tx(
+          'GitHub App 权限已更新，我们已自动断开旧的 GitHub Backup 授权。请先在 GitHub 批准新的 Repository Administration 读写权限，然后回到这里重新连接。',
+          'GitHub App permissions were updated, so we disconnected the old GitHub Backup authorization. Approve the new Repository Administration read/write permission on GitHub, then reconnect here.',
+        ))
+        return
+      }
       setInlineError(err.message || tx('创建备份仓库失败', 'Failed to create the backup repository'))
     } finally {
       setWorking(false)
@@ -313,6 +443,7 @@ export default function GitMirrorPage() {
     try {
       await api.disconnectGitMirrorGitHubAppUser()
       await loadPage()
+      setGithubAppReauthRequired(false)
       setInlineMessage(tx('GitHub 已断开连接', 'GitHub disconnected'))
     } catch (err: any) {
       setInlineError(err.message || tx('断开 GitHub 失败', 'Failed to disconnect GitHub'))
@@ -356,6 +487,7 @@ export default function GitMirrorPage() {
       }
       setTokenTest(null)
       setInlineMessage(tx('备份目标已保存。', 'Backup destination saved.'))
+      void refreshOpsStatus()
     } catch (err: any) {
       setInlineError(err.message || tx('保存备份目标失败', 'Failed to save the backup destination'))
     } finally {
@@ -411,6 +543,7 @@ export default function GitMirrorPage() {
       setTokenEditing(!saved.github_token_configured)
       setTokenTest(null)
       setInlineMessage(tx('GitHub token 已保存。', 'GitHub token saved.'))
+      void refreshOpsStatus()
     } catch (err: any) {
       setInlineError(err.message || tx('保存 GitHub token 失败', 'Failed to save GitHub token'))
     } finally {
@@ -437,6 +570,7 @@ export default function GitMirrorPage() {
       setTokenEditing(true)
       setTokenTest(null)
       setInlineMessage(tx('已清除保存的 GitHub token。', 'Saved GitHub token was cleared.'))
+      void refreshOpsStatus()
     } catch (err: any) {
       setInlineError(err.message || tx('清除 GitHub token 失败', 'Failed to clear GitHub token'))
     } finally {
@@ -473,12 +607,221 @@ export default function GitMirrorPage() {
     }
   }
 
+  const updateBackupDraft = (patch: Partial<SaveBackupTargetRequest>) => {
+    setBackupDraft((current) => ({ ...current, ...patch }))
+    setBackupError('')
+    setBackupMessage('')
+    setBackupResult(null)
+  }
+
+  const handleBackupKindChange = (kind: BackupTargetKind) => {
+    updateBackupDraft({
+      kind,
+      name: kind === 'webdav' ? 'WebDAV backup' : 'S3-compatible backup',
+      s3_path_style: true,
+    })
+  }
+
+  const handleSaveBackupTarget = async () => {
+    setBackupSaving(true)
+    setBackupError('')
+    setBackupMessage('')
+    setBackupResult(null)
+    try {
+      const saved = await api.saveBackupTarget({
+        ...backupDraft,
+        enabled: true,
+      })
+      setBackupTargets((targets) => {
+        const exists = targets.some((target) => target.id === saved.id)
+        if (exists) {
+          return targets.map((target) => target.id === saved.id ? saved : target)
+        }
+        return [...targets, saved]
+      })
+      setBackupDraft(defaultBackupDraft())
+      setBackupMessage(tx('外部备份目标已保存。', 'External backup target saved.'))
+      void refreshOpsStatus()
+      void refreshBackupRuns()
+    } catch (err: any) {
+      setBackupError(err.message || tx('保存外部备份目标失败', 'Failed to save external backup target'))
+    } finally {
+      setBackupSaving(false)
+    }
+  }
+
+  const handleRunBackupTarget = async (target: BackupTarget) => {
+    setBackupRunningID(target.id)
+    setBackupError('')
+    setBackupMessage('')
+    setBackupResult(null)
+    try {
+      const result = await api.runBackupTarget(target.id)
+      setBackupResult(result)
+      setBackupTargets((targets) => targets.map((item) => item.id === result.target.id ? result.target : item))
+      setBackupMessage(tx('备份包已上传到外部目标。', 'Backup archive uploaded to the external target.'))
+      void refreshOpsStatus()
+      void refreshBackupRuns()
+    } catch (err: any) {
+      setBackupError(err.message || tx('上传备份包失败', 'Failed to upload the backup archive'))
+      const targets = await api.listBackupTargets().catch(() => [] as BackupTarget[])
+      setBackupTargets(targets)
+      void refreshOpsStatus()
+      void refreshBackupRuns()
+    } finally {
+      setBackupRunningID('')
+    }
+  }
+
+  const handlePreviewBackupRestore = async () => {
+    if (!restoreFile) {
+      setRestoreError(tx('请选择一个备份 zip。', 'Choose a backup zip first.'))
+      return
+    }
+    setRestorePreviewing(true)
+    setRestoreError('')
+    setRestorePreview(null)
+    try {
+      const preview = await api.previewBackupRestore(restoreFile)
+      setRestorePreview(preview)
+      setRestoreApplyResult(null)
+    } catch (err: any) {
+      setRestoreError(err.message || tx('读取备份包失败', 'Failed to read the backup archive'))
+    } finally {
+      setRestorePreviewing(false)
+    }
+  }
+
+  const handleApplyBackupRestore = async () => {
+    if (!restoreFile) {
+      setRestoreError(tx('请选择一个备份 zip。', 'Choose a backup zip first.'))
+      return
+    }
+    setRestoreApplying(true)
+    setRestoreError('')
+    setRestoreApplyResult(null)
+    try {
+      const result = await api.applyBackupRestore(restoreFile, restoreMode)
+      setRestoreApplyResult(result)
+      setBackupMessage(tx('备份包恢复已完成。', 'Backup restore completed.'))
+    } catch (err: any) {
+      setRestoreError(err.message || tx('应用恢复失败', 'Failed to apply restore'))
+    } finally {
+      setRestoreApplying(false)
+    }
+  }
+
+  const backupKindLabel = (kind: BackupTargetKind | string) => kind === 'webdav'
+    ? 'WebDAV'
+    : 'S3-compatible / OSS / R2'
+
+  const backupTargetLocation = (target: BackupTarget) => {
+    if (target.kind === 'webdav') {
+      return target.webdav_url || ''
+    }
+    const endpoint = target.s3_endpoint || ''
+    const bucket = target.s3_bucket || ''
+    const prefix = target.s3_prefix ? `/${target.s3_prefix}` : ''
+    return bucket ? `${endpoint}/${bucket}${prefix}` : endpoint
+  }
+
+  const restoreCategoryLabel = (id: string, fallback: string) => {
+    switch (id) {
+      case 'identity':
+        return tx('身份资料', 'Identity')
+      case 'vault':
+        return tx('Vault', 'Vault')
+      case 'skills':
+        return tx('Skills', 'Skills')
+      case 'memory_profile':
+        return tx('记忆资料', 'Memory profile')
+      case 'projects':
+        return tx('Projects', 'Projects')
+      case 'scratch':
+        return tx('Scratch', 'Scratch')
+      case 'roles':
+        return tx('Roles', 'Roles')
+      case 'inbox':
+        return tx('Inbox', 'Inbox')
+      default:
+        return fallback
+    }
+  }
+
   const renderStatus = () => (
     <div className="git-mirror-status-line">
       <span>
         {tx('最近更新时间：', 'Last update: ')}
         {lastUpdate ? formatDateTime(lastUpdate, locale) : tx('还没有同步', 'Not synced yet')}
       </span>
+    </div>
+  )
+
+  const renderStorageOverview = () => (
+    <div className="materials-panel data-sync-card">
+      <div className="card-header">
+        <h3 className="card-title">{tx('数据位置与恢复', 'Data location and recovery')}</h3>
+      </div>
+      <p className="data-record-secondary">
+        {tx('neuDrive 会先把 Hub 数据写入主存储，再按配置写入 Git mirror，并推送到远端仓库作为离开当前机器或服务器的备份。', 'neuDrive writes Hub data to primary storage first, then mirrors it into Git and pushes to a remote repository as the off-machine or off-server backup.')}
+      </p>
+      <div className="data-sync-status-grid">
+        <div className="data-sync-status-card">
+          <div className="data-record-title">{tx('主存储', 'Primary storage')}</div>
+          <div className="data-record-secondary">{storageLabel}</div>
+          <div className="data-record-secondary">{storageDetail}</div>
+        </div>
+        <div className="data-sync-status-card">
+          <div className="data-record-title">{tx('Git 工作目录', 'Git working tree')}</div>
+          <div className="data-record-secondary"><code>{mirrorPathLabel}</code></div>
+          <div className="data-record-secondary">
+            {tx('这里保存可见文件树的 Git 版本历史，是推送到 GitHub 前的工作副本。', 'This holds Git version history for the visible file tree before it is pushed to GitHub.')}
+          </div>
+        </div>
+        <div className="data-sync-status-card">
+          <div className="data-record-title">{tx('远端备份', 'Remote backup')}</div>
+          <div className="data-record-secondary">
+            {remoteRepoURL ? (
+              <a href={backupRepoLink} target="_blank" rel="noreferrer">{backupRepoLabel || remoteRepoURL}</a>
+            ) : (
+              remoteBackupSummary
+            )}
+          </div>
+          <div className="data-record-secondary">
+            {remoteRepoURL
+              ? <>{tx('最近备份：', 'Latest backup: ')}{latestBackupLabel}</>
+              : <>{tx('外部目标最近上传：', 'External target uploads: ')}{externalTargetsWithBackup > 0 ? tx(`${externalTargetsWithBackup} 个已有记录`, `${externalTargetsWithBackup} recorded`) : tx('还没有上传记录', 'No upload record yet')}</>}
+          </div>
+        </div>
+        {opsStatus && (
+          <div className="data-sync-status-card">
+            <div className="data-record-title">{tx('生产状态', 'Production status')}</div>
+            <div className="data-record-secondary">{opsStatusLabel}</div>
+            <div className="data-record-secondary">
+              {tx('Git 最近记录：', 'Latest Git record: ')}{latestGitOpsLabel}
+            </div>
+            <div className="data-record-secondary">
+              {tx('外部目标：', 'External targets: ')}{opsStatus.backup.enabled_targets}/{opsStatus.backup.targets_configured} · {latestOpsBackupLabel}
+            </div>
+          </div>
+        )}
+        <div className="data-sync-status-card">
+          <div className="data-record-title">{tx('恢复说明', 'Recovery')}</div>
+          <div className="data-record-secondary">
+            {remoteRepoURL
+              ? tx('需要恢复时，可以先 clone 这个仓库检查 skills、memory 和 project 文件；secret 与账号内部元数据需要从数据库或配置恢复。', 'For recovery, clone this repository to inspect skills, memory, and project files. Secrets and internal account metadata must be recovered from the database or service configuration.')
+              : tx('配置远端仓库后，这里会显示可用于恢复的仓库位置。', 'After a remote repository is configured, this page shows the repository to use for recovery.')}
+          </div>
+        </div>
+      </div>
+      {!remoteRepoURL && (
+        <div className="alert alert-warn" style={{ marginTop: 16 }}>
+          {tx('当前还没有远端备份。服务器或本机数据丢失时，只能依赖数据库备份或手工导出的文件。', 'No remote backup is configured. If the server or local machine loses data, recovery depends on database backups or manually exported files.')}
+        </div>
+      )}
+      <p className="data-record-secondary">
+        {tx('GitHub 保存版本历史；WebDAV、S3-compatible、OSS、R2 会上传 neuDrive 导出 zip，适合做离开服务器的备份包。', 'GitHub keeps version history; WebDAV, S3-compatible, OSS, and R2 upload a neuDrive export zip as an off-server backup archive.')}
+      </p>
     </div>
   )
 
@@ -522,13 +865,36 @@ export default function GitMirrorPage() {
           {githubAppUnavailableMessage}
         </div>
       )}
-      {githubAppError && (
+      {githubAppError && !githubAppReauthRequired && (
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
           {githubAppError}
         </div>
       )}
+      {githubAppReauthRequired && !mirror?.github_app_user_connected && (
+        <div className="alert alert-warn" style={{ marginTop: 12 }}>
+          <div className="data-record-title">{tx('需要重新批准 GitHub App 权限', 'GitHub App permissions need approval')}</div>
+          {githubAppError && (
+            <div className="data-record-secondary" style={{ marginTop: 6 }}>
+              {githubAppError}
+            </div>
+          )}
+          <div className="data-record-secondary" style={{ marginTop: 8 }}>
+            {tx('我们已断开旧授权。点击下面按钮后，GitHub 会要求你批准新权限并重新授权。', 'The old authorization was disconnected. Click the button below to approve the new permissions on GitHub and reconnect.')}
+          </div>
+          <div className="data-sync-actions data-sync-actions-compact">
+            <button
+              className="btn btn-primary"
+              type="button"
+              disabled={working}
+              onClick={handleConnectGitHubApp}
+            >
+              {working ? tx('连接中...', 'Connecting...') : tx('批准新权限并连接 GitHub', 'Approve permissions and connect GitHub')}
+            </button>
+          </div>
+        </div>
+      )}
       {!mirror?.github_app_user_connected ? (
-        <div className="data-sync-actions data-sync-actions-compact">
+        !githubAppReauthRequired && <div className="data-sync-actions data-sync-actions-compact">
           <button className="btn btn-primary" type="button" disabled={working} onClick={handleConnectGitHubApp}>
             {working ? tx('连接中...', 'Connecting...') : tx('连接 GitHub', 'Connect GitHub')}
           </button>
@@ -566,6 +932,9 @@ export default function GitMirrorPage() {
                 setError('')
                 setMessage('')
                 setGithubAppError('')
+                if (next !== 'github_app_user') {
+                  setGithubAppReauthRequired(false)
+                }
                 setTokenTest(null)
                 setAuthHelpOpen(false)
                 setUrlEditing(next !== 'github_app_user' && !remoteURL.trim())
@@ -733,15 +1102,385 @@ export default function GitMirrorPage() {
     </>
   )
 
+  const renderExternalBackupTargets = () => (
+    <div className="materials-panel data-sync-card">
+      <div className="card-header">
+        <h3 className="card-title">{tx('外部备份目标', 'External backup targets')}</h3>
+      </div>
+      <p className="data-record-secondary">
+        {tx('这里会把 neuDrive 导出 zip 上传到 WebDAV 或 S3-compatible 存储。GitHub 适合版本历史；这些目标适合做离开服务器的备份包。', 'This uploads a neuDrive export zip to WebDAV or S3-compatible storage. GitHub is for version history; these targets are for off-server backup archives.')}
+      </p>
+      {latestFailedBackupRun && (
+        <div className="alert alert-warn" style={{ marginTop: 12 }}>
+          {tx('最近失败：', 'Latest failure: ')}
+          {latestFailedBackupRun.target_name || backupKindLabel(latestFailedBackupRun.target_kind)}
+          {' · '}
+          {formatDateTime(latestFailedBackupRun.started_at, locale)}
+          {latestFailedBackupRun.error ? ` · ${latestFailedBackupRun.error}` : ''}
+        </div>
+      )}
+
+      {backupTargets.length > 0 && (
+        <div className="data-sync-status-grid">
+          {backupTargets.map((target) => (
+            <div className="data-sync-status-card" key={target.id}>
+              <div className="data-record-title">{target.name || backupKindLabel(target.kind)}</div>
+              <div className="data-record-secondary">{backupKindLabel(target.kind)}</div>
+              <div className="data-record-secondary"><code>{backupTargetLocation(target) || tx('未填写位置', 'No location')}</code></div>
+              <div className="data-record-secondary">
+                {target.last_backup_at
+                  ? tx(`最近上传：${formatDateTime(target.last_backup_at, locale)}`, `Latest upload: ${formatDateTime(target.last_backup_at, locale)}`)
+                  : tx('还没有上传记录', 'No upload record yet')}
+              </div>
+              <div className="data-record-secondary">
+                {target.auto_backup_enabled
+                  ? tx(`自动备份：每 ${target.auto_backup_interval_hours || 24} 小时`, `Auto backup: every ${target.auto_backup_interval_hours || 24} hours`)
+                  : tx('自动备份：关闭', 'Auto backup: off')}
+              </div>
+              <div className="data-record-secondary">
+                {target.retention_keep_last || target.retention_keep_days
+                  ? tx(
+                      `保留策略：${target.retention_keep_last ? `最近 ${target.retention_keep_last} 份` : ''}${target.retention_keep_last && target.retention_keep_days ? ' / ' : ''}${target.retention_keep_days ? `${target.retention_keep_days} 天` : ''}`,
+                      `Retention: ${target.retention_keep_last ? `last ${target.retention_keep_last}` : ''}${target.retention_keep_last && target.retention_keep_days ? ' / ' : ''}${target.retention_keep_days ? `${target.retention_keep_days} days` : ''}`,
+                    )
+                  : tx('保留策略：不自动清理远端备份包', 'Retention: remote archive cleanup is off')}
+              </div>
+              {target.last_auto_backup_at && (
+                <div className="data-record-secondary">
+                  {tx(`最近自动执行：${formatDateTime(target.last_auto_backup_at, locale)}`, `Latest scheduled run: ${formatDateTime(target.last_auto_backup_at, locale)}`)}
+                </div>
+              )}
+              {target.last_backup_object && (
+                <div className="data-record-secondary">
+                  {tx('对象：', 'Object: ')}<code>{target.last_backup_object}</code>
+                </div>
+              )}
+              {target.last_backup_error && (
+                <div className="data-record-secondary">{target.last_backup_error}</div>
+              )}
+              <div className="data-sync-actions data-sync-actions-compact">
+                <button className="btn btn-primary" type="button" disabled={backupRunningID === target.id} onClick={() => void handleRunBackupTarget(target)}>
+                  {backupRunningID === target.id ? tx('上传中...', 'Uploading...') : tx('上传当前备份包', 'Upload current backup')}
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="data-sync-token-box" style={{ marginTop: 16 }}>
+        <div className="data-record-title">{tx('新增备份目标', 'Add backup target')}</div>
+        <div className="data-sync-settings-grid" style={{ marginTop: 12 }}>
+          <div className="form-group">
+            <label htmlFor="backup-target-kind">{tx('目标类型', 'Target type')}</label>
+            <select
+              id="backup-target-kind"
+              value={backupDraft.kind}
+              onChange={(event) => handleBackupKindChange(event.target.value as BackupTargetKind)}
+            >
+              <option value="webdav">WebDAV</option>
+              <option value="s3">S3-compatible / OSS / R2</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label htmlFor="backup-target-name">{tx('显示名称', 'Display name')}</label>
+            <input
+              id="backup-target-name"
+              value={backupDraft.name}
+              onChange={(event) => updateBackupDraft({ name: event.target.value })}
+              placeholder={backupDraft.kind === 'webdav' ? 'WebDAV backup' : 'S3-compatible backup'}
+            />
+          </div>
+        </div>
+        <div className="data-sync-toggle-grid" style={{ marginTop: 12 }}>
+          <label className="data-sync-toggle-card">
+            <div className="data-sync-toggle-copy">
+              <div className="data-sync-toggle-title">{tx('自动备份', 'Auto backup')}</div>
+              <div className="data-sync-field-note">
+                {tx('后台会按间隔上传新的 neuDrive 导出 zip。', 'The scheduler uploads a new neuDrive export zip at the chosen interval.')}
+              </div>
+            </div>
+            <input
+              type="checkbox"
+              checked={!!backupDraft.auto_backup_enabled}
+              onChange={(event) => updateBackupDraft({ auto_backup_enabled: event.target.checked })}
+            />
+          </label>
+          <div className="form-group">
+            <label htmlFor="backup-auto-interval">{tx('间隔小时', 'Interval hours')}</label>
+            <input
+              id="backup-auto-interval"
+              type="number"
+              min={1}
+              max={720}
+              value={backupDraft.auto_backup_interval_hours || 24}
+              onChange={(event) => updateBackupDraft({ auto_backup_interval_hours: Number(event.target.value || 24) })}
+              disabled={!backupDraft.auto_backup_enabled}
+            />
+          </div>
+        </div>
+
+        <div className="data-sync-settings-grid" style={{ marginTop: 12 }}>
+          <div className="form-group">
+            <label htmlFor="backup-retention-last">{tx('保留最近份数', 'Keep latest runs')}</label>
+            <input
+              id="backup-retention-last"
+              type="number"
+              min={0}
+              max={365}
+              value={backupDraft.retention_keep_last || 0}
+              onChange={(event) => updateBackupDraft({ retention_keep_last: Number(event.target.value || 0) })}
+            />
+            <div className="data-sync-field-note">
+              {tx('0 表示不按份数自动清理。只会处理 neuDrive 自己生成的备份包。', '0 disables count-based cleanup. Only neuDrive-generated archives are eligible.')}
+            </div>
+          </div>
+          <div className="form-group">
+            <label htmlFor="backup-retention-days">{tx('保留天数', 'Keep days')}</label>
+            <input
+              id="backup-retention-days"
+              type="number"
+              min={0}
+              max={3650}
+              value={backupDraft.retention_keep_days || 0}
+              onChange={(event) => updateBackupDraft({ retention_keep_days: Number(event.target.value || 0) })}
+            />
+            <div className="data-sync-field-note">
+              {tx('0 表示不按时间自动清理。最近成功备份不会被清理。', '0 disables age-based cleanup. The latest successful backup is never removed.')}
+            </div>
+          </div>
+        </div>
+
+        {backupDraft.kind === 'webdav' ? (
+          <div className="data-sync-settings-grid data-sync-settings-grid-wide" style={{ marginTop: 12 }}>
+            <div className="form-group data-sync-settings-span-wide">
+              <label htmlFor="backup-webdav-url">{tx('WebDAV 目录 URL', 'WebDAV folder URL')}</label>
+              <input
+                id="backup-webdav-url"
+                value={backupDraft.webdav_url || ''}
+                onChange={(event) => updateBackupDraft({ webdav_url: event.target.value })}
+                placeholder="https://dav.example.com/backup/neudrive"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="backup-webdav-username">{tx('用户名', 'Username')}</label>
+              <input
+                id="backup-webdav-username"
+                value={backupDraft.webdav_username || ''}
+                onChange={(event) => updateBackupDraft({ webdav_username: event.target.value })}
+                placeholder="email@example.com"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="backup-webdav-password">{tx('密码或应用密码', 'Password or app password')}</label>
+              <input
+                id="backup-webdav-password"
+                className="data-sync-secret-input"
+                type="password"
+                value={backupDraft.webdav_password || ''}
+                onChange={(event) => updateBackupDraft({ webdav_password: event.target.value })}
+                placeholder={tx('保存后不会回显', 'Not shown again after saving')}
+              />
+            </div>
+          </div>
+        ) : (
+          <div className="data-sync-settings-grid data-sync-settings-grid-wide" style={{ marginTop: 12 }}>
+            <div className="form-group">
+              <label htmlFor="backup-s3-endpoint">{tx('Endpoint', 'Endpoint')}</label>
+              <input
+                id="backup-s3-endpoint"
+                value={backupDraft.s3_endpoint || ''}
+                onChange={(event) => updateBackupDraft({ s3_endpoint: event.target.value })}
+                placeholder="https://account.r2.cloudflarestorage.com"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="backup-s3-bucket">{tx('Bucket', 'Bucket')}</label>
+              <input
+                id="backup-s3-bucket"
+                value={backupDraft.s3_bucket || ''}
+                onChange={(event) => updateBackupDraft({ s3_bucket: event.target.value })}
+                placeholder="neudrive-backup"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="backup-s3-region">{tx('Region', 'Region')}</label>
+              <input
+                id="backup-s3-region"
+                value={backupDraft.s3_region || ''}
+                onChange={(event) => updateBackupDraft({ s3_region: event.target.value })}
+                placeholder="auto / us-east-1 / oss-cn-hangzhou"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="backup-s3-prefix">{tx('Prefix', 'Prefix')}</label>
+              <input
+                id="backup-s3-prefix"
+                value={backupDraft.s3_prefix || ''}
+                onChange={(event) => updateBackupDraft({ s3_prefix: event.target.value })}
+                placeholder="neudrive"
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="backup-s3-access-key">{tx('Access key ID', 'Access key ID')}</label>
+              <input
+                id="backup-s3-access-key"
+                value={backupDraft.s3_access_key_id || ''}
+                onChange={(event) => updateBackupDraft({ s3_access_key_id: event.target.value })}
+                placeholder="AKIA..."
+              />
+            </div>
+            <div className="form-group">
+              <label htmlFor="backup-s3-secret-key">{tx('Secret access key', 'Secret access key')}</label>
+              <input
+                id="backup-s3-secret-key"
+                className="data-sync-secret-input"
+                type="password"
+                value={backupDraft.s3_secret_access_key || ''}
+                onChange={(event) => updateBackupDraft({ s3_secret_access_key: event.target.value })}
+                placeholder={tx('保存后不会回显', 'Not shown again after saving')}
+              />
+            </div>
+            <label className="data-sync-toggle-card data-sync-settings-span-wide">
+              <div className="data-sync-toggle-copy">
+                <div className="data-sync-toggle-title">{tx('Path-style URL', 'Path-style URL')}</div>
+                <div className="data-sync-field-note">
+                  {tx('默认使用 endpoint/bucket/object。关闭后使用 bucket.endpoint/object，适合要求 virtual-hosted style 的服务。', 'Uses endpoint/bucket/object by default. Turn it off for bucket.endpoint/object when a provider requires virtual-hosted style.')}
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={backupDraft.s3_path_style !== false}
+                onChange={(event) => updateBackupDraft({ s3_path_style: event.target.checked })}
+              />
+            </label>
+          </div>
+        )}
+
+        <div className="data-sync-actions data-sync-actions-compact">
+          <button className="btn btn-primary" type="button" disabled={backupSaving} onClick={() => void handleSaveBackupTarget()}>
+            {backupSaving ? tx('保存中...', 'Saving...') : tx('保存外部备份目标', 'Save external backup target')}
+          </button>
+        </div>
+        {backupError && <div className="alert alert-warn" style={{ marginTop: 12 }}>{backupError}</div>}
+        {backupMessage && <div className="alert alert-ok" style={{ marginTop: 12 }}>{backupMessage}</div>}
+        {backupResult && (
+          <div className="data-record-secondary">
+            {tx('最近上传位置：', 'Latest upload location: ')}<code>{backupResult.location}</code>
+          </div>
+        )}
+      </div>
+
+      {backupRuns.length > 0 && (
+        <div className="data-sync-token-box" style={{ marginTop: 16 }}>
+          <div className="data-record-title">{tx('备份历史', 'Backup history')}</div>
+          <div className="data-sync-status-grid" style={{ marginTop: 12 }}>
+            {backupRuns.slice(0, 6).map((run) => (
+              <div className="data-sync-status-card" key={run.id}>
+                <div className="data-record-title">{run.target_name || backupKindLabel(run.target_kind)}</div>
+                <div className="data-record-secondary">
+                  {run.trigger === 'auto' ? tx('自动备份', 'Auto backup') : tx('手动备份', 'Manual backup')} · {run.status === 'success' ? tx('成功', 'Success') : tx('失败', 'Failed')}
+                </div>
+                <div className="data-record-secondary">{formatDateTime(run.started_at, locale)}</div>
+                {run.object_name && <div className="data-record-secondary"><code>{run.object_name}</code></div>}
+                {run.size_bytes > 0 && <div className="data-record-secondary">{formatBytes(run.size_bytes, locale)}</div>}
+                {run.remote_deleted_at && <div className="data-record-secondary">{tx('已按保留策略清理远端对象', 'Remote object pruned by retention policy')}</div>}
+                {run.error && <div className="data-record-secondary">{run.error}</div>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="data-sync-token-box" style={{ marginTop: 16 }}>
+        <div className="data-record-title">{tx('恢复预览', 'Restore preview')}</div>
+        <div className="data-sync-settings-grid" style={{ marginTop: 12 }}>
+          <div className="form-group">
+            <label htmlFor="backup-restore-file">{tx('备份 zip', 'Backup zip')}</label>
+            <input
+              id="backup-restore-file"
+              type="file"
+              accept=".zip,application/zip,application/x-zip-compressed"
+              onChange={(event) => {
+                setRestoreFile(event.target.files?.[0] || null)
+                setRestorePreview(null)
+                setRestoreApplyResult(null)
+                setRestoreError('')
+              }}
+            />
+          </div>
+          <div className="form-group">
+            <label>{tx('识别结果', 'Preview result')}</label>
+            <button className="btn btn-primary" type="button" disabled={restorePreviewing || !restoreFile} onClick={() => void handlePreviewBackupRestore()}>
+              {restorePreviewing ? tx('读取中...', 'Reading...') : tx('预览备份包', 'Preview backup')}
+            </button>
+          </div>
+          <div className="form-group">
+            <label htmlFor="backup-restore-mode">{tx('应用策略', 'Apply mode')}</label>
+            <select id="backup-restore-mode" value={restoreMode} onChange={(event) => setRestoreMode(event.target.value as 'skip' | 'overwrite')}>
+              <option value="skip">{tx('跳过已有文件', 'Skip existing files')}</option>
+              <option value="overwrite">{tx('覆盖已有文件', 'Overwrite existing files')}</option>
+            </select>
+          </div>
+        </div>
+        {restoreError && <div className="alert alert-warn" style={{ marginTop: 12 }}>{restoreError}</div>}
+        {restorePreview && (
+          <>
+            <div className={restorePreview.recognized ? 'alert alert-ok' : 'alert alert-warn'} style={{ marginTop: 12 }}>
+              {restorePreview.recognized
+                ? tx(`已识别 ${restorePreview.total_files} 个文件，解压后约 ${formatBytes(restorePreview.total_bytes, locale)}。`, `Recognized ${restorePreview.total_files} files, about ${formatBytes(restorePreview.total_bytes, locale)} after unzip.`)
+                : tx('这个文件未被识别为 neuDrive 备份包。', 'This file was not recognized as a neuDrive backup archive.')}
+            </div>
+            {restorePreview.categories.length > 0 && (
+              <div className="data-sync-status-grid" style={{ marginTop: 12 }}>
+                {restorePreview.categories.map((category) => (
+                  <div className="data-sync-status-card" key={category.id}>
+                    <div className="data-record-title">{restoreCategoryLabel(category.id, category.label)}</div>
+                    <div className="data-record-secondary">{tx(`${category.files} 个文件`, `${category.files} files`)}</div>
+                    <div className="data-record-secondary">{formatBytes(category.bytes, locale)}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {restorePreview.warnings && restorePreview.warnings.length > 0 && (
+              <div className="alert alert-warn" style={{ marginTop: 12 }}>
+                {restorePreview.warnings.join(' ')}
+              </div>
+            )}
+            {restorePreview.recognized && (
+              <div className="data-sync-actions data-sync-actions-compact">
+                <button className="btn btn-primary" type="button" disabled={restoreApplying} onClick={() => void handleApplyBackupRestore()}>
+                  {restoreApplying ? tx('恢复中...', 'Restoring...') : tx('应用恢复', 'Apply restore')}
+                </button>
+              </div>
+            )}
+          </>
+        )}
+        {restoreApplyResult && (
+          <div className={restoreApplyResult.errors?.length ? 'alert alert-warn' : 'alert alert-ok'} style={{ marginTop: 12 }}>
+            {tx(
+              `恢复完成：写入 ${restoreApplyResult.applied} 个，覆盖 ${restoreApplyResult.overwritten} 个，跳过 ${restoreApplyResult.skipped} 个。`,
+              `Restore complete: ${restoreApplyResult.applied} written, ${restoreApplyResult.overwritten} overwritten, ${restoreApplyResult.skipped} skipped.`,
+            )}
+            {restoreApplyResult.errors?.length ? ` ${restoreApplyResult.errors.join(' ')}` : ''}
+            {restoreApplyResult.warnings?.length ? ` ${restoreApplyResult.warnings.join(' ')}` : ''}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+
   if (busy) {
     return <div className="page-loading">{tx('加载中...', 'Loading...')}</div>
   }
 
   return (
     <div className="page materials-page">
+      {renderStorageOverview()}
+
       <div className="materials-panel data-sync-card">
         <div className="card-header">
-          <h3 className="card-title">{tx('Backup destination', 'Backup destination')}</h3>
+          <h3 className="card-title">{tx('GitHub 备份目标', 'GitHub backup destination')}</h3>
         </div>
         <p className="data-record-secondary">
           {tx('选择一个 GitHub 仓库作为 neuDrive 的备份位置，授权后可以一键同步并保留可恢复的版本记录。', 'Choose a GitHub repository as your neuDrive backup destination, then sync on demand with recoverable version history.')}
@@ -761,6 +1500,8 @@ export default function GitMirrorPage() {
           </div>
         )}
       </div>
+
+      {renderExternalBackupTargets()}
     </div>
   )
 }

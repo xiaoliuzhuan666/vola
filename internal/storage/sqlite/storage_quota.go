@@ -17,7 +17,14 @@ func (s *Store) enforceStorageQuotaTx(
 	current *models.FileTreeEntry,
 	requestedBytes int64,
 ) error {
-	if s == nil || s.userStorageQuotaBytes <= 0 {
+	if s == nil {
+		return nil
+	}
+	limitBytes, err := s.userStorageQuotaLimitTx(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	if limitBytes <= 0 {
 		return nil
 	}
 
@@ -31,15 +38,27 @@ func (s *Store) enforceStorageQuotaTx(
 	}
 
 	projectedBytes := totalBytes - currentBytes + requestedBytes
-	if projectedBytes <= s.userStorageQuotaBytes {
+	if projectedBytes <= limitBytes {
 		return nil
 	}
 	return &services.StorageQuotaExceededError{
-		LimitBytes:     s.userStorageQuotaBytes,
+		LimitBytes:     limitBytes,
 		CurrentBytes:   totalBytes,
 		RequestedBytes: requestedBytes,
 		ProjectedBytes: projectedBytes,
 	}
+}
+
+func (s *Store) userStorageQuotaLimitTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID) (int64, error) {
+	row := tx.QueryRowContext(ctx, `SELECT storage_quota_bytes FROM users WHERE id = ?`, userID.String())
+	var quota sql.NullInt64
+	if err := row.Scan(&quota); err != nil {
+		return 0, fmt.Errorf("sqlite.storageQuota: user quota: %w", err)
+	}
+	if quota.Valid {
+		return quota.Int64, nil
+	}
+	return s.userStorageQuotaBytes, nil
 }
 
 func (s *Store) totalStorageUsageTx(ctx context.Context, tx *sql.Tx, userID uuid.UUID) (int64, error) {

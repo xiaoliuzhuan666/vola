@@ -21,6 +21,11 @@ func (c *Client) ImportSkillsArchive(ctx context.Context, platform, archivePath 
 	if err != nil {
 		return nil, err
 	}
+	manifests := skillsarchive.BuildManifests(files, platform, filepath.Base(archivePath))
+	files, err = skillsarchive.AppendManifestEntries(files, manifests)
+	if err != nil {
+		return nil, fmt.Errorf("build skill manifests: %w", err)
+	}
 
 	result := &ImportResult{Platform: platform}
 	for _, file := range files {
@@ -48,9 +53,11 @@ func (c *Client) ImportSkillsArchive(ctx context.Context, platform, archivePath 
 				return nil, fmt.Errorf("write %s: %w", hubPath, err)
 			}
 		}
-		result.Files++
-		result.Bytes += int64(len(file.Data))
-		result.Paths = append(result.Paths, hubPath)
+		if !file.Generated {
+			result.Files++
+			result.Bytes += int64(len(file.Data))
+			result.Paths = append(result.Paths, hubPath)
+		}
 	}
 	sort.Strings(result.Paths)
 	return result, nil

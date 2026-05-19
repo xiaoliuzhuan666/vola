@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"time"
 
@@ -135,4 +136,146 @@ func (s *UserService) GetAuthBinding(ctx context.Context, provider string, provi
 		return nil, fmt.Errorf("user.GetAuthBinding: %w", err)
 	}
 	return &ab, nil
+}
+
+func (s *UserService) ListAccounts(ctx context.Context, fallbackQuotaBytes int64) ([]models.AdminUserAccount, error) {
+	if s.repo != nil {
+		accountRepo, ok := s.repo.(UserAccountRepo)
+		if !ok {
+			return nil, fmt.Errorf("user.ListAccounts: configured repo does not support account listing")
+		}
+		return accountRepo.ListAccounts(ctx, fallbackQuotaBytes)
+	}
+	rows, err := s.db.Query(ctx, `
+		SELECT u.id,
+		       u.slug,
+		       COALESCE(u.display_name, ''),
+		       COALESCE(u.email, ''),
+		       u.storage_quota_bytes,
+		       COALESCE(SUM(
+			       CASE
+				       WHEN ft.is_directory THEN 0
+				       WHEN fb.entry_id IS NOT NULL THEN fb.size_bytes
+				       ELSE OCTET_LENGTH(COALESCE(ft.content, ''))
+			       END
+		       ), 0) AS used_bytes,
+		       u.created_at,
+		       u.updated_at
+		  FROM users u
+		  LEFT JOIN file_tree ft
+		    ON ft.user_id = u.id AND ft.deleted_at IS NULL
+		  LEFT JOIN file_blobs fb
+		    ON fb.entry_id = ft.id
+		 WHERE u.account_type = 'person'
+		 GROUP BY u.id, u.slug, u.display_name, u.email, u.storage_quota_bytes, u.created_at, u.updated_at
+		 ORDER BY u.created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("user.ListAccounts: %w", err)
+	}
+	defer rows.Close()
+
+	accounts := []models.AdminUserAccount{}
+	for rows.Next() {
+		account, err := scanAdminUserAccount(rows, fallbackQuotaBytes)
+		if err != nil {
+			return nil, fmt.Errorf("user.ListAccounts: scan: %w", err)
+		}
+		accounts = append(accounts, *account)
+	}
+	return accounts, rows.Err()
+}
+
+func (s *UserService) GetAccount(ctx context.Context, userID uuid.UUID, fallbackQuotaBytes int64) (*models.AdminUserAccount, error) {
+	if s.repo != nil {
+		accountRepo, ok := s.repo.(UserAccountRepo)
+		if !ok {
+			return nil, fmt.Errorf("user.GetAccount: configured repo does not support account lookup")
+		}
+		return accountRepo.GetAccount(ctx, userID, fallbackQuotaBytes)
+	}
+	row := s.db.QueryRow(ctx, `
+		SELECT u.id,
+		       u.slug,
+		       COALESCE(u.display_name, ''),
+		       COALESCE(u.email, ''),
+		       u.storage_quota_bytes,
+		       COALESCE(SUM(
+			       CASE
+				       WHEN ft.is_directory THEN 0
+				       WHEN fb.entry_id IS NOT NULL THEN fb.size_bytes
+				       ELSE OCTET_LENGTH(COALESCE(ft.content, ''))
+			       END
+		       ), 0) AS used_bytes,
+		       u.created_at,
+		       u.updated_at
+		  FROM users u
+		  LEFT JOIN file_tree ft
+		    ON ft.user_id = u.id AND ft.deleted_at IS NULL
+		  LEFT JOIN file_blobs fb
+		    ON fb.entry_id = ft.id
+		 WHERE u.id = $1
+		 GROUP BY u.id, u.slug, u.display_name, u.email, u.storage_quota_bytes, u.created_at, u.updated_at`,
+		userID)
+	account, err := scanAdminUserAccount(row, fallbackQuotaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("user.GetAccount: %w", err)
+	}
+	return account, nil
+}
+
+func (s *UserService) UpdateStorageQuota(ctx context.Context, userID uuid.UUID, quotaBytes *int64, fallbackQuotaBytes int64) (*models.AdminUserAccount, error) {
+	if quotaBytes != nil && *quotaBytes < 0 {
+		return nil, fmt.Errorf("storage_quota_bytes must be >= 0")
+	}
+	if s.repo != nil {
+		accountRepo, ok := s.repo.(UserAccountRepo)
+		if !ok {
+			return nil, fmt.Errorf("user.UpdateStorageQuota: configured repo does not support quota updates")
+		}
+		return accountRepo.UpdateStorageQuota(ctx, userID, quotaBytes, fallbackQuotaBytes)
+	}
+	var quotaArg interface{}
+	if quotaBytes != nil {
+		quotaArg = *quotaBytes
+	}
+	_, err := s.db.Exec(ctx,
+		`UPDATE users SET storage_quota_bytes = $1, updated_at = $2 WHERE id = $3`,
+		quotaArg, time.Now().UTC(), userID)
+	if err != nil {
+		return nil, fmt.Errorf("user.UpdateStorageQuota: %w", err)
+	}
+	return s.GetAccount(ctx, userID, fallbackQuotaBytes)
+}
+
+type adminAccountScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanAdminUserAccount(row adminAccountScanner, fallbackQuotaBytes int64) (*models.AdminUserAccount, error) {
+	var (
+		account      models.AdminUserAccount
+		quota        sql.NullInt64
+		storageBytes int64
+	)
+	if err := row.Scan(
+		&account.ID,
+		&account.Slug,
+		&account.DisplayName,
+		&account.Email,
+		&quota,
+		&storageBytes,
+		&account.CreatedAt,
+		&account.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	if quota.Valid {
+		value := quota.Int64
+		account.StorageQuotaBytes = &value
+		account.EffectiveStorageQuotaBytes = value
+	} else {
+		account.EffectiveStorageQuotaBytes = fallbackQuotaBytes
+	}
+	account.StorageUsedBytes = storageBytes
+	return &account, nil
 }

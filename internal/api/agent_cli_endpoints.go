@@ -75,6 +75,7 @@ func (s *Server) handleAgentCreateEphemeralToken(w http.ResponseWriter, r *http.
 		Purpose    string `json:"purpose"`
 		Access     string `json:"access"`
 		Platform   string `json:"platform"`
+		TeamID     string `json:"team_id,omitempty"`
 		TTLMinutes int    `json:"ttl_minutes"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -139,18 +140,37 @@ func (s *Server) handleAgentCreateEphemeralToken(w http.ResponseWriter, r *http.
 		if platform == "" {
 			platform = "claude-web"
 		}
+		target := scopedHubTarget{Scope: "personal", UserID: userID}
+		if strings.TrimSpace(req.TeamID) != "" {
+			var targetOK bool
+			target, targetOK = s.resolveScopedHubTarget(w, r, req.TeamID, true)
+			if !targetOK {
+				return
+			}
+		}
 		created, err := s.TokenService.CreateEphemeralToken(r.Context(), userID, "skills-import:"+purpose, []string{models.ScopeWriteSkills}, models.TrustLevelWork, time.Duration(ttlMinutes)*time.Minute)
 		if err != nil {
 			respondError(w, http.StatusBadRequest, ErrCodeBadRequest, err.Error())
 			return
 		}
-		uploadURL := strings.TrimRight(baseURL, "/") + "/agent/import/skills?platform=" + platform
+		uploadParams := url.Values{}
+		uploadParams.Set("platform", platform)
+		browserParams := url.Values{}
+		browserParams.Set("token", created.Token)
+		browserParams.Set("platform", platform)
+		if target.Team != nil {
+			uploadParams.Set("team_id", target.Team.ID.String())
+			browserParams.Set("team", target.Team.ID.String())
+		}
+		uploadURL := strings.TrimRight(baseURL, "/") + "/agent/import/skills?" + uploadParams.Encode()
 		probeURL := strings.TrimRight(baseURL, "/") + "/test/post"
-		browserUploadURL := strings.TrimRight(baseURL, "/") + "/import/skills?token=" + url.QueryEscape(created.Token) + "&platform=" + url.QueryEscape(platform)
+		browserUploadURL := strings.TrimRight(baseURL, "/") + "/import/skills?" + browserParams.Encode()
 		respondCreated(w, map[string]any{
 			"token":                        created.Token,
 			"expires_at":                   created.ScopedToken.ExpiresAt.Format(time.RFC3339),
 			"api_base":                     baseURL,
+			"scope":                        target.Scope,
+			"team":                         target.Team,
 			"upload_url":                   uploadURL,
 			"browser_upload_url":           browserUploadURL,
 			"connectivity_probe_url":       probeURL,

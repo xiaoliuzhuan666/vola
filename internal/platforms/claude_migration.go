@@ -20,7 +20,10 @@ import (
 	"github.com/agi-bar/neudrive/internal/storage/sqlite"
 )
 
-const claudeBinaryInlineMaxBytes = 64 << 10
+const (
+	claudeBinaryInlineMaxBytes       = 64 << 10
+	claudeExternalSkillAssetMaxBytes = 256 << 10
+)
 
 type ImportPreview struct {
 	Platform          string                         `json:"platform"`
@@ -1308,11 +1311,220 @@ func scanClaudeBundleDirectory(inventory *sqlite.ClaudeInventory, dir, kind stri
 		if err != nil {
 			return err
 		}
+		if err := includeClaudeReferencedSkillAssets(&bundle, bundleRoot, sourcePaths, notes); err != nil {
+			return err
+		}
 		if len(bundle.Files) > 0 {
 			inventory.Bundles = append(inventory.Bundles, bundle)
 		}
 	}
 	return nil
+}
+
+func includeClaudeReferencedSkillAssets(bundle *sqlite.ClaudeBundle, bundleRoot string, sourcePaths []string, notes *[]string) error {
+	if bundle == nil || len(bundle.Files) == 0 {
+		return nil
+	}
+	existingTargets := map[string]struct{}{}
+	existingSources := map[string]struct{}{}
+	refs := map[string]struct{}{}
+	for _, file := range bundle.Files {
+		target := normalizeClaudeAssetRelPath(file.Path, file.SourcePath)
+		if target != "" {
+			existingTargets[target] = struct{}{}
+		}
+		if strings.TrimSpace(file.SourcePath) != "" {
+			existingSources[filepath.Clean(file.SourcePath)] = struct{}{}
+		}
+		if file.Content == "" {
+			continue
+		}
+		for _, ref := range skillsarchive.ExtractClaudeExternalReferences(file.Content) {
+			refs[ref] = struct{}{}
+		}
+	}
+	if len(refs) == 0 {
+		return nil
+	}
+
+	refList := make([]string, 0, len(refs))
+	for ref := range refs {
+		refList = append(refList, ref)
+	}
+	sort.Strings(refList)
+	for _, ref := range refList {
+		sourcePath, targetRel, ok := resolveClaudeExternalSkillAsset(ref, sourcePaths)
+		if !ok {
+			appendClaudeScanNote(notes, fmt.Sprintf("External Claude reference %s was not included because it is outside supported tools/plugins paths.", ref))
+			continue
+		}
+		if _, exists := existingTargets[targetRel]; exists {
+			continue
+		}
+		if _, exists := existingSources[filepath.Clean(sourcePath)]; exists {
+			continue
+		}
+		info, err := os.Stat(sourcePath)
+		if err != nil {
+			if os.IsNotExist(err) {
+				appendClaudeScanNote(notes, fmt.Sprintf("External Claude reference %s was not included because %s was not found.", ref, sourcePath))
+				continue
+			}
+			return err
+		}
+		if info.IsDir() {
+			appendClaudeScanNote(notes, fmt.Sprintf("External Claude reference %s points to a directory; include the concrete file path instead.", ref))
+			continue
+		}
+		if info.Size() > claudeExternalSkillAssetMaxBytes {
+			appendClaudeScanNote(notes, fmt.Sprintf("External Claude reference %s was not included because it is larger than 256 KB.", ref))
+			continue
+		}
+		record, ok, note, _, _, err := readClaudeFileRecord(sourcePath, targetRel, false)
+		if err != nil {
+			return err
+		}
+		if note != "" {
+			appendClaudeScanNote(notes, note)
+		}
+		if !ok {
+			continue
+		}
+		bundle.Files = append(bundle.Files, record)
+		existingTargets[targetRel] = struct{}{}
+		existingSources[filepath.Clean(sourcePath)] = struct{}{}
+		appendClaudeScanNote(notes, fmt.Sprintf("Included external Claude asset %s as %s for skill %s.", sourcePath, targetRel, bundle.Name))
+	}
+	return nil
+}
+
+func resolveClaudeExternalSkillAsset(ref string, sourcePaths []string) (string, string, bool) {
+	scope, rel, ok := splitClaudeExternalReference(ref)
+	if !ok {
+		return "", "", false
+	}
+	targetRel := filepath.ToSlash(filepath.Join("external", scope, rel))
+	candidates := []string{}
+	normalized := strings.TrimSpace(strings.ReplaceAll(ref, "\\", "/"))
+	home, _ := os.UserHomeDir()
+	if strings.HasPrefix(normalized, "~/.claude/") || strings.HasPrefix(normalized, "/.claude/") {
+		if home != "" {
+			candidates = append(candidates, filepath.Join(home, ".claude", scopeToClaudeDir(scope), filepath.FromSlash(rel)))
+		}
+	} else if strings.HasPrefix(normalized, ".claude/") {
+		for _, root := range sourcePaths {
+			root = strings.TrimSpace(root)
+			if root == "" {
+				continue
+			}
+			candidates = append(candidates, filepath.Join(root, ".claude", scopeToClaudeDir(scope), filepath.FromSlash(rel)))
+		}
+		if home != "" {
+			candidates = append(candidates, filepath.Join(home, ".claude", scopeToClaudeDir(scope), filepath.FromSlash(rel)))
+		}
+	} else if filepath.IsAbs(normalized) {
+		candidates = append(candidates, filepath.FromSlash(normalized))
+	}
+
+	for _, candidate := range candidates {
+		clean := filepath.Clean(candidate)
+		if clean == "" || !isAllowedClaudeExternalAssetPath(clean, scope, sourcePaths) {
+			continue
+		}
+		return clean, targetRel, true
+	}
+	return "", "", false
+}
+
+func splitClaudeExternalReference(ref string) (string, string, bool) {
+	normalized := strings.Trim(strings.TrimSpace(strings.ReplaceAll(ref, "\\", "/")), ".,;:")
+	for _, candidate := range []struct {
+		marker string
+		scope  string
+	}{
+		{marker: ".claude/tools/", scope: "claude-tools"},
+		{marker: ".claude/plugins/", scope: "claude-plugins"},
+	} {
+		if idx := strings.Index(normalized, candidate.marker); idx >= 0 {
+			rel := strings.TrimPrefix(normalized[idx:], candidate.marker)
+			rel = normalizeClaudeAssetRelPath(rel, "")
+			if rel == "" {
+				return "", "", false
+			}
+			return candidate.scope, rel, true
+		}
+	}
+	return "", "", false
+}
+
+func scopeToClaudeDir(scope string) string {
+	switch scope {
+	case "claude-tools":
+		return "tools"
+	case "claude-plugins":
+		return "plugins"
+	default:
+		return ""
+	}
+}
+
+func isAllowedClaudeExternalAssetPath(pathValue, scope string, sourcePaths []string) bool {
+	dirName := scopeToClaudeDir(scope)
+	if dirName == "" {
+		return false
+	}
+	home, _ := os.UserHomeDir()
+	allowedRoots := []string{}
+	if home != "" {
+		allowedRoots = append(allowedRoots, filepath.Join(home, ".claude", dirName))
+	}
+	for _, root := range sourcePaths {
+		root = strings.TrimSpace(root)
+		if root != "" {
+			allowedRoots = append(allowedRoots, filepath.Join(root, ".claude", dirName))
+		}
+	}
+	cleanPath := filepath.Clean(pathValue)
+	for _, root := range allowedRoots {
+		root = filepath.Clean(root)
+		rel, err := filepath.Rel(root, cleanPath)
+		if err != nil || rel == "." || strings.HasPrefix(rel, "..") {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func appendClaudeScanNote(notes *[]string, note string) {
+	if notes == nil || strings.TrimSpace(note) == "" {
+		return
+	}
+	*notes = append(*notes, note)
+}
+
+func normalizeClaudeAssetRelPath(primary, fallback string) string {
+	candidate := strings.TrimSpace(primary)
+	if candidate == "" {
+		candidate = strings.TrimSpace(fallback)
+	}
+	candidate = filepath.ToSlash(candidate)
+	candidate = strings.TrimPrefix(candidate, "/")
+	if candidate == "" {
+		return ""
+	}
+	parts := []string{}
+	for _, part := range strings.Split(candidate, "/") {
+		part = strings.TrimSpace(part)
+		if part == "" || part == "." || part == ".." {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return filepath.ToSlash(filepath.Clean(strings.Join(parts, "/")))
 }
 
 func scanClaudeMarkdownBundles(inventory *sqlite.ClaudeInventory, dir, kind string) error {

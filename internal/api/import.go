@@ -14,6 +14,7 @@ import (
 	"github.com/agi-bar/neudrive/internal/hubpath"
 	"github.com/agi-bar/neudrive/internal/models"
 	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/neudrive/internal/skillsarchive"
 	"github.com/google/uuid"
 )
 
@@ -95,10 +96,13 @@ type ProjectExport struct {
 
 // ImportResult is the standard response for all import endpoints.
 type ImportResult struct {
-	Imported int      `json:"imported"`
-	Skipped  int      `json:"skipped"`
-	Errors   []string `json:"errors,omitempty"`
-	Skills   []string `json:"skills,omitempty"`
+	Imported       int                                  `json:"imported"`
+	Skipped        int                                  `json:"skipped"`
+	ManifestFiles  int                                  `json:"manifest_files,omitempty"`
+	Errors         []string                             `json:"errors,omitempty"`
+	Skills         []string                             `json:"skills,omitempty"`
+	SkillManifests []skillsarchive.SkillManifest        `json:"skill_manifests,omitempty"`
+	Warnings       []skillsarchive.SkillManifestWarning `json:"warnings,omitempty"`
 }
 
 // ---------------------------------------------------------------------------
@@ -107,17 +111,20 @@ type ImportResult struct {
 
 // HandleImportSkills handles skill file imports via JSON or multipart zip upload.
 func (s *Server) HandleImportSkills(w http.ResponseWriter, r *http.Request) {
-	userID, ok := userIDFromCtx(r.Context())
+	target, ok := s.resolveScopedHubTarget(w, r, "", true)
 	if !ok {
-		respondUnauthorized(w)
 		return
 	}
-	result, err := s.importSkillsForUser(r, userID)
+	result, err := s.importSkillsForUser(r, target.UserID)
 	if err != nil {
 		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, err.Error())
 		return
 	}
-	respondOKWithLocalGitSync(w, result, s.syncLocalGitMirror(r.Context(), userID))
+	if target.Scope == "personal" {
+		respondOKWithLocalGitSync(w, result, s.syncLocalGitMirror(r.Context(), target.UserID))
+		return
+	}
+	respondOK(w, result)
 }
 
 func (s *Server) importSkillsForUser(r *http.Request, userID uuid.UUID) (*ImportResult, error) {
@@ -141,10 +148,13 @@ func (s *Server) importSkillsForUser(r *http.Request, userID uuid.UUID) (*Import
 			return nil, err
 		}
 		return &ImportResult{
-			Imported: result.Imported,
-			Skipped:  result.Skipped,
-			Errors:   result.Errors,
-			Skills:   result.Skills,
+			Imported:       result.Imported,
+			Skipped:        result.Skipped,
+			ManifestFiles:  result.ManifestFiles,
+			Errors:         result.Errors,
+			Skills:         result.Skills,
+			SkillManifests: result.SkillManifests,
+			Warnings:       result.Warnings,
 		}, nil
 	}
 
@@ -195,6 +205,70 @@ func (s *Server) importSkillsForUser(r *http.Request, userID uuid.UUID) (*Import
 		}
 	}
 	return result, nil
+}
+
+func (s *Server) handleAgentImportSkillExternalFile(w http.ResponseWriter, r *http.Request) {
+	if !s.agentCheckAuth(w, r, models.TrustLevelWork, models.ScopeWriteSkills) {
+		return
+	}
+	target, ok := s.resolveScopedHubTarget(w, r, "", true)
+	if !ok {
+		return
+	}
+	if s.ImportService == nil {
+		respondError(w, http.StatusInternalServerError, ErrCodeInternal, "import service not configured")
+		return
+	}
+	if err := r.ParseMultipartForm(1 << 20); err != nil {
+		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "failed to parse multipart form")
+		return
+	}
+	file, header, err := r.FormFile("file")
+	if err != nil {
+		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "file is required")
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, services.MaxExternalSkillAssetBytes+1))
+	if err != nil {
+		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "failed to read file")
+		return
+	}
+	if len(data) > services.MaxExternalSkillAssetBytes {
+		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "file exceeds 5 MB limit")
+		return
+	}
+
+	filename := ""
+	contentType := ""
+	if header != nil {
+		filename = header.Filename
+		contentType = header.Header.Get("Content-Type")
+	}
+	platform := strings.TrimSpace(r.FormValue("platform"))
+	if platform == "" {
+		platform = strings.TrimSpace(r.URL.Query().Get("platform"))
+	}
+	result, err := s.ImportService.ImportExternalSkillAsset(
+		s.requestSourceContext(r, "import"),
+		target.UserID,
+		r.FormValue("skill_name"),
+		r.FormValue("source_ref"),
+		filename,
+		data,
+		contentType,
+		platform,
+	)
+	if err != nil {
+		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, err.Error())
+		return
+	}
+	if target.Scope == "personal" {
+		respondOKWithLocalGitSync(w, result, s.syncLocalGitMirror(r.Context(), target.UserID))
+		return
+	}
+	respondOK(w, result)
 }
 
 func importedSkillNameFromPath(path string) string {

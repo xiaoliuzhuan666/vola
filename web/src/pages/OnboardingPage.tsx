@@ -123,8 +123,8 @@ export default function OnboardingPage() {
       <section className="setup-wizard mcp-setup-wizard">
         <article className="wizard-card mcp-step-card">
           <div className="wizard-step-label">{tx('第 1 步，共 3 步', 'Step 1 of 3')}</div>
-          <h3>{tx('打开平台设置并添加 neuDrive', 'Open platform settings and add neuDrive')}</h3>
-          <p>{tx('先选择你正在使用的平台，然后按对应入口去添加 neuDrive。', 'Choose your platform first, then use the matching entry point to add neuDrive.')}</p>
+          <h3>{tx('把平台接到个人数据 Hub', 'Connect the platform to your data hub')}</h3>
+          <p>{tx('选择你正在使用的平台，然后把它接到同一份 profile、memory、projects、skills 和 vault 权限。', 'Choose your platform, then connect it to the same profile, memory, projects, skills, and vault access.')}</p>
           <div className="mcp-platform-tabs" role="tablist" aria-label={tx('平台接入入口', 'Platform setup entry')}>
             {mcpGuides.map((guide) => (
               <button
@@ -171,8 +171,8 @@ export default function OnboardingPage() {
 
         <article className="wizard-card mcp-step-card">
           <div className="wizard-step-label">{tx('第 3 步，共 3 步', 'Step 3 of 3')}</div>
-          <h3>{tx('在对话中测试', 'Test in chat')}</h3>
-          <p>{tx('连接保存后，在对应 AI 工具的新对话里发送这句话。', 'After saving the connection, send this in a new chat in that AI tool.')}</p>
+          <h3>{tx('在对话中测试数据读取', 'Test data access in chat')}</h3>
+          <p>{tx('连接保存后，在对应 AI 工具的新对话里发送这句话，确认它能读取被授权的 neuDrive 资料。', 'After saving the connection, send this in a new chat in that AI tool to confirm it can read authorized neuDrive data.')}</p>
           <div className="mcp-copy-row prompt-row">
             <code>{activeTestPrompt}</code>
             <button className="btn btn-primary" onClick={() => { void copyText(activeTestPrompt, 'prompt') }}>

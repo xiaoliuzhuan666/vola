@@ -68,6 +68,132 @@ func (r *UserRepo) GetAuthBinding(ctx context.Context, provider string, provider
 	return &binding, nil
 }
 
+func (r *UserRepo) ListAccounts(ctx context.Context, fallbackQuotaBytes int64) ([]models.AdminUserAccount, error) {
+	rows, err := r.Store.DB().QueryContext(ctx, `
+		SELECT u.id,
+		       u.slug,
+		       u.display_name,
+		       u.email,
+		       u.storage_quota_bytes,
+		       COALESCE(SUM(
+			       CASE
+				       WHEN ft.is_directory = 1 THEN 0
+				       WHEN fb.entry_id IS NOT NULL THEN fb.size_bytes
+				       ELSE length(CAST(COALESCE(ft.content, '') AS BLOB))
+			       END
+		       ), 0) AS used_bytes,
+		       u.created_at,
+		       u.updated_at
+		  FROM users u
+		  LEFT JOIN file_tree ft
+		    ON ft.user_id = u.id AND ft.deleted_at IS NULL
+		  LEFT JOIN file_blobs fb
+		    ON fb.entry_id = ft.id
+		 WHERE u.account_type = 'person'
+		 GROUP BY u.id, u.slug, u.display_name, u.email, u.storage_quota_bytes, u.created_at, u.updated_at
+		 ORDER BY u.created_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite.UserRepo.ListAccounts: %w", err)
+	}
+	defer rows.Close()
+
+	accounts := []models.AdminUserAccount{}
+	for rows.Next() {
+		account, scanErr := scanSQLiteAdminUserAccount(rows, fallbackQuotaBytes)
+		if scanErr != nil {
+			return nil, fmt.Errorf("sqlite.UserRepo.ListAccounts: scan: %w", scanErr)
+		}
+		accounts = append(accounts, *account)
+	}
+	return accounts, rows.Err()
+}
+
+func (r *UserRepo) GetAccount(ctx context.Context, userID uuid.UUID, fallbackQuotaBytes int64) (*models.AdminUserAccount, error) {
+	row := r.Store.DB().QueryRowContext(ctx, `
+		SELECT u.id,
+		       u.slug,
+		       u.display_name,
+		       u.email,
+		       u.storage_quota_bytes,
+		       COALESCE(SUM(
+			       CASE
+				       WHEN ft.is_directory = 1 THEN 0
+				       WHEN fb.entry_id IS NOT NULL THEN fb.size_bytes
+				       ELSE length(CAST(COALESCE(ft.content, '') AS BLOB))
+			       END
+		       ), 0) AS used_bytes,
+		       u.created_at,
+		       u.updated_at
+		  FROM users u
+		  LEFT JOIN file_tree ft
+		    ON ft.user_id = u.id AND ft.deleted_at IS NULL
+		  LEFT JOIN file_blobs fb
+		    ON fb.entry_id = ft.id
+		 WHERE u.id = ?
+		 GROUP BY u.id, u.slug, u.display_name, u.email, u.storage_quota_bytes, u.created_at, u.updated_at`,
+		userID.String(),
+	)
+	account, err := scanSQLiteAdminUserAccount(row, fallbackQuotaBytes)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite.UserRepo.GetAccount: %w", err)
+	}
+	return account, nil
+}
+
+func (r *UserRepo) UpdateStorageQuota(ctx context.Context, userID uuid.UUID, quotaBytes *int64, fallbackQuotaBytes int64) (*models.AdminUserAccount, error) {
+	if quotaBytes != nil && *quotaBytes < 0 {
+		return nil, fmt.Errorf("storage_quota_bytes must be >= 0")
+	}
+	var quotaArg interface{}
+	if quotaBytes != nil {
+		quotaArg = *quotaBytes
+	}
+	_, err := r.Store.DB().ExecContext(ctx,
+		`UPDATE users SET storage_quota_bytes = ?, updated_at = ? WHERE id = ?`,
+		quotaArg,
+		timeText(time.Now().UTC()),
+		userID.String(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("sqlite.UserRepo.UpdateStorageQuota: %w", err)
+	}
+	return r.GetAccount(ctx, userID, fallbackQuotaBytes)
+}
+
+type sqliteAdminAccountScanner interface {
+	Scan(dest ...interface{}) error
+}
+
+func scanSQLiteAdminUserAccount(row sqliteAdminAccountScanner, fallbackQuotaBytes int64) (*models.AdminUserAccount, error) {
+	var (
+		account      models.AdminUserAccount
+		id           string
+		quota        sql.NullInt64
+		createdAt    string
+		updatedAt    string
+		storageBytes int64
+	)
+	if err := row.Scan(&id, &account.Slug, &account.DisplayName, &account.Email, &quota, &storageBytes, &createdAt, &updatedAt); err != nil {
+		return nil, err
+	}
+	parsedID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+	account.ID = parsedID
+	if quota.Valid {
+		value := quota.Int64
+		account.StorageQuotaBytes = &value
+		account.EffectiveStorageQuotaBytes = value
+	} else {
+		account.EffectiveStorageQuotaBytes = fallbackQuotaBytes
+	}
+	account.StorageUsedBytes = storageBytes
+	account.CreatedAt = mustParseTime(createdAt)
+	account.UpdatedAt = mustParseTime(updatedAt)
+	return &account, nil
+}
+
 type AuthRepo struct {
 	Store *Store
 }

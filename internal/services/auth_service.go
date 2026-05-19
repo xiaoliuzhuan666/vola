@@ -67,6 +67,34 @@ func NewAuthServiceWithRepo(repo AuthRepo, tokenGen TokenGeneratorFunc, ghExchan
 	}
 }
 
+// CreateUser creates a password account without issuing a login session.
+func (s *AuthService) CreateUser(ctx context.Context, req models.RegisterRequest) (*models.User, error) {
+	email := strings.TrimSpace(strings.ToLower(req.Email))
+	if !emailRegexp.MatchString(email) {
+		return nil, fmt.Errorf("invalid email format")
+	}
+	if len(req.Password) < 8 {
+		return nil, fmt.Errorf("password must be at least 8 characters")
+	}
+	slug := strings.TrimSpace(req.Slug)
+	if slug == "" {
+		return nil, fmt.Errorf("slug is required")
+	}
+	displayName := strings.TrimSpace(req.DisplayName)
+	if displayName == "" {
+		displayName = slug
+	}
+	hash, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcryptCost)
+	if err != nil {
+		return nil, fmt.Errorf("failed to hash password: %w", err)
+	}
+	now := time.Now().UTC()
+	if s.repo != nil {
+		return s.repo.RegisterUser(ctx, email, slug, displayName, string(hash), now)
+	}
+	return s.createUserWithPasswordHash(ctx, email, slug, displayName, string(hash), now)
+}
+
 // Register creates a new user with email/password credentials.
 func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) (*models.AuthResponse, error) {
 	// Validate email
@@ -106,9 +134,17 @@ func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) 
 		return s.generateAuthResponse(ctx, user, "", "")
 	}
 
+	user, err := s.createUserWithPasswordHash(ctx, email, slug, displayName, string(hash), now)
+	if err != nil {
+		return nil, err
+	}
+	return s.generateAuthResponse(ctx, user, "", "")
+}
+
+func (s *AuthService) createUserWithPasswordHash(ctx context.Context, email, slug, displayName, passwordHash string, now time.Time) (*models.User, error) {
 	tx, err := s.db.Begin(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("register: begin tx: %w", err)
+		return nil, fmt.Errorf("create user: begin tx: %w", err)
 	}
 	defer tx.Rollback(ctx)
 
@@ -119,29 +155,29 @@ func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) 
 		return nil, fmt.Errorf("email already registered")
 	}
 	if err != pgx.ErrNoRows {
-		return nil, fmt.Errorf("register: check email: %w", err)
+		return nil, fmt.Errorf("create user: check email: %w", err)
 	}
 	err = tx.QueryRow(ctx, `SELECT id FROM users WHERE slug = $1`, slug).Scan(&existing)
 	if err == nil {
 		return nil, fmt.Errorf("slug already taken")
 	}
 	if err != pgx.ErrNoRows {
-		return nil, fmt.Errorf("register: check slug: %w", err)
+		return nil, fmt.Errorf("create user: check slug: %w", err)
 	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO users (id, slug, display_name, email, timezone, language, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, 'UTC', 'en', $5, $5)`,
 		userID, slug, displayName, email, now)
 	if err != nil {
-		return nil, fmt.Errorf("register: insert user: %w", err)
+		return nil, fmt.Errorf("create user: insert user: %w", err)
 	}
 	credID := uuid.New()
 	_, err = tx.Exec(ctx,
 		`INSERT INTO credentials (id, user_id, email, password_hash, email_verified, login_count, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, false, 0, $5, $5)`,
-		credID, userID, email, string(hash), now)
+		credID, userID, email, passwordHash, now)
 	if err != nil {
-		return nil, fmt.Errorf("register: insert credentials: %w", err)
+		return nil, fmt.Errorf("create user: insert credentials: %w", err)
 	}
 	_, err = tx.Exec(ctx,
 		`INSERT INTO roles (id, user_id, name, role_type, config, allowed_paths, allowed_vault_scopes, lifecycle, created_at)
@@ -149,10 +185,10 @@ func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) 
 		 ON CONFLICT DO NOTHING`,
 		uuid.New(), userID, now)
 	if err != nil {
-		return nil, fmt.Errorf("register: insert default role: %w", err)
+		return nil, fmt.Errorf("create user: insert default role: %w", err)
 	}
 	if err := tx.Commit(ctx); err != nil {
-		return nil, fmt.Errorf("register: commit: %w", err)
+		return nil, fmt.Errorf("create user: commit: %w", err)
 	}
 	user := models.User{
 		ID:          userID,
@@ -164,7 +200,7 @@ func (s *AuthService) Register(ctx context.Context, req models.RegisterRequest) 
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
-	return s.generateAuthResponse(ctx, &user, "", "")
+	return &user, nil
 }
 
 // Login authenticates a user with email/password.

@@ -8,19 +8,20 @@ func (s *Server) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, ok := userIDFromCtx(r.Context())
+	target, ok := s.resolveScopedHubTarget(w, r, "", false)
 	if !ok {
-		respondUnauthorized(w)
 		return
 	}
 
-	skills, err := s.listSkills(r.Context(), userID, trustLevelFromCtx(r.Context()))
+	skills, err := s.listSkills(r.Context(), target.UserID, trustLevelFromCtx(r.Context()))
 	if err != nil {
 		respondInternalError(w, err)
 		return
 	}
 
 	respondOK(w, map[string]interface{}{
+		"scope":  target.Scope,
+		"team":   target.Team,
 		"skills": skills,
 	})
 }

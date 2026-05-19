@@ -34,6 +34,7 @@ func (c *Client) importCodexBundle(ctx context.Context, platform string, bundle 
 		return nil
 	}
 	hasSkill := false
+	manifestFiles := append([]ClaudeFileRecord{}, bundle.Files...)
 	for _, file := range bundle.Files {
 		relPath := normalizeClaudeRelativePath(file.Path, file.SourcePath)
 		if relPath == "" {
@@ -51,6 +52,13 @@ func (c *Client) importCodexBundle(ctx context.Context, platform string, bundle 
 	if !hasSkill {
 		target := filepath.ToSlash(filepath.Join("/skills", bundleName, "SKILL.md"))
 		content := renderSyntheticCodexSkill(bundle, bundleName)
+		syntheticFile := ClaudeFileRecord{
+			Path:        "SKILL.md",
+			Content:     content,
+			ContentType: "text/markdown",
+			Exactness:   "derived",
+			SourcePaths: bundle.SourcePaths,
+		}
 		if _, err := c.store.WriteEntry(ctx, c.userID, target, content, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "skill_file",
 			MinTrustLevel: models.TrustLevelWork,
@@ -65,6 +73,14 @@ func (c *Client) importCodexBundle(ctx context.Context, platform string, bundle 
 			return err
 		}
 		result.Paths = append(result.Paths, target)
+		manifestFiles = append(manifestFiles, syntheticFile)
+	}
+	manifestPath, err := c.writeBundleSkillManifest(ctx, platform, bundleName, normalizeCodexBundleKind(bundle.Kind), bundle, manifestFiles)
+	if err != nil {
+		return err
+	}
+	if manifestPath != "" {
+		result.Paths = append(result.Paths, manifestPath)
 	}
 	result.Bundles++
 	result.Imported++

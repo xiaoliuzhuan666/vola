@@ -89,17 +89,21 @@ func (s *Store) init(ctx context.Context) error {
 			id TEXT PRIMARY KEY,
 			slug TEXT NOT NULL UNIQUE,
 			display_name TEXT NOT NULL,
+			account_type TEXT NOT NULL DEFAULT 'person',
 			email TEXT NOT NULL DEFAULT '',
 			avatar_url TEXT NOT NULL DEFAULT '',
 			bio TEXT NOT NULL DEFAULT '',
 			timezone TEXT NOT NULL,
 			language TEXT NOT NULL,
+			storage_quota_bytes INTEGER,
 			created_at TEXT NOT NULL,
 			updated_at TEXT NOT NULL
 		)`,
 		`ALTER TABLE users ADD COLUMN email TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN account_type TEXT NOT NULL DEFAULT 'person'`,
 		`ALTER TABLE users ADD COLUMN avatar_url TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE users ADD COLUMN bio TEXT NOT NULL DEFAULT ''`,
+		`ALTER TABLE users ADD COLUMN storage_quota_bytes INTEGER`,
 		`CREATE TABLE IF NOT EXISTS auth_bindings (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
@@ -175,6 +179,30 @@ func (s *Store) init(ctx context.Context) error {
 			updated_at TEXT NOT NULL,
 			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 		)`,
+		`CREATE TABLE IF NOT EXISTS teams (
+			id TEXT PRIMARY KEY,
+			slug TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
+			description TEXT NOT NULL DEFAULT '',
+			hub_user_id TEXT NOT NULL UNIQUE,
+			created_by_user_id TEXT,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY (hub_user_id) REFERENCES users(id) ON DELETE CASCADE,
+			FOREIGN KEY (created_by_user_id) REFERENCES users(id) ON DELETE SET NULL
+		)`,
+		`CREATE TABLE IF NOT EXISTS team_members (
+			team_id TEXT NOT NULL,
+			user_id TEXT NOT NULL,
+			role TEXT NOT NULL,
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			PRIMARY KEY (team_id, user_id),
+			FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_team_members_user ON team_members(user_id)`,
+		`CREATE INDEX IF NOT EXISTS idx_team_members_team_role ON team_members(team_id, role)`,
 		`CREATE TABLE IF NOT EXISTS local_git_mirrors (
 			user_id TEXT PRIMARY KEY,
 			root_path TEXT NOT NULL,
@@ -234,6 +262,56 @@ func (s *Store) init(ctx context.Context) error {
 		`ALTER TABLE local_git_mirrors ADD COLUMN github_app_user_login TEXT NOT NULL DEFAULT ''`,
 		`ALTER TABLE local_git_mirrors ADD COLUMN github_app_user_authorized_at TEXT`,
 		`ALTER TABLE local_git_mirrors ADD COLUMN github_app_user_refresh_expires_at TEXT`,
+		`CREATE TABLE IF NOT EXISTS backup_targets (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			kind TEXT NOT NULL,
+			name TEXT NOT NULL,
+			enabled INTEGER NOT NULL DEFAULT 1,
+			config_json TEXT NOT NULL DEFAULT '{}',
+			secret_configured INTEGER NOT NULL DEFAULT 0,
+			auto_backup_enabled INTEGER NOT NULL DEFAULT 0,
+			auto_backup_interval_hours INTEGER NOT NULL DEFAULT 24,
+			retention_keep_last INTEGER NOT NULL DEFAULT 0,
+			retention_keep_days INTEGER NOT NULL DEFAULT 0,
+			last_auto_backup_at TEXT,
+			last_backup_at TEXT,
+			last_backup_object TEXT NOT NULL DEFAULT '',
+			last_backup_error TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			updated_at TEXT NOT NULL,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`ALTER TABLE backup_targets ADD COLUMN auto_backup_enabled INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE backup_targets ADD COLUMN auto_backup_interval_hours INTEGER NOT NULL DEFAULT 24`,
+		`ALTER TABLE backup_targets ADD COLUMN last_auto_backup_at TEXT`,
+		`ALTER TABLE backup_targets ADD COLUMN retention_keep_last INTEGER NOT NULL DEFAULT 0`,
+		`ALTER TABLE backup_targets ADD COLUMN retention_keep_days INTEGER NOT NULL DEFAULT 0`,
+		`CREATE INDEX IF NOT EXISTS backup_targets_user_id_idx ON backup_targets(user_id)`,
+		`CREATE INDEX IF NOT EXISTS backup_targets_auto_backup_idx ON backup_targets(enabled, auto_backup_enabled, last_backup_at)`,
+		`CREATE TABLE IF NOT EXISTS backup_runs (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			target_id TEXT NOT NULL,
+			target_name TEXT NOT NULL DEFAULT '',
+			target_kind TEXT NOT NULL DEFAULT '',
+			trigger TEXT NOT NULL DEFAULT 'manual',
+			status TEXT NOT NULL,
+			object_name TEXT NOT NULL DEFAULT '',
+			location TEXT NOT NULL DEFAULT '',
+			size_bytes INTEGER NOT NULL DEFAULT 0,
+			started_at TEXT NOT NULL,
+			completed_at TEXT,
+			duration_ms INTEGER NOT NULL DEFAULT 0,
+			error TEXT NOT NULL DEFAULT '',
+			remote_deleted_at TEXT,
+			remote_delete_error TEXT NOT NULL DEFAULT '',
+			created_at TEXT NOT NULL,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+			FOREIGN KEY (target_id) REFERENCES backup_targets(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS backup_runs_user_started_idx ON backup_runs(user_id, started_at)`,
+		`CREATE INDEX IF NOT EXISTS backup_runs_target_started_idx ON backup_runs(target_id, started_at)`,
 		`CREATE TABLE IF NOT EXISTS vault_entries (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,
@@ -435,7 +513,8 @@ func (s *Store) init(ctx context.Context) error {
 		if _, err := s.db.ExecContext(ctx, stmt); err != nil {
 			if strings.Contains(err.Error(), "duplicate column name") && (strings.Contains(stmt, "ALTER TABLE users ADD COLUMN") ||
 				strings.Contains(stmt, "ALTER TABLE auth_bindings ADD COLUMN") ||
-				strings.Contains(stmt, "ALTER TABLE local_git_mirrors ADD COLUMN")) {
+				strings.Contains(stmt, "ALTER TABLE local_git_mirrors ADD COLUMN") ||
+				strings.Contains(stmt, "ALTER TABLE backup_targets ADD COLUMN")) {
 				continue
 			}
 			return fmt.Errorf("sqlite.init: %w", err)

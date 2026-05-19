@@ -132,6 +132,7 @@ func TestSQLiteSharedServerImportsClaudeTypedInventory(t *testing.T) {
 		"/projects/claude-demo/context.md",
 		"/projects/claude-demo/docs/spec.md",
 		"/skills/release-helper/SKILL.md",
+		"/skills/release-helper/manifest.neudrive.json",
 		claudeConversationPath(conversation),
 		hubpath.ConversationIndexPath("claude-code"),
 		"/platforms/claude-code/agent/sensitive-findings.json",
@@ -143,6 +144,13 @@ func TestSQLiteSharedServerImportsClaudeTypedInventory(t *testing.T) {
 		if strings.TrimSpace(entry.Content) == "" && !entry.IsDirectory {
 			t.Fatalf("expected content at %s", target)
 		}
+	}
+	manifestEntry, err := store.Read(ctx, user.ID, "/skills/release-helper/manifest.neudrive.json", models.TrustLevelWork)
+	if err != nil {
+		t.Fatalf("Read manifest.neudrive.json: %v", err)
+	}
+	if !strings.Contains(manifestEntry.Content, `"skill_name": "release-helper"`) {
+		t.Fatalf("unexpected skill manifest: %s", manifestEntry.Content)
 	}
 }
 

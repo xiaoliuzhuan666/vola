@@ -18,6 +18,7 @@ type Entry struct {
 	SkillName string
 	RelPath   string
 	Data      []byte
+	Generated bool
 }
 
 type archiveFile struct {

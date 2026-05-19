@@ -6,30 +6,40 @@
   <img src="docs/assets/neudrive-logo.png" alt="neuDrive logo" width="320" />
 </p>
 
-**AI Agent 的身份、记忆与信任中枢**
+**Agent 个人数据 Hub**
 
-> 一个地方，让 Claude、ChatGPT、Codex、Cursor 等 Agent 共享你是谁、你偏好什么、以及它们被允许做什么。
+> 一个地方，保存 Claude、ChatGPT、Codex、Cursor 等 Agent 可使用的个人资料、记忆、项目上下文、技能和访问权限。
 
 ---
 
 ## 这是什么
 
-neuDrive 给每个人一个 Hub。Claude、ChatGPT、Codex、Cursor、Copilot、飞书、Kimi、智谱等 Agent 可以通过这个 Hub 共享身份、记忆、能力、秘密和通信，而不是在每个平台里重复建立上下文。
+neuDrive 给每个人一个 Agent 数据 Hub。Claude、ChatGPT、Codex、Cursor、Copilot、飞书、Kimi、智谱等 Agent 可以通过这个 Hub 读取被授权的 profile、memory、projects、conversations、skills 和 vault 资料，减少在每个平台重复维护上下文。
 
 你可以自己部署 neuDrive，运行属于自己的 Hub。我也提供了一个已经部署好的版本，可以直接在 [https://www.neudrive.ai](https://www.neudrive.ai) 体验。使用兑换码 `VIVO50` 可以获得三个月免费服务；三个月到期后，你可以选择继续续费、继续使用可用的托管方案，或者切换到自己部署的版本。
 
-**你的身份、偏好、秘密、技能跟着人走，不跟平台走。**
+**你的 profile、memory、projects、skills 和私密资料跟着人走，不跟平台走。**
 
 ## 功能特性
 
-- **一个人的 AI Hub**：集中保存 profile、偏好、memory、projects、skills 和 Agent 通信记录，让上下文跟着你跨工具流动。
+- **Agent 个人数据 Hub**：集中保存 profile、memory、projects、conversations、skills 和 Agent 通信记录，让上下文跟着你跨工具流动。
 - **跨平台 AI 接入**：通过 hosted OAuth、Remote MCP 或本地 adapter 连接 Claude、ChatGPT、Cursor、Windsurf、Codex CLI、Gemini CLI、飞书和自定义 MCP 客户端。
-- **记忆和技能迁移**：从 Agent 工具导入 skills、项目上下文、profile/preferences 和 notes，也可以通过 CLI、API、Bundle Sync 导出或恢复。
+- **记忆、项目和技能迁移**：从 Agent 工具导入 skills、项目上下文、profile/preferences、会话和 notes，也可以通过 CLI、API、Bundle Sync 导出或恢复。
+- **Team Library 第一阶段**：小团队可以把内部 Skill、MCP 配置说明、提示词和 AI 使用技巧放进团队资料库，并进入备份、搜索和 MCP 访问链路。[查看文档](docs/team-ai-library.zh-CN.md)
 - **秘密和信任控制**：secrets 放在统一 vault 中，通过 scoped token 和 trust level 控制每个 Agent 能访问什么。
 - **Agent 协作**：Agent 可以互发消息、写入项目日志、交接任务，不需要你在工具之间手动复制上下文。
 - **面向开发者的数据接口**：提供 canonical virtual tree、typed HTTP API、MCP tools、文件树读写和 `snapshot/changes` 同步接口。
 - **GitHub Backup**：把 neuDrive 可见文件树同步到私有 GitHub 仓库，保留可恢复版本历史。[查看文档](docs/github-backup.zh-CN.md)
 - **Hosted 或自托管**：可以直接使用 [neudrive.ai](https://www.neudrive.ai)，也可以部署自己的 Hub，使用本地或远端存储。
+
+## 当前边界
+
+- GitHub Backup 备份的是用户可见文件树，不包含 secret 明文，也不能替代 Postgres 备份。
+- WebDAV / S3-compatible 备份上传的是 neuDrive 导出 zip，适合离开当前服务器保存恢复包；账号、连接、billing、session 等仍以数据库备份为准。
+- Skill 自动写入当前只对 Claude Code 和 Codex 开放：Claude Code 写 `~/.claude/skills`，Codex 写 `~/.codex/skills`，且只更新带 `.neudrive-managed.json` 的目录；Cursor、Gemini CLI 可分配、可预览、可导出，但 neuDrive 不自动修改它们的本地配置。详细边界见 [多 Agent Skill 目标规则](docs/agent-skill-targets.zh-CN.md)。
+- Claude / Codex Skill 转换会保留脚本、依赖、assets、二进制资源和外部引用文件；MCP、plugin、hook 只生成报告，需要用户手动配置。
+- Hosted OAuth、ChatGPT Apps、Claude Connectors 等能力受对应平台账号计划、灰度和平台规则影响。
+- Team Library 当前按小团队共享资料库设计，不等同于企业级组织管理、审计报表、SSO 或审批流。
 
 本仓库里的 hosted service 示例统一使用：
 
@@ -96,6 +106,29 @@ neu browse         # 在浏览器里打开本地 Hub
 
 详细 CLI 使用见：[CLI 使用手册](docs/cli.zh-CN.md)
 
+## 开发、测试与构建
+
+本地开发常用命令：
+
+```bash
+cp neudrive.env.example neudrive.env
+set -a; source neudrive.env; set +a
+go run ./cmd/neudrive server --listen :8080
+cd web && npm run dev
+```
+
+前端开发服务器默认访问 `http://localhost:3000`，并把 API 代理到 `http://localhost:8080`。
+
+Release candidate 验证建议至少执行：
+
+```bash
+go test ./...
+cd web && npm run build
+make build
+```
+
+`make build` 会重新生成嵌入式前端产物并构建 `bin/neudrive` 与 `bin/neu`。部署前检查清单见：[Release Readiness](docs/release-readiness.zh-CN.md)
+
 ## 登录官方云服务
 
 如果你希望登录官方云 Hub，用于 CLI、Claude 等接入流程，可以直接运行：
@@ -112,6 +145,7 @@ neu login
 
 - [接入说明](docs/setup.zh-CN.md)
 - [GitHub Backup 指南](docs/github-backup.zh-CN.md)
+- [小范围上线测试清单](docs/launch-test-checklist.zh-CN.md)
 - [CLI 使用手册](docs/cli.zh-CN.md)
 - [详细参考](docs/reference.zh-CN.md)
 
@@ -126,6 +160,7 @@ neu login
 更多资料：
 
 - [Token 管理](docs/setup.zh-CN.md#token-management)
+- [团队 AI 资料库](docs/team-ai-library.zh-CN.md)
 - [Bundle Sync 指南](docs/sync.md)
 - [SDK / HTTP API](docs/reference.zh-CN.md#sdk)
 - [产品设计文档](docs/design.md)

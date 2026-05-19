@@ -7,16 +7,37 @@ import (
 )
 
 type User struct {
-	ID          uuid.UUID `json:"id" db:"id"`
-	Slug        string    `json:"slug" db:"slug"`
-	DisplayName string    `json:"display_name" db:"display_name"`
-	Email       string    `json:"email,omitempty" db:"email"`
-	AvatarURL   string    `json:"avatar_url,omitempty" db:"avatar_url"`
-	Bio         string    `json:"bio,omitempty" db:"bio"`
-	Timezone    string    `json:"timezone" db:"timezone"`
-	Language    string    `json:"language" db:"language"`
-	CreatedAt   time.Time `json:"created_at" db:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at" db:"updated_at"`
+	ID                uuid.UUID `json:"id" db:"id"`
+	Slug              string    `json:"slug" db:"slug"`
+	DisplayName       string    `json:"display_name" db:"display_name"`
+	Email             string    `json:"email,omitempty" db:"email"`
+	AvatarURL         string    `json:"avatar_url,omitempty" db:"avatar_url"`
+	Bio               string    `json:"bio,omitempty" db:"bio"`
+	Timezone          string    `json:"timezone" db:"timezone"`
+	Language          string    `json:"language" db:"language"`
+	StorageQuotaBytes *int64    `json:"storage_quota_bytes,omitempty" db:"storage_quota_bytes"`
+	CreatedAt         time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at" db:"updated_at"`
+}
+
+type AdminUserAccount struct {
+	ID                         uuid.UUID `json:"id"`
+	Slug                       string    `json:"slug"`
+	DisplayName                string    `json:"display_name"`
+	Email                      string    `json:"email,omitempty"`
+	StorageQuotaBytes          *int64    `json:"storage_quota_bytes"`
+	EffectiveStorageQuotaBytes int64     `json:"effective_storage_quota_bytes"`
+	StorageUsedBytes           int64     `json:"storage_used_bytes"`
+	CreatedAt                  time.Time `json:"created_at"`
+	UpdatedAt                  time.Time `json:"updated_at"`
+}
+
+type AdminCreateUserRequest struct {
+	Email             string `json:"email"`
+	Password          string `json:"password"`
+	DisplayName       string `json:"display_name"`
+	Slug              string `json:"slug"`
+	StorageQuotaBytes *int64 `json:"storage_quota_bytes"`
 }
 
 type AuthBinding struct {

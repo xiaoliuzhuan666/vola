@@ -2,6 +2,20 @@ package config
 
 import "testing"
 
+func TestLoadWithOverridesDefaultsUserStorageQuotaTo100MB(t *testing.T) {
+	cfg, err := LoadWithOverrides(map[string]string{
+		"JWT_SECRET":       "secret",
+		"VAULT_MASTER_KEY": "vault",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithOverrides: %v", err)
+	}
+	const want = 100 * 1024 * 1024
+	if cfg.UserStorageQuotaBytes != want {
+		t.Fatalf("UserStorageQuotaBytes = %d, want %d", cfg.UserStorageQuotaBytes, want)
+	}
+}
+
 func TestLoadWithOverridesParsesUserStorageQuotaUnits(t *testing.T) {
 	cfg, err := LoadWithOverrides(map[string]string{
 		"JWT_SECRET":               "secret",
@@ -50,5 +64,42 @@ func TestLoadWithOverridesRejectsInvalidGitMirrorManualSyncCooldown(t *testing.T
 	})
 	if err == nil {
 		t.Fatal("LoadWithOverrides succeeded for invalid Git Mirror manual sync cooldown")
+	}
+}
+
+func TestLoadWithOverridesParsesCOSConfig(t *testing.T) {
+	cfg, err := LoadWithOverrides(map[string]string{
+		"JWT_SECRET":             "secret",
+		"VAULT_MASTER_KEY":       "vault",
+		"OBJECT_STORAGE_BACKEND": "cos",
+		"TENCENT_COS_BUCKET":     "demo-1250000000",
+		"TENCENT_COS_REGION":     "ap-guangzhou",
+		"TENCENT_COS_SECRET_ID":  "secret-id",
+		"TENCENT_COS_SECRET_KEY": "secret-key",
+		"TENCENT_COS_PREFIX":     "prod/neudrive",
+		"TENCENT_COS_PATH_STYLE": "true",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithOverrides: %v", err)
+	}
+	if cfg.ObjectStorageBackend != "cos" {
+		t.Fatalf("ObjectStorageBackend = %q", cfg.ObjectStorageBackend)
+	}
+	if !cfg.TencentCOSPathStyle {
+		t.Fatal("TencentCOSPathStyle = false, want true")
+	}
+	if cfg.TencentCOSPrefix != "prod/neudrive" {
+		t.Fatalf("TencentCOSPrefix = %q", cfg.TencentCOSPrefix)
+	}
+}
+
+func TestLoadWithOverridesRejectsIncompleteCOSConfig(t *testing.T) {
+	_, err := LoadWithOverrides(map[string]string{
+		"JWT_SECRET":             "secret",
+		"VAULT_MASTER_KEY":       "vault",
+		"OBJECT_STORAGE_BACKEND": "cos",
+	})
+	if err == nil {
+		t.Fatal("LoadWithOverrides succeeded for incomplete COS config")
 	}
 }

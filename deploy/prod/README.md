@@ -15,8 +15,8 @@ Recommended server layout:
 ```
 
 `repo/` is a clean git checkout of `git@github.com:agi-bar/neudrive.git`.
-`config/neudrive.env` is copied from `neudrive.env.example` and holds the real
-deployment settings and secrets.
+`config/neudrive.env` is copied from `repo/neudrive.env.example` and holds the
+real deployment settings and secrets.
 
 `bin/deploy-main` is a thin wrapper that:
 
@@ -31,6 +31,12 @@ runtime secrets/config from `config/neudrive.env`, applies the Kubernetes
 manifests, updates the deployment image, waits for rollout, and verifies the
 public healthcheck.
 
+The production manifests mount `/data/git-mirrors` as a persistent volume and
+set `GIT_MIRROR_HOSTED_ROOT` through the `neudrive-config` ConfigMap. The
+healthcheck only proves that the HTTP service is alive; backup readiness should
+be checked through the admin-only `/api/ops/status` endpoint and a real restore
+drill.
+
 Useful commands from the server:
 
 ```bash
@@ -39,6 +45,34 @@ vim ~/apps/neudrive/config/neudrive.env
 ~/apps/neudrive/bin/deploy-main
 ~/apps/neudrive/bin/status
 ```
+
+Required settings for the release candidate:
+
+- `POSTGRES_PASSWORD`
+- `JWT_SECRET`
+- `VAULT_MASTER_KEY`
+- `PUBLIC_BASE_URL`
+- `GIT_MIRROR_HOSTED_ROOT`，production 默认写入 `/data/git-mirrors`
+- `GITHUB_APP_CLIENT_ID`、`GITHUB_APP_CLIENT_SECRET`、`GITHUB_APP_SLUG`，用于 hosted GitHub Backup 的 GitHub App 授权
+- `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`，用于通用 GitHub OAuth 路径；如果只开放 GitHub App user backup，可以留空
+- `USER_STORAGE_QUOTA_BYTES`，默认每用户存储额度；现在示例默认 100MB，单个账号额度可以通过 admin API 设置
+- `OBJECT_STORAGE_BACKEND=cos`、`TENCENT_COS_BUCKET`、`TENCENT_COS_REGION`、`TENCENT_COS_SECRET_ID`、`TENCENT_COS_SECRET_KEY`，用于把二进制文件存到腾讯 Lighthouse COS；Secret 不要提交到仓库
+
+## Backup and Restore
+
+Before opening a production instance to users:
+
+1. Keep `JWT_SECRET` and `VAULT_MASTER_KEY` in a separate secure place.
+2. Configure at least one remote backup destination: GitHub Backup, WebDAV, or
+   S3-compatible storage.
+3. Run a Postgres logical backup and copy it off the server.
+4. Run one restore drill in a temporary environment.
+5. Check `/api/ops/status` with an admin token and record the result.
+
+Detailed runbook:
+
+- [`docs/deployment-reliability.zh-CN.md`](../../docs/deployment-reliability.zh-CN.md)
+- [`docs/account-storage-mobile-sync.zh-CN.md`](../../docs/account-storage-mobile-sync.zh-CN.md)
 
 ## Bundle Sync Prod-like 验收
 

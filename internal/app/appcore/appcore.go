@@ -12,10 +12,12 @@ import (
 
 	"github.com/agi-bar/neudrive/internal/api"
 	"github.com/agi-bar/neudrive/internal/auth"
+	"github.com/agi-bar/neudrive/internal/backups"
 	"github.com/agi-bar/neudrive/internal/config"
 	"github.com/agi-bar/neudrive/internal/database"
 	"github.com/agi-bar/neudrive/internal/localgitsync"
 	"github.com/agi-bar/neudrive/internal/mcp"
+	"github.com/agi-bar/neudrive/internal/objectstore"
 	"github.com/agi-bar/neudrive/internal/runtimecfg"
 	"github.com/agi-bar/neudrive/internal/services"
 	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
@@ -57,6 +59,7 @@ type App struct {
 	InboxService     *services.InboxService
 	SyncService      *services.SyncService
 	GitMirrorService *localgitsync.Service
+	BackupService    *backups.Service
 }
 
 const (
@@ -122,6 +125,7 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 	fileTreeSvc.SetUserStorageQuotaBytes(cfg.UserStorageQuotaBytes)
 	memorySvc := services.NewMemoryServiceWithRepo(sqlitestorage.NewMemoryRepo(store), nil)
 	userSvc := services.NewUserServiceWithRepo(sqlitestorage.NewUserRepo(store))
+	teamSvc := services.NewTeamServiceWithRepo(sqlitestorage.NewTeamRepo(store))
 	connSvc := services.NewConnectionServiceWithRepo(sqlitestorage.NewConnectionRepo(store))
 	vaultSvc := services.NewVaultServiceWithRepo(sqlitestorage.NewVaultRepo(store), v)
 	roleSvc := services.NewRoleServiceWithRepo(sqlitestorage.NewRoleRepo(store), fileTreeSvc)
@@ -149,6 +153,7 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 		localgitsync.WithGitHubAppConfig(cfg.GitHubAppClientID, cfg.GitHubAppClientSecret, cfg.GitHubAppSlug),
 		localgitsync.WithStateSigningSecret(cfg.JWTSecret),
 	)
+	backupSvc := backups.NewService(store, exportSvc, vaultSvc)
 	tokenGen := func(userID uuid.UUID, slug string) (string, error) {
 		return auth.GenerateToken(userID, slug, cfg.JWTSecret)
 	}
@@ -175,6 +180,7 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 		Config:                cfg,
 		LocalOwnerID:          owner.ID,
 		UserService:           userSvc,
+		TeamService:           teamSvc,
 		AuthService:           authSvc,
 		ExternalAuthService:   externalAuthSvc,
 		ConnectionService:     connSvc,
@@ -190,6 +196,7 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 		ExportService:         exportSvc,
 		SyncService:           syncSvc,
 		LocalGitSync:          localGitSyncSvc,
+		BackupService:         backupSvc,
 		OAuthService:          oauthSvc,
 		Vault:                 v,
 		JWTSecret:             cfg.JWTSecret,
@@ -208,6 +215,7 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 		InboxService:     inboxSvc,
 		SyncService:      syncSvc,
 		GitMirrorService: localGitSyncSvc,
+		BackupService:    backupSvc,
 		NewMCPServer: func(token string) (mcp.JSONRPCHandler, error) {
 			scopedToken, err := tokenSvc.ValidateToken(ctx, token)
 			if err != nil {
@@ -230,6 +238,7 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 				Dashboard:    dashboardSvc,
 				Import:       importSvc,
 				Token:        tokenSvc,
+				Team:         teamSvc,
 				LocalGitSync: localGitSyncSvc,
 			}, nil
 		},
@@ -286,12 +295,14 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 		localgitsync.WithGitHubAppConfig(cfg.GitHubAppClientID, cfg.GitHubAppClientSecret, cfg.GitHubAppSlug),
 		localgitsync.WithStateSigningSecret(cfg.JWTSecret),
 	)
+	backupSvc := backups.NewService(backups.NewPostgresRepo(db), deps.exportSvc, deps.vaultSvc)
 
 	httpServer := api.NewServerWithDeps(api.ServerDeps{
 		Storage:               "postgres",
 		Config:                cfg,
 		LocalOwnerID:          localOwnerID,
 		UserService:           deps.userSvc,
+		TeamService:           deps.teamSvc,
 		AuthService:           deps.authSvc,
 		ExternalAuthService:   deps.externalAuthSvc,
 		ConnectionService:     deps.connSvc,
@@ -311,6 +322,7 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 		WebhookService:        deps.webhookSvc,
 		OAuthService:          deps.oauthSvc,
 		LocalGitSync:          localGitSyncSvc,
+		BackupService:         backupSvc,
 		Vault:                 deps.vaultCrypto,
 		JWTSecret:             cfg.JWTSecret,
 		GitHubClientID:        cfg.GithubClientID,
@@ -329,6 +341,7 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 		InboxService:     deps.inboxSvc,
 		SyncService:      deps.syncSvc,
 		GitMirrorService: localGitSyncSvc,
+		BackupService:    backupSvc,
 		NewMCPServer: func(token string) (mcp.JSONRPCHandler, error) {
 			scopedToken, err := deps.tokenSvc.ValidateToken(ctx, token)
 			if err != nil {
@@ -351,6 +364,7 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 				Dashboard:    deps.dashboardSvc,
 				Import:       deps.importSvc,
 				Token:        deps.tokenSvc,
+				Team:         deps.teamSvc,
 				LocalGitSync: localGitSyncSvc,
 			}, nil
 		},
@@ -364,6 +378,7 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 
 type postgresDeps struct {
 	userSvc         *services.UserService
+	teamSvc         *services.TeamService
 	authSvc         *services.AuthService
 	externalAuthSvc *services.ExternalAuthService
 	connSvc         *services.ConnectionService
@@ -392,6 +407,7 @@ func buildPostgresDeps(_ context.Context, db *pgxpool.Pool, cfg *config.Config) 
 	}
 
 	userSvc := services.NewUserService(db)
+	teamSvc := services.NewTeamService(db)
 	tokenGen := func(userID uuid.UUID, slug string) (string, error) {
 		return auth.GenerateToken(userID, slug, cfg.JWTSecret)
 	}
@@ -417,6 +433,11 @@ func buildPostgresDeps(_ context.Context, db *pgxpool.Pool, cfg *config.Config) 
 	connSvc := services.NewConnectionService(db)
 	fileTreeSvc := services.NewFileTreeService(db)
 	fileTreeSvc.SetUserStorageQuotaBytes(cfg.UserStorageQuotaBytes)
+	blobStore, err := buildBlobStore(cfg)
+	if err != nil {
+		return nil, err
+	}
+	fileTreeSvc.SetBlobStore(blobStore)
 	vaultSvc := services.NewVaultService(db, v)
 	memorySvc := services.NewMemoryService(db, fileTreeSvc)
 	roleSvc := services.NewRoleService(db, fileTreeSvc)
@@ -438,6 +459,7 @@ func buildPostgresDeps(_ context.Context, db *pgxpool.Pool, cfg *config.Config) 
 
 	return &postgresDeps{
 		userSvc:         userSvc,
+		teamSvc:         teamSvc,
 		authSvc:         authSvc,
 		externalAuthSvc: externalAuthSvc,
 		connSvc:         connSvc,
@@ -458,6 +480,26 @@ func buildPostgresDeps(_ context.Context, db *pgxpool.Pool, cfg *config.Config) 
 		oauthSvc:        oauthSvc,
 		vaultCrypto:     v,
 	}, nil
+}
+
+func buildBlobStore(cfg *config.Config) (objectstore.Store, error) {
+	if cfg == nil || cfg.ObjectStorageBackend == "" || cfg.ObjectStorageBackend == objectstore.BackendDB {
+		return nil, nil
+	}
+	switch cfg.ObjectStorageBackend {
+	case objectstore.BackendCOS:
+		return objectstore.NewCOSStore(objectstore.COSConfig{
+			Bucket:    cfg.TencentCOSBucket,
+			Region:    cfg.TencentCOSRegion,
+			Endpoint:  cfg.TencentCOSEndpoint,
+			SecretID:  cfg.TencentCOSSecretID,
+			SecretKey: cfg.TencentCOSSecretKey,
+			Prefix:    cfg.TencentCOSPrefix,
+			PathStyle: cfg.TencentCOSPathStyle,
+		})
+	default:
+		return nil, fmt.Errorf("unsupported object storage backend %q", cfg.ObjectStorageBackend)
+	}
 }
 
 func ensureLocalPostgresOwner(ctx context.Context, db *pgxpool.Pool) (uuid.UUID, error) {

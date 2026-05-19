@@ -78,6 +78,24 @@ type UserRepo interface {
 	GetAuthBinding(ctx context.Context, provider string, providerID string) (*models.AuthBinding, error)
 }
 
+type UserAccountRepo interface {
+	ListAccounts(ctx context.Context, fallbackQuotaBytes int64) ([]models.AdminUserAccount, error)
+	GetAccount(ctx context.Context, userID uuid.UUID, fallbackQuotaBytes int64) (*models.AdminUserAccount, error)
+	UpdateStorageQuota(ctx context.Context, userID uuid.UUID, quotaBytes *int64, fallbackQuotaBytes int64) (*models.AdminUserAccount, error)
+}
+
+type TeamRepo interface {
+	CreateTeam(ctx context.Context, creatorUserID uuid.UUID, req models.CreateTeamRequest) (*models.Team, error)
+	ListTeamsForUser(ctx context.Context, userID uuid.UUID) ([]models.Team, error)
+	GetTeamForUser(ctx context.Context, userID uuid.UUID, teamID uuid.UUID) (*models.Team, error)
+	GetTeamBySlugForUser(ctx context.Context, userID uuid.UUID, slug string) (*models.Team, error)
+	UpdateTeam(ctx context.Context, userID, teamID uuid.UUID, req models.UpdateTeamRequest) (*models.Team, error)
+	ListMembers(ctx context.Context, teamID uuid.UUID) ([]models.TeamMember, error)
+	AddMember(ctx context.Context, teamID, userID uuid.UUID, role string) (*models.TeamMember, error)
+	UpdateMemberRole(ctx context.Context, teamID, userID uuid.UUID, role string) (*models.TeamMember, error)
+	RemoveMember(ctx context.Context, teamID, userID uuid.UUID) error
+}
+
 type AuthRepo interface {
 	RegisterUser(ctx context.Context, email, slug, displayName, passwordHash string, now time.Time) (*models.User, error)
 	LookupLogin(ctx context.Context, email string) (*models.Credentials, *models.User, error)

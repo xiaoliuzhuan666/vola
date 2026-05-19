@@ -198,14 +198,17 @@ func (s *Server) handleAgentListSkills(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	userID, _ := userIDFromCtx(r.Context())
+	target, ok := s.resolveScopedHubTarget(w, r, "", false)
+	if !ok {
+		return
+	}
 	trustLevel := trustLevelFromCtx(r.Context())
-	skills, err := s.listSkills(r.Context(), userID, trustLevel)
+	skills, err := s.listSkills(r.Context(), target.UserID, trustLevel)
 	if err != nil {
 		respondInternalError(w, err)
 		return
 	}
-	respondOK(w, map[string]interface{}{"skills": skills})
+	respondOK(w, map[string]interface{}{"scope": target.Scope, "team": target.Team, "skills": skills})
 }
 
 func (s *Server) handleAgentGetProject(w http.ResponseWriter, r *http.Request) {

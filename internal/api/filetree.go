@@ -408,6 +408,9 @@ func (s *Server) readOrListTreePath(ctx context.Context, userID uuid.UUID, trust
 		}
 		return fileTreeEntryToNode(s.renderSystemSkillEntry(ctx, userID, trustLevel, entry)), nil
 	}
+	if !errors.Is(err, services.ErrEntryNotFound) {
+		return nil, err
+	}
 
 	// Only fall through to directory listing if the read error indicates "not found".
 	// For other errors (database, permission, etc.), propagate the real error.
@@ -425,6 +428,11 @@ func (s *Server) listTreeNode(ctx context.Context, userID uuid.UUID, trustLevel 
 		return nil, err
 	}
 	entries = filterVisibleEntries(entries)
+	if storagePath != "/" && len(entries) == 0 {
+		if _, err := s.readDirectoryEntry(ctx, userID, trustLevel, storagePath); err != nil {
+			return nil, err
+		}
+	}
 
 	publicPath := hubpath.StorageToPublic(storagePath)
 	if publicPath != "/" && !strings.HasSuffix(publicPath, "/") {
@@ -444,6 +452,43 @@ func (s *Server) listTreeNode(ctx context.Context, userID uuid.UUID, trustLevel 
 		BundleContext: s.bundleContextForDirectory(ctx, userID, trustLevel, publicPath),
 		Children:      children,
 	}, nil
+}
+
+func (s *Server) readDirectoryEntry(ctx context.Context, userID uuid.UUID, trustLevel int, storagePath string) (*models.FileTreeEntry, error) {
+	var firstErr error
+	for _, candidate := range directoryReadCandidates(storagePath) {
+		entry, err := s.FileTreeService.Read(ctx, userID, candidate, trustLevel)
+		if err == nil {
+			if entry.IsDirectory {
+				return entry, nil
+			}
+			if firstErr == nil {
+				firstErr = services.ErrEntryNotFound
+			}
+			continue
+		}
+		if firstErr == nil || !errors.Is(err, services.ErrEntryNotFound) {
+			firstErr = err
+		}
+	}
+	if firstErr == nil {
+		firstErr = services.ErrEntryNotFound
+	}
+	return nil, firstErr
+}
+
+func directoryReadCandidates(storagePath string) []string {
+	if storagePath == "/" {
+		return []string{"/"}
+	}
+	if strings.HasSuffix(storagePath, "/") {
+		trimmed := strings.TrimSuffix(storagePath, "/")
+		if trimmed == "" {
+			trimmed = "/"
+		}
+		return []string{storagePath, trimmed}
+	}
+	return []string{storagePath, storagePath + "/"}
 }
 
 func (s *Server) bundleContextForDirectory(ctx context.Context, userID uuid.UUID, trustLevel int, currentPath string) *BundleContext {

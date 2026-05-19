@@ -18,3 +18,12 @@ docker-compose.override.yml
 
 test-results/
 web/test-results/
+
+# Local release verification artifacts
+.playwright-mcp/
+console-stage4*.txt
+neudrive-local-home.png
+stage3-*.png
+stage4-*.png
+stage4-*.md
+sync-backup-*.png

@@ -124,7 +124,7 @@ func Run(ctx context.Context, opts Options) error {
 	}()
 
 	if tokenSvc, schedulerCfg, ok := schedulerConfigForApp(app); ok {
-		scheduler := jobs.NewSchedulerWithConfig(app.MemoryService, tokenSvc, app.InboxService, app.SyncService, app.GitMirrorService, slog.Default(), schedulerCfg)
+		scheduler := jobs.NewSchedulerWithConfig(app.MemoryService, tokenSvc, app.InboxService, app.SyncService, app.GitMirrorService, app.BackupService, slog.Default(), schedulerCfg)
 		scheduler.Start(context.Background())
 		defer scheduler.Stop()
 	}

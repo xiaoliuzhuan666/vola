@@ -1,0 +1,62 @@
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: neudrive-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-neudrive}
+      POSTGRES_USER: ${POSTGRES_USER:-neudrive}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neudrive} -d ${POSTGRES_DB:-neudrive}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  server:
+    image: ${NEUDRIVE_IMAGE:?NEUDRIVE_IMAGE is required}
+    container_name: neudrive-server
+    restart: unless-stopped
+    command: ["./neudrive", "server", "--listen", ":8080"]
+    ports:
+      - "127.0.0.1:${NEUDRIVE_HOST_PORT:-18080}:8080"
+    environment:
+      DATABASE_URL: postgres://${POSTGRES_USER:-neudrive}:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}@db:5432/${POSTGRES_DB:-neudrive}?sslmode=disable
+      PORT: "8080"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:?VAULT_MASTER_KEY is required}
+      USER_STORAGE_QUOTA_BYTES: ${USER_STORAGE_QUOTA_BYTES:-100MB}
+      OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-db}
+      TENCENT_COS_BUCKET: ${TENCENT_COS_BUCKET:-}
+      TENCENT_COS_REGION: ${TENCENT_COS_REGION:-ap-guangzhou}
+      TENCENT_COS_ENDPOINT: ${TENCENT_COS_ENDPOINT:-}
+      TENCENT_COS_SECRET_ID: ${TENCENT_COS_SECRET_ID:-}
+      TENCENT_COS_SECRET_KEY: ${TENCENT_COS_SECRET_KEY:-}
+      TENCENT_COS_PREFIX: ${TENCENT_COS_PREFIX:-neudrive}
+      TENCENT_COS_PATH_STYLE: ${TENCENT_COS_PATH_STYLE:-0}
+      GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
+      GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}
+      GITHUB_APP_CLIENT_ID: ${GITHUB_APP_CLIENT_ID:-}
+      GITHUB_APP_CLIENT_SECRET: ${GITHUB_APP_CLIENT_SECRET:-}
+      GITHUB_APP_SLUG: ${GITHUB_APP_SLUG:-}
+      POCKET_ID_PROVIDER_ID: ${POCKET_ID_PROVIDER_ID:-}
+      POCKET_ID_ISSUER: ${POCKET_ID_ISSUER:-}
+      POCKET_ID_DISCOVERY_URL: ${POCKET_ID_DISCOVERY_URL:-}
+      POCKET_ID_CLIENT_ID: ${POCKET_ID_CLIENT_ID:-}
+      POCKET_ID_CLIENT_SECRET: ${POCKET_ID_CLIENT_SECRET:-}
+      POCKET_ID_SCOPES: ${POCKET_ID_SCOPES:-openid profile email}
+      GIT_MIRROR_HOSTED_ROOT: ${GIT_MIRROR_HOSTED_ROOT:-/data/git-mirrors}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://127.0.0.1:${NEUDRIVE_HOST_PORT:-18080}}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://127.0.0.1:${NEUDRIVE_HOST_PORT:-18080}}
+      NEUDRIVE_ENABLE_BILLING: ${NEUDRIVE_ENABLE_BILLING:-0}
+    volumes:
+      - gitmirrors:/data/git-mirrors
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  gitmirrors:

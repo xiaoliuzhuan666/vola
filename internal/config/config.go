@@ -13,6 +13,14 @@ type Config struct {
 	Port                                  string
 	JWTSecret                             string
 	UserStorageQuotaBytes                 int64
+	ObjectStorageBackend                  string
+	TencentCOSBucket                      string
+	TencentCOSRegion                      string
+	TencentCOSEndpoint                    string
+	TencentCOSSecretID                    string
+	TencentCOSSecretKey                   string
+	TencentCOSPrefix                      string
+	TencentCOSPathStyle                   bool
 	GithubClientID                        string
 	GithubClientSecret                    string
 	PocketProviderID                      string
@@ -62,6 +70,14 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		DatabaseURL:             envOrOverride("DATABASE_URL", "postgres://localhost:5432/neudrive?sslmode=disable"),
 		Port:                    envOrOverride("PORT", "8080"),
 		JWTSecret:               envOrOverride("JWT_SECRET", ""),
+		ObjectStorageBackend:    strings.ToLower(strings.TrimSpace(envOrOverride("OBJECT_STORAGE_BACKEND", "db"))),
+		TencentCOSBucket:        strings.TrimSpace(envOrOverride("TENCENT_COS_BUCKET", "")),
+		TencentCOSRegion:        strings.TrimSpace(envOrOverride("TENCENT_COS_REGION", "ap-guangzhou")),
+		TencentCOSEndpoint:      strings.TrimSpace(envOrOverride("TENCENT_COS_ENDPOINT", "")),
+		TencentCOSSecretID:      strings.TrimSpace(envOrOverride("TENCENT_COS_SECRET_ID", "")),
+		TencentCOSSecretKey:     strings.TrimSpace(envOrOverride("TENCENT_COS_SECRET_KEY", "")),
+		TencentCOSPrefix:        strings.TrimSpace(envOrOverride("TENCENT_COS_PREFIX", "neudrive")),
+		TencentCOSPathStyle:     parseBoolString(envOrOverride("TENCENT_COS_PATH_STYLE", "0"), false),
 		GithubClientID:          envOrOverride("GITHUB_CLIENT_ID", ""),
 		GithubClientSecret:      envOrOverride("GITHUB_CLIENT_SECRET", ""),
 		PocketProviderID:        envOrOverride("POCKET_ID_PROVIDER_ID", "pocket"),
@@ -99,11 +115,31 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		cfg.GitMirrorManualSyncCooldownConfigured = true
 	}
 
-	quotaBytes, err := parseByteSize(envOrOverride("USER_STORAGE_QUOTA_BYTES", "0"))
+	quotaBytes, err := parseByteSize(envOrOverride("USER_STORAGE_QUOTA_BYTES", "100MB"))
 	if err != nil {
 		return nil, fmt.Errorf("invalid USER_STORAGE_QUOTA_BYTES: %w", err)
 	}
 	cfg.UserStorageQuotaBytes = quotaBytes
+
+	switch cfg.ObjectStorageBackend {
+	case "", "db":
+		cfg.ObjectStorageBackend = "db"
+	case "cos":
+		if cfg.TencentCOSBucket == "" {
+			return nil, fmt.Errorf("TENCENT_COS_BUCKET is required when OBJECT_STORAGE_BACKEND=cos")
+		}
+		if cfg.TencentCOSSecretID == "" {
+			return nil, fmt.Errorf("TENCENT_COS_SECRET_ID is required when OBJECT_STORAGE_BACKEND=cos")
+		}
+		if cfg.TencentCOSSecretKey == "" {
+			return nil, fmt.Errorf("TENCENT_COS_SECRET_KEY is required when OBJECT_STORAGE_BACKEND=cos")
+		}
+		if cfg.TencentCOSRegion == "" && cfg.TencentCOSEndpoint == "" {
+			return nil, fmt.Errorf("TENCENT_COS_REGION or TENCENT_COS_ENDPOINT is required when OBJECT_STORAGE_BACKEND=cos")
+		}
+	default:
+		return nil, fmt.Errorf("unsupported OBJECT_STORAGE_BACKEND %q", cfg.ObjectStorageBackend)
+	}
 
 	if cfg.JWTSecret == "" {
 		return nil, fmt.Errorf("JWT_SECRET environment variable is required")
@@ -136,7 +172,11 @@ func getEnvInt(key string, fallback int) int {
 }
 
 func getEnvBool(key string, fallback bool) bool {
-	s := strings.TrimSpace(strings.ToLower(getEnv(key, "")))
+	return parseBoolString(getEnv(key, ""), fallback)
+}
+
+func parseBoolString(value string, fallback bool) bool {
+	s := strings.TrimSpace(strings.ToLower(value))
 	if s == "" {
 		return fallback
 	}

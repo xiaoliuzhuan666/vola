@@ -28,6 +28,38 @@ func TestScanLocalClaudeMigrationBuildsTypedInventory(t *testing.T) {
 	if len(scan.Inventory.Bundles) == 0 {
 		t.Fatal("expected at least one Claude bundle")
 	}
+	externalToolFound := false
+	externalPluginFound := false
+	binaryAssetFound := false
+	dependencyFileFound := false
+	for _, bundle := range scan.Inventory.Bundles {
+		if bundle.Name != "release-helper" {
+			continue
+		}
+		for _, file := range bundle.Files {
+			if file.Path == "external/claude-tools/release.py" && strings.Contains(file.Content, "release metadata") {
+				externalToolFound = true
+			}
+			if file.Path == "external/claude-plugins/release/plugin.json" && strings.Contains(file.Content, "release-plugin") {
+				externalPluginFound = true
+			}
+			if file.Path == "assets/logo.png" && file.ContentBase64 != "" {
+				binaryAssetFound = true
+			}
+			if file.Path == "requirements.txt" {
+				dependencyFileFound = true
+			}
+		}
+	}
+	if !externalToolFound {
+		t.Fatalf("expected referenced Claude tool to be included in release-helper bundle: %+v", scan.Inventory.Bundles)
+	}
+	if !externalPluginFound {
+		t.Fatalf("expected referenced Claude plugin to be included in release-helper bundle: %+v", scan.Inventory.Bundles)
+	}
+	if !binaryAssetFound || !dependencyFileFound {
+		t.Fatalf("expected binary asset and dependency file in release-helper bundle: %+v", scan.Inventory.Bundles)
+	}
 	if len(scan.Inventory.Conversations) < 2 {
 		t.Fatalf("expected project and subagent conversations, got %+v", scan.Inventory.Conversations)
 	}
@@ -214,8 +246,15 @@ func createClaudeMigrationFixtureTree(t *testing.T) string {
 	writeFixtureFile(t, filepath.Join(home, ".claude", "agent-memory", "team.md"), "Remember the release checklist.\n")
 	writeFixtureFile(t, filepath.Join(home, ".claude", "settings.local.json"), "{\n  \"api_key\": \"sk-test-secret\",\n  \"theme\": \"compact\"\n}\n")
 	writeFixtureFile(t, filepath.Join(home, ".claude", ".credentials.json"), "{\n  \"refresh_token\": \"secret-refresh\"\n}\n")
-	writeFixtureFile(t, filepath.Join(home, ".claude", "skills", "release-helper", "SKILL.md"), "# Release Helper\n\nUse this skill to package releases.\n")
+	writeFixtureFile(t, filepath.Join(home, ".claude", "skills", "release-helper", "SKILL.md"), "# Release Helper\n\nUse this skill to package releases. Run `~/.claude/tools/release.py` for release metadata, load ~/.claude/plugins/release/plugin.json, and require ${RELEASE_TOKEN}.\n")
 	writeFixtureFile(t, filepath.Join(home, ".claude", "skills", "release-helper", "scripts", "ship.sh"), "#!/bin/sh\necho release\n")
+	writeFixtureFile(t, filepath.Join(home, ".claude", "skills", "release-helper", "requirements.txt"), "requests==2.32.0\n")
+	writeFixtureFile(t, filepath.Join(home, ".claude", "skills", "release-helper", "package.json"), `{"scripts":{"check":"node check.js"}}`+"\n")
+	writeFixtureFile(t, filepath.Join(home, ".claude", "skills", "release-helper", "mcp.json"), "{\n  \"mcpServers\": {}\n}\n")
+	writeFixtureFile(t, filepath.Join(home, ".claude", "skills", "release-helper", "hooks", "preflight.sh"), "#!/bin/sh\necho preflight\n")
+	writeFixtureBytes(t, filepath.Join(home, ".claude", "skills", "release-helper", "assets", "logo.png"), []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0x00})
+	writeFixtureFile(t, filepath.Join(home, ".claude", "tools", "release.py"), "print('release metadata')\n")
+	writeFixtureFile(t, filepath.Join(home, ".claude", "plugins", "release", "plugin.json"), `{"name":"release-plugin","version":"1.0.0"}`+"\n")
 	writeFixtureFile(t, filepath.Join(home, ".claude", "scheduled-tasks", "daily.toml"), "name = \"Daily release\"\nrrule = \"FREQ=DAILY;BYHOUR=9;BYMINUTE=0\"\nstatus = \"ACTIVE\"\n")
 	writeFixtureFile(t, filepath.Join(home, ".claude", "output-styles", "release.md"), "Be crisp and list risks first.\n")
 	writeFixtureFile(t, filepath.Join(home, ".claude", "hooks", "preflight.sh"), "#!/bin/sh\necho preflight\n")
@@ -242,10 +281,15 @@ func createClaudeMigrationFixtureTree(t *testing.T) string {
 
 func writeFixtureFile(t *testing.T, target, content string) {
 	t.Helper()
+	writeFixtureBytes(t, target, []byte(content))
+}
+
+func writeFixtureBytes(t *testing.T, target string, content []byte) {
+	t.Helper()
 	if err := os.MkdirAll(filepath.Dir(target), 0o755); err != nil {
 		t.Fatalf("mkdir %s: %v", filepath.Dir(target), err)
 	}
-	if err := os.WriteFile(target, []byte(content), 0o644); err != nil {
+	if err := os.WriteFile(target, content, 0o644); err != nil {
 		t.Fatalf("write %s: %v", target, err)
 	}
 }

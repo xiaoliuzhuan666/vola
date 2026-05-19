@@ -6,6 +6,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/agi-bar/neudrive/internal/backups"
 	"github.com/agi-bar/neudrive/internal/localgitsync"
 	"github.com/agi-bar/neudrive/internal/services"
 )
@@ -24,6 +25,7 @@ type SchedulerConfig struct {
 	ArchiveExpiredMessages JobConfig
 	GenerateDailyScratch   JobConfig
 	RunQueuedGitMirrors    JobConfig
+	RunExternalBackups     JobConfig
 }
 
 // DefaultSchedulerConfig returns the default configuration for all jobs.
@@ -53,6 +55,10 @@ func DefaultSchedulerConfig() SchedulerConfig {
 			Enabled:  true,
 			Interval: 15 * time.Second,
 		},
+		RunExternalBackups: JobConfig{
+			Enabled:  true,
+			Interval: 1 * time.Hour,
+		},
 	}
 }
 
@@ -63,6 +69,7 @@ type Scheduler struct {
 	inbox     *services.InboxService
 	sync      *services.SyncService
 	gitMirror *localgitsync.Service
+	backup    *backups.Service
 	logger    *slog.Logger
 	config    SchedulerConfig
 	stop      chan struct{}
@@ -70,13 +77,14 @@ type Scheduler struct {
 }
 
 // NewScheduler creates a new Scheduler with default configuration.
-func NewScheduler(memory *services.MemoryService, token *services.TokenService, inbox *services.InboxService, syncSvc *services.SyncService, gitMirrorSvc *localgitsync.Service, logger *slog.Logger) *Scheduler {
+func NewScheduler(memory *services.MemoryService, token *services.TokenService, inbox *services.InboxService, syncSvc *services.SyncService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		memory:    memory,
 		token:     token,
 		inbox:     inbox,
 		sync:      syncSvc,
 		gitMirror: gitMirrorSvc,
+		backup:    backupSvc,
 		logger:    logger,
 		config:    DefaultSchedulerConfig(),
 		stop:      make(chan struct{}),
@@ -84,13 +92,14 @@ func NewScheduler(memory *services.MemoryService, token *services.TokenService, 
 }
 
 // NewSchedulerWithConfig creates a new Scheduler with the given configuration.
-func NewSchedulerWithConfig(memory *services.MemoryService, token *services.TokenService, inbox *services.InboxService, syncSvc *services.SyncService, gitMirrorSvc *localgitsync.Service, logger *slog.Logger, config SchedulerConfig) *Scheduler {
+func NewSchedulerWithConfig(memory *services.MemoryService, token *services.TokenService, inbox *services.InboxService, syncSvc *services.SyncService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, logger *slog.Logger, config SchedulerConfig) *Scheduler {
 	return &Scheduler{
 		memory:    memory,
 		token:     token,
 		inbox:     inbox,
 		sync:      syncSvc,
 		gitMirror: gitMirrorSvc,
+		backup:    backupSvc,
 		logger:    logger,
 		config:    config,
 		stop:      make(chan struct{}),
@@ -118,6 +127,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 	}
 	if s.config.RunQueuedGitMirrors.Enabled && s.gitMirror != nil {
 		s.startJob(ctx, "RunQueuedGitMirrors", s.config.RunQueuedGitMirrors.Interval, s.runQueuedGitMirrors)
+	}
+	if s.config.RunExternalBackups.Enabled && s.backup != nil {
+		s.startJob(ctx, "RunExternalBackups", s.config.RunExternalBackups.Interval, s.runExternalBackups)
 	}
 
 	s.logger.Info("background job scheduler started")
@@ -266,4 +278,43 @@ func (s *Scheduler) runQueuedGitMirrors(ctx context.Context) {
 		return
 	}
 	s.logger.Info("job completed", "job", name, "duration", time.Since(start).String())
+}
+
+func (s *Scheduler) runExternalBackups(ctx context.Context) {
+	name := "RunExternalBackups"
+	start := time.Now()
+	s.logger.Info("job started", "job", name)
+
+	if s.backup == nil {
+		s.logger.Info("job skipped", "job", name, "reason", "backup service not configured")
+		return
+	}
+	result, err := s.backup.RunDueTargets(ctx, time.Now().UTC(), 20)
+	duration := time.Since(start)
+	if err != nil {
+		s.logger.Error("job failed", "job", name, "error", err, "duration", duration.String())
+		return
+	}
+	if result.Failed > 0 {
+		s.logger.Warn(
+			"job completed with backup errors",
+			"job", name,
+			"checked", result.Checked,
+			"due", result.Due,
+			"succeeded", result.Succeeded,
+			"failed", result.Failed,
+			"skipped", result.Skipped,
+			"duration", duration.String(),
+		)
+		return
+	}
+	s.logger.Info(
+		"job completed",
+		"job", name,
+		"checked", result.Checked,
+		"due", result.Due,
+		"succeeded", result.Succeeded,
+		"skipped", result.Skipped,
+		"duration", duration.String(),
+	)
 }

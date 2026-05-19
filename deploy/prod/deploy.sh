@@ -91,6 +91,7 @@ load_config() {
 
   CORS_ORIGINS="${CORS_ORIGINS:-$PUBLIC_BASE_URL,http://localhost:3000,http://localhost:5173}"
   DATABASE_URL="${DATABASE_URL:-postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@neudrive-postgres.${NAMESPACE}.svc.cluster.local:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable}"
+  GIT_MIRROR_HOSTED_ROOT="${GIT_MIRROR_HOSTED_ROOT:-/data/git-mirrors}"
 
   if [[ -z "$APP_HOST" ]]; then
     APP_HOST="$(printf '%s' "$PUBLIC_BASE_URL" | sed -E 's#^https?://([^/]+)/?.*$#\1#')"
@@ -117,6 +118,7 @@ sync_config_map() {
     --from-literal=PORT="$PORT" \
     --from-literal=CORS_ORIGINS="$CORS_ORIGINS" \
     --from-literal=PUBLIC_BASE_URL="$PUBLIC_BASE_URL" \
+    --from-literal=GIT_MIRROR_HOSTED_ROOT="$GIT_MIRROR_HOSTED_ROOT" \
     --dry-run=client -o yaml | kubectl apply -f -
 }
 
@@ -139,7 +141,10 @@ sync_runtime_secrets() {
     --from-literal=JWT_SECRET="$JWT_SECRET" \
     --from-literal=VAULT_MASTER_KEY="$VAULT_MASTER_KEY" \
     --from-literal=GITHUB_CLIENT_ID="${GITHUB_CLIENT_ID:-}" \
-    --from-literal=GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}"
+    --from-literal=GITHUB_CLIENT_SECRET="${GITHUB_CLIENT_SECRET:-}" \
+    --from-literal=GITHUB_APP_CLIENT_ID="${GITHUB_APP_CLIENT_ID:-}" \
+    --from-literal=GITHUB_APP_CLIENT_SECRET="${GITHUB_APP_CLIENT_SECRET:-}" \
+    --from-literal=GITHUB_APP_SLUG="${GITHUB_APP_SLUG:-}"
 
   if [[ -n "${CLOUDFLARED_TUNNEL_TOKEN:-}" ]]; then
     sync_secret neudrive-cloudflared-token \

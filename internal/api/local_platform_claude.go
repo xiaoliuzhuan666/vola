@@ -117,6 +117,7 @@ func (s *Server) importClaudeBundle(ctx context.Context, userID uuid.UUID, platf
 		return nil
 	}
 	hasSkill := false
+	manifestFiles := append([]sqlitestorage.ClaudeFileRecord{}, bundle.Files...)
 	for _, file := range bundle.Files {
 		relPath := normalizeClaudeRelativePath(file.Path, file.SourcePath)
 		if relPath == "" {
@@ -134,6 +135,13 @@ func (s *Server) importClaudeBundle(ctx context.Context, userID uuid.UUID, platf
 	if !hasSkill {
 		target := filepath.ToSlash(filepath.Join("/skills", bundleName, "SKILL.md"))
 		content := renderSyntheticClaudeSkill(bundle, bundleName)
+		syntheticFile := sqlitestorage.ClaudeFileRecord{
+			Path:        "SKILL.md",
+			Content:     content,
+			ContentType: "text/markdown",
+			Exactness:   "derived",
+			SourcePaths: bundle.SourcePaths,
+		}
 		if _, err := s.FileTreeService.WriteEntry(ctx, userID, target, content, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "skill_file",
 			MinTrustLevel: models.TrustLevelWork,
@@ -148,10 +156,63 @@ func (s *Server) importClaudeBundle(ctx context.Context, userID uuid.UUID, platf
 			return err
 		}
 		result.Paths = append(result.Paths, target)
+		manifestFiles = append(manifestFiles, syntheticFile)
+	}
+	manifestPath, err := s.writeBundleSkillManifest(ctx, userID, platform, bundleName, normalizeClaudeKind(bundle.Kind), bundle, manifestFiles)
+	if err != nil {
+		return err
+	}
+	if manifestPath != "" {
+		result.Paths = append(result.Paths, manifestPath)
 	}
 	result.Bundles++
 	result.Imported++
 	return nil
+}
+
+func (s *Server) writeBundleSkillManifest(ctx context.Context, userID uuid.UUID, platform, bundleName, sourceKind string, bundle sqlitestorage.ClaudeBundle, files []sqlitestorage.ClaudeFileRecord) (string, error) {
+	if bundleName == "" || len(files) == 0 {
+		return "", nil
+	}
+	entries := make([]skillsarchive.Entry, 0, len(files))
+	for _, file := range files {
+		relPath := normalizeClaudeRelativePath(file.Path, file.SourcePath)
+		if relPath == "" || strings.EqualFold(relPath, skillsarchive.ManifestFile) {
+			continue
+		}
+		data, _, err := decodeClaudeFileRecord(file)
+		if err != nil {
+			return "", err
+		}
+		entries = append(entries, skillsarchive.Entry{
+			SkillName: bundleName,
+			RelPath:   relPath,
+			Data:      data,
+		})
+	}
+	manifests := skillsarchive.BuildManifests(entries, platform, "local-agent")
+	if len(manifests) == 0 {
+		return "", nil
+	}
+	data, err := json.MarshalIndent(manifests[0], "", "  ")
+	if err != nil {
+		return "", err
+	}
+	target := filepath.ToSlash(filepath.Join("/skills", bundleName, skillsarchive.ManifestFile))
+	if _, err := s.FileTreeService.WriteEntry(ctx, userID, target, string(append(data, '\n')), "application/json", models.FileTreeWriteOptions{
+		Kind:          "skill_file",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata: map[string]interface{}{
+			"source_platform": platform,
+			"capture_mode":    "agent",
+			"exactness":       "derived",
+			"source_kind":     sourceKind,
+			"source_paths":    bundle.SourcePaths,
+		},
+	}); err != nil {
+		return "", err
+	}
+	return target, nil
 }
 
 func (s *Server) importClaudeConversations(ctx context.Context, userID uuid.UUID, platform string, conversations []sqlitestorage.ClaudeConversation, result *sqlitestorage.AgentImportResult) error {

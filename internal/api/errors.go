@@ -7,15 +7,16 @@ import (
 
 // Standard API error codes
 const (
-	ErrCodeBadRequest   = "bad_request"
-	ErrCodeUnauthorized = "unauthorized"
-	ErrCodeForbidden    = "forbidden"
-	ErrCodeNotFound     = "not_found"
-	ErrCodeConflict     = "conflict"
-	ErrCodeInternal     = "internal_error"
-	ErrCodeUnsupported  = "unsupported"
-	ErrCodeRateLimit    = "rate_limit_exceeded"
-	ErrCodeValidation   = "validation_error"
+	ErrCodeBadRequest                        = "bad_request"
+	ErrCodeUnauthorized                      = "unauthorized"
+	ErrCodeForbidden                         = "forbidden"
+	ErrCodeNotFound                          = "not_found"
+	ErrCodeConflict                          = "conflict"
+	ErrCodeInternal                          = "internal_error"
+	ErrCodeUnsupported                       = "unsupported"
+	ErrCodeRateLimit                         = "rate_limit_exceeded"
+	ErrCodeValidation                        = "validation_error"
+	ErrCodeGitHubAppPermissionUpdateRequired = "github_app_permission_update_required"
 )
 
 // APIError is the standard error response envelope.

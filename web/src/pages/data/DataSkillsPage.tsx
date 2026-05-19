@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, type FileNode, type SkillSummary } from '../../api'
+import { api, type FileNode, type LocalSkillSyncResponse, type SkillAgentAssignment, type SkillAssignmentsState, type SkillConversionRequest, type SkillConversionResponse, type SkillSummary, type Team } from '../../api'
 import GitHubTreeList from '../../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../../components/MaterialsSectionToolbar'
 import FileMaterialsTile from '../../components/FileMaterialsTile'
@@ -38,6 +38,11 @@ type SkillBundle = SkillSummary & {
   updated_at?: string
 }
 
+type SkillScope = 'personal' | 'team'
+
+const TEAM_SELECTION_KEY = 'neudrive:selected-team-id'
+const SKILL_SCOPE_KEY = 'neudrive:skills-scope'
+
 function bundleIdFromSkillPath(path: string) {
   return skillBundlePathFromSkillPath(path).replace(/^\/skills\/?/, '')
 }
@@ -69,6 +74,125 @@ Describe when this skill should not be used.
 `
 }
 
+function normalizeSkillPath(path: string) {
+  return skillBundlePathFromSkillPath(path).replace(/\/+$/g, '')
+}
+
+function assignmentLookup(assignments: SkillAgentAssignment[]) {
+  return assignments.reduce<Record<string, Set<string>>>((acc, item) => {
+    acc[item.agent_id] = new Set((item.skill_paths || []).map(normalizeSkillPath))
+    return acc
+  }, {})
+}
+
+function normalizeAssignments(assignments: SkillAgentAssignment[], agentIds: string[]) {
+  const lookup = assignmentLookup(assignments)
+  return agentIds.map((agentId) => ({
+    agent_id: agentId,
+    skill_paths: Array.from(lookup[agentId] || []).sort(),
+  }))
+}
+
+function diffSkillPaths(saved: Set<string>, draft: Set<string>) {
+  const added: string[] = []
+  const removed: string[] = []
+  const kept: string[] = []
+  draft.forEach((path) => {
+    if (saved.has(path)) kept.push(path)
+    else added.push(path)
+  })
+  saved.forEach((path) => {
+    if (!draft.has(path)) removed.push(path)
+  })
+  return {
+    added: added.sort(),
+    removed: removed.sort(),
+    kept: kept.sort(),
+  }
+}
+
+function syncActionClass(action: string) {
+  if (action === 'add') return 'preview-action preview-action-create'
+  if (action === 'update') return 'preview-action preview-action-update'
+  if (action === 'delete') return 'preview-action preview-action-delete'
+  if (action === 'export') return 'preview-action preview-action-update'
+  if (action === 'conflict') return 'preview-action preview-action-conflict'
+  return 'preview-action preview-action-skip'
+}
+
+function syncActionLabel(action: string, tx: (zh: string, en: string) => string) {
+  if (action === 'add') return tx('新增', 'add')
+  if (action === 'update') return tx('更新', 'update')
+  if (action === 'unchanged') return tx('相同', 'same')
+  if (action === 'missing') return tx('本地多出', 'extra')
+  if (action === 'conflict') return tx('冲突', 'conflict')
+  if (action === 'delete') return tx('清理', 'clean')
+  if (action === 'export') return tx('导出', 'export')
+  return action
+}
+
+function syncAgentSummaryText(agent: LocalSkillSyncResponse['agents'][number], tx: (zh: string, en: string) => string) {
+  const summary = agent.summary
+  return tx(
+    `新增 ${summary.add} / 更新 ${summary.update} / 冲突 ${summary.conflict} / 可清理 ${summary.removable} / 可导出 ${summary.export}`,
+    `add ${summary.add} / update ${summary.update} / conflicts ${summary.conflict} / removable ${summary.removable} / export ${summary.export}`,
+  )
+}
+
+function syncResponseTotal(response: LocalSkillSyncResponse | null) {
+  if (!response) return { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, deleted: 0 }
+  return response.agents.reduce((acc, agent) => {
+    acc.add += agent.summary.add
+    acc.update += agent.summary.update
+    acc.conflict += agent.summary.conflict
+    acc.removable += agent.summary.removable
+    acc.export += agent.summary.export
+    acc.written += agent.summary.written
+    acc.deleted += agent.summary.deleted
+    return acc
+  }, { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, deleted: 0 })
+}
+
+function conversionActionClass(action: string) {
+  if (action === 'convert') return 'preview-action preview-action-update'
+  if (action === 'copy') return 'preview-action preview-action-create'
+  if (action === 'generate') return 'preview-action preview-action-skip'
+  if (action === 'conflict') return 'preview-action preview-action-conflict'
+  return 'preview-action preview-action-skip'
+}
+
+function conversionActionLabel(action: string, tx: (zh: string, en: string) => string) {
+  if (action === 'convert') return tx('转换', 'convert')
+  if (action === 'copy') return tx('复制', 'copy')
+  if (action === 'generate') return tx('生成', 'generate')
+  if (action === 'conflict') return tx('冲突', 'conflict')
+  return action
+}
+
+function defaultConversionTargetPath(sourcePath: string, targetPlatform: 'claude-code' | 'codex') {
+  const clean = normalizeSkillPath(sourcePath || '/skills/skill')
+  const suffix = targetPlatform === 'codex' ? 'codex' : 'claude'
+  return `${clean}-${suffix}`
+}
+
+function emptyTreeNode(path: string): FileNode {
+  const normalized = path.startsWith('/') ? path : `/${path}`
+  return {
+    path: normalized,
+    name: normalized.split('/').filter(Boolean).pop() || '/',
+    is_dir: true,
+    children: [],
+  }
+}
+
+function teamMatches(team: Team, value: string) {
+  return team.id === value || team.slug === value
+}
+
+function dataSkillsRoute(teamID?: string) {
+  return teamID ? `/skills?team=${encodeURIComponent(teamID)}` : '/skills'
+}
+
 export default function DataSkillsPage() {
   const { locale, tx } = useI18n()
   const navigate = useNavigate()
@@ -93,25 +217,91 @@ export default function DataSkillsPage() {
   const [sortKey, setSortKey] = useState<MaterialsSortKey>('updated_at')
   const [sortDir, setSortDir] = useState<MaterialsSortDir>('desc')
   const [sourceFilter, setSourceFilter] = useState('all')
+  const [teams, setTeams] = useState<Team[]>([])
+  const [skillScope, setSkillScope] = useState<SkillScope>(() => {
+    if (typeof window === 'undefined') return 'personal'
+    const queryTeam = new URLSearchParams(window.location.search).get('team')
+    if (queryTeam) return 'team'
+    return window.localStorage.getItem(SKILL_SCOPE_KEY) === 'team' ? 'team' : 'personal'
+  })
+  const [selectedTeamID, setSelectedTeamID] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return new URLSearchParams(window.location.search).get('team') || window.localStorage.getItem(TEAM_SELECTION_KEY) || ''
+  })
+  const [assignmentState, setAssignmentState] = useState<SkillAssignmentsState | null>(null)
+  const [assignmentDraft, setAssignmentDraft] = useState<SkillAgentAssignment[]>([])
+  const [assignmentSaving, setAssignmentSaving] = useState(false)
+  const [assignmentMessage, setAssignmentMessage] = useState('')
+  const [assignmentError, setAssignmentError] = useState('')
+  const [localMode, setLocalMode] = useState(false)
+  const [skillSyncPreview, setSkillSyncPreview] = useState<LocalSkillSyncResponse | null>(null)
+  const [skillSyncBusy, setSkillSyncBusy] = useState<'preview' | 'apply' | 'cleanup' | ''>('')
+  const [skillExportBusy, setSkillExportBusy] = useState('')
+  const [skillSyncMessage, setSkillSyncMessage] = useState('')
+  const [skillSyncError, setSkillSyncError] = useState('')
+  const [scopeMessage, setScopeMessage] = useState('')
+  const [copyingSkillPath, setCopyingSkillPath] = useState('')
+  const [conversionSourcePath, setConversionSourcePath] = useState('')
+  const [conversionSourcePlatform, setConversionSourcePlatform] = useState<'claude-code' | 'codex'>('claude-code')
+  const [conversionTargetPlatform, setConversionTargetPlatform] = useState<'claude-code' | 'codex'>('codex')
+  const [conversionTargetPath, setConversionTargetPath] = useState('')
+  const [conversionOverwrite, setConversionOverwrite] = useState(false)
+  const [conversionPreview, setConversionPreview] = useState<SkillConversionResponse | null>(null)
+  const [conversionBusy, setConversionBusy] = useState<'preview' | 'apply' | ''>('')
+  const [conversionMessage, setConversionMessage] = useState('')
+  const [conversionError, setConversionError] = useState('')
   const { activeMenuId, closeMenu, isMenuOpen, toggleMenu } = useResourceCardMenu()
+
+  const selectedTeam = useMemo(
+    () => teams.find((team) => teamMatches(team, selectedTeamID)) || null,
+    [selectedTeamID, teams],
+  )
+  const activeTeamID = skillScope === 'team' ? selectedTeam?.id || '' : ''
+  const activeTeamCanWrite = skillScope !== 'team' || Boolean(selectedTeam?.can_write)
+  const skillScopeLabel = skillScope === 'team' && selectedTeam
+    ? `${selectedTeam.name} / ${selectedTeam.slug}`
+    : tx('个人空间', 'Personal')
+  const canWriteCurrentScope = activeTeamCanWrite
 
   const load = useCallback(async () => {
     setLoading(true)
     setError('')
     try {
+      const searchParams = new URLSearchParams(location.search)
+      const queryTeamID = searchParams.get('team') || ''
+      const teamList = await api.getTeams().catch(() => [] as Team[])
+      const requestedTeamID = queryTeamID || selectedTeamID || (typeof window !== 'undefined' ? window.localStorage.getItem(TEAM_SELECTION_KEY) || '' : '')
+      const requestedScope: SkillScope = queryTeamID ? 'team' : skillScope
+      const nextTeam = teamList.find((team) => teamMatches(team, requestedTeamID)) || (requestedScope === 'team' ? teamList[0] || null : null)
+      const nextScope: SkillScope = requestedScope === 'team' && nextTeam ? 'team' : 'personal'
+      const teamID = nextScope === 'team' && nextTeam ? nextTeam.id : ''
+
+      setTeams(teamList)
+      setSkillScope(nextScope)
+      setSelectedTeamID(teamID)
+      if (typeof window !== 'undefined') {
+        window.localStorage.setItem(SKILL_SCOPE_KEY, nextScope)
+        if (teamID) window.localStorage.setItem(TEAM_SELECTION_KEY, teamID)
+      }
+
       if (isBundleView) {
-        const node = await api.getTree(currentBrowsePath)
+        const node = teamID ? await api.getTeamTree(teamID, currentBrowsePath) : await api.getTree(currentBrowsePath)
         setBundleNode(node)
         setSkills([])
+        setAssignmentState(null)
+        setAssignmentDraft([])
         closeMenu()
         setSelectedEntryPath(null)
         return
       }
 
-      const [skillData, skillsRoot] = await Promise.all([
-        api.getSkills(),
-        api.getTree('/skills'),
+      const [skillData, skillsRootResult, assignments, publicConfig] = await Promise.all([
+        teamID ? api.getTeamSkills(teamID) : api.getSkills(),
+        (teamID ? api.getTeamTree(teamID, '/skills') : api.getTree('/skills')).catch(() => emptyTreeNode('/skills')),
+        api.getSkillAssignments(teamID || undefined),
+        api.getPublicConfig(),
       ])
+      const skillsRoot = skillsRootResult || emptyTreeNode('/skills')
 
       const folderLookup = (skillsRoot.children || []).reduce<Record<string, FileNode>>((acc, child) => {
         acc[child.path] = child
@@ -132,8 +322,21 @@ export default function DataSkillsPage() {
           }
         })
 
+      const firstBundlePath = bundles[0] ? normalizeSkillPath(bundles[0].bundlePath || bundles[0].path) : ''
+
       setSkills(bundles)
-      setBundleNode(null)
+      setLocalMode(Boolean(publicConfig.local_mode))
+      setAssignmentState(assignments)
+      setAssignmentDraft(normalizeAssignments(assignments.assignments || [], (assignments.agents || []).map((agent) => agent.id)))
+      setConversionSourcePath((value) => value || firstBundlePath)
+      setConversionTargetPath((value) => value || (firstBundlePath ? defaultConversionTargetPath(firstBundlePath, 'codex') : ''))
+      setAssignmentMessage('')
+      setAssignmentError('')
+    setSkillSyncPreview(null)
+    setSkillSyncMessage('')
+    setSkillSyncError('')
+    setScopeMessage('')
+    setBundleNode(null)
       closeMenu()
       setSelectedBundlePath(null)
     } catch (err: any) {
@@ -141,7 +344,64 @@ export default function DataSkillsPage() {
     } finally {
       setLoading(false)
     }
-  }, [closeMenu, currentBrowsePath, isBundleView, tx])
+  }, [closeMenu, currentBrowsePath, isBundleView, location.search, selectedTeamID, skillScope, tx])
+
+  const scopedGetNode = useCallback((path: string) => (
+    activeTeamID ? api.getTeamTree(activeTeamID, path) : api.getTree(path)
+  ), [activeTeamID])
+
+  const scopedDeleteNode = useCallback((path: string) => (
+    activeTeamID ? api.deleteTeamTree(activeTeamID, path) : api.deleteTree(path)
+  ), [activeTeamID])
+
+  const clearScopeMessages = useCallback(() => {
+    setError('')
+    setAssignmentMessage('')
+    setAssignmentError('')
+    setSkillSyncPreview(null)
+    setSkillSyncMessage('')
+    setSkillSyncError('')
+    setScopeMessage('')
+    setConversionPreview(null)
+    setConversionMessage('')
+    setConversionError('')
+    closeMenu()
+  }, [closeMenu])
+
+  const navigateToCurrentView = useCallback((teamID?: string) => {
+    if (isBundleView) {
+      navigate(dataSkillBundleRoute(bundleKey, currentRelativeDir, teamID), { replace: true })
+      return
+    }
+    navigate(dataSkillsRoute(teamID), { replace: true })
+  }, [bundleKey, currentRelativeDir, isBundleView, navigate])
+
+  const selectPersonalScope = useCallback(() => {
+    setSkillScope('personal')
+    setSelectedTeamID('')
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SKILL_SCOPE_KEY, 'personal')
+    }
+    clearScopeMessages()
+    navigateToCurrentView()
+  }, [clearScopeMessages, navigateToCurrentView])
+
+  const selectTeamScope = useCallback((teamID?: string) => {
+    const savedTeamID = typeof window !== 'undefined' ? window.localStorage.getItem(TEAM_SELECTION_KEY) || '' : ''
+    const nextTeam = teams.find((team) => teamMatches(team, teamID || selectedTeamID || savedTeamID)) || selectedTeam || teams[0] || null
+    if (!nextTeam) {
+      setError(tx('还没有可用团队。', 'No team is available yet.'))
+      return
+    }
+    setSkillScope('team')
+    setSelectedTeamID(nextTeam.id)
+    if (typeof window !== 'undefined') {
+      window.localStorage.setItem(SKILL_SCOPE_KEY, 'team')
+      window.localStorage.setItem(TEAM_SELECTION_KEY, nextTeam.id)
+    }
+    clearScopeMessages()
+    navigateToCurrentView(nextTeam.id)
+  }, [clearScopeMessages, navigateToCurrentView, selectedTeam, selectedTeamID, teams, tx])
 
   const {
     closeDialog: closeDeleteDialog,
@@ -149,7 +409,7 @@ export default function DataSkillsPage() {
     dialog: deleteDialog,
     requestDelete,
     submitting: deleteSubmitting,
-  } = useTreeDeleteDialog({ tx, onDeleted: load })
+  } = useTreeDeleteDialog({ tx, onDeleted: load, getNode: scopedGetNode, deleteNode: scopedDeleteNode })
 
   useEffect(() => {
     void load()
@@ -162,7 +422,7 @@ export default function DataSkillsPage() {
     : null
   const selectedDeletePath = isBundleView ? selectedEntryPath : selectedBundle?.bundlePath || null
   const canDeleteSelection = Boolean(
-    selectedDeletePath && !(isBundleView ? currentBundleContext?.read_only : selectedBundle?.read_only),
+    selectedDeletePath && canWriteCurrentScope && !(isBundleView ? currentBundleContext?.read_only : selectedBundle?.read_only),
   )
 
   const sortedSkills = useMemo(
@@ -184,6 +444,33 @@ export default function DataSkillsPage() {
     () => buildSourceFilterOptions(skills, skillSource, locale),
     [locale, skills],
   )
+  const savedAssignmentLookup = useMemo(
+    () => assignmentLookup(assignmentState?.assignments || []),
+    [assignmentState],
+  )
+  const draftAssignmentLookup = useMemo(
+    () => assignmentLookup(assignmentDraft),
+    [assignmentDraft],
+  )
+  const skillNameByPath = useMemo(
+    () => skills.reduce<Record<string, string>>((acc, skill) => {
+      acc[normalizeSkillPath(skill.bundlePath || skill.path)] = skill.name
+      return acc
+    }, {}),
+    [skills],
+  )
+  const assignmentChanged = useMemo(() => {
+    const agentIds = assignmentState?.agents?.map((agent) => agent.id) || []
+    return agentIds.some((agentId) => {
+      const saved = savedAssignmentLookup[agentId] || new Set<string>()
+      const draft = draftAssignmentLookup[agentId] || new Set<string>()
+      if (saved.size !== draft.size) return true
+      for (const skillPath of draft) {
+        if (!saved.has(skillPath)) return true
+      }
+      return false
+    })
+  }, [assignmentState, draftAssignmentLookup, savedAssignmentLookup])
 
   const sortedBundleEntries = useMemo(
     () =>
@@ -213,13 +500,13 @@ export default function DataSkillsPage() {
 
   const openBundleDetail = useCallback((bundleId: string, relativeDir = '') => {
     closeMenu()
-    navigate(dataSkillBundleRoute(bundleId, relativeDir))
-  }, [closeMenu, navigate])
+    navigate(dataSkillBundleRoute(bundleId, relativeDir, activeTeamID))
+  }, [activeTeamID, closeMenu, navigate])
 
   const openFileEditor = useCallback((path: string) => {
     closeMenu()
-    navigate(dataFileEditorRoute(path))
-  }, [closeMenu, navigate])
+    navigate(dataFileEditorRoute(path, activeTeamID))
+  }, [activeTeamID, closeMenu, navigate])
 
   const openBundleFolder = useCallback((path: string) => {
     if (!bundleKey) return
@@ -229,29 +516,61 @@ export default function DataSkillsPage() {
   const handleDownloadZip = useCallback(async (path: string) => {
     closeMenu()
     try {
-      await api.downloadTreeZip(path)
+      if (activeTeamID) await api.downloadTeamTreeZip(activeTeamID, path)
+      else await api.downloadTreeZip(path)
     } catch (err: any) {
       setError(err.message || tx('下载 ZIP 失败', 'Failed to download ZIP'))
     }
-  }, [closeMenu, tx])
+  }, [activeTeamID, closeMenu, tx])
+
+  const copyTeamSkillToPersonal = useCallback(async (sourcePath: string) => {
+    if (!activeTeamID || copyingSkillPath) return
+    const normalizedPath = normalizeSkillPath(sourcePath)
+    setCopyingSkillPath(normalizedPath)
+    setError('')
+    setScopeMessage('')
+    try {
+      const response = await api.copyTeamSkillToPersonal(activeTeamID, normalizedPath)
+      setScopeMessage(tx(
+        `已复制到个人空间：${response.data.target_path}`,
+        `Copied to personal space: ${response.data.target_path}`,
+      ))
+    } catch (err: any) {
+      setError(err.message || tx('复制到个人空间失败', 'Failed to copy to personal space'))
+    } finally {
+      setCopyingSkillPath('')
+    }
+  }, [activeTeamID, copyingSkillPath, tx])
 
   const handleCreateSkill = async (event: FormEvent) => {
     event.preventDefault()
     const bundleName = normalizeBundleName(newBundleName)
     if (!bundleName) return
+    if (!canWriteCurrentScope) {
+      setError(tx('当前团队角色只能查看，不能创建 Skill。', 'Your current team role can only view skills.'))
+      return
+    }
 
     setCreating(true)
     setError('')
     try {
       const path = `/skills/${bundleName}/SKILL.md`
-      await api.writeTree(path, {
-        content: skillStarterMarkdown(bundleName),
-        mimeType: 'text/markdown',
-        metadata: { source: 'manual' },
-      })
+      if (activeTeamID) {
+        await api.writeTeamTree(activeTeamID, path, {
+          content: skillStarterMarkdown(bundleName),
+          mimeType: 'text/markdown',
+          metadata: { source: 'manual', team_id: activeTeamID },
+        })
+      } else {
+        await api.writeTree(path, {
+          content: skillStarterMarkdown(bundleName),
+          mimeType: 'text/markdown',
+          metadata: { source: 'manual' },
+        })
+      }
       setShowNewForm(false)
       setNewBundleName('new-skill')
-      navigate(dataFileEditorRoute(path))
+      navigate(dataFileEditorRoute(path, activeTeamID))
     } catch (err: any) {
       setError(err.message || tx('新建技能失败', 'Failed to create skill'))
     } finally {
@@ -259,8 +578,190 @@ export default function DataSkillsPage() {
     }
   }
 
+  const toggleSkillAssignment = (agentId: string, skillPath: string) => {
+    if (!canWriteCurrentScope) return
+    const normalizedPath = normalizeSkillPath(skillPath)
+    setAssignmentMessage('')
+    setAssignmentError('')
+    setSkillSyncPreview(null)
+    setSkillSyncMessage('')
+    setSkillSyncError('')
+    setAssignmentDraft((current) => {
+      const agentIds = assignmentState?.agents?.map((agent) => agent.id) || []
+      const next = normalizeAssignments(current, agentIds)
+      const index = next.findIndex((item) => item.agent_id === agentId)
+      if (index < 0) return next
+      const paths = new Set(next[index].skill_paths)
+      if (paths.has(normalizedPath)) {
+        paths.delete(normalizedPath)
+      } else {
+        paths.add(normalizedPath)
+      }
+      next[index] = {
+        ...next[index],
+        skill_paths: Array.from(paths).sort(),
+      }
+      return next
+    })
+  }
+
+  const resetSkillAssignments = () => {
+    const agentIds = assignmentState?.agents?.map((agent) => agent.id) || []
+    setAssignmentDraft(normalizeAssignments(assignmentState?.assignments || [], agentIds))
+    setAssignmentMessage('')
+    setAssignmentError('')
+    setSkillSyncPreview(null)
+    setSkillSyncMessage('')
+    setSkillSyncError('')
+  }
+
+  const saveSkillAssignments = async () => {
+    if (!assignmentState || assignmentSaving) return
+    setAssignmentSaving(true)
+    setAssignmentError('')
+    setAssignmentMessage('')
+    try {
+      const normalized = normalizeAssignments(assignmentDraft, assignmentState.agents.map((agent) => agent.id))
+      const saved = await api.saveSkillAssignments(normalized, activeTeamID || undefined)
+      setAssignmentState(saved.data)
+      setAssignmentDraft(normalizeAssignments(saved.data.assignments || [], saved.data.agents.map((agent) => agent.id)))
+      setAssignmentMessage(tx('分配已保存。', 'Assignments saved.'))
+      setSkillSyncPreview(null)
+      setSkillSyncMessage('')
+      setSkillSyncError('')
+    } catch (err: any) {
+      setAssignmentError(err.message || tx('保存分配失败', 'Failed to save assignments'))
+    } finally {
+      setAssignmentSaving(false)
+    }
+  }
+
+  const runLocalSkillSync = async (mode: 'preview' | 'apply' | 'cleanup') => {
+    if (assignmentChanged || skillSyncBusy) return
+    setSkillSyncBusy(mode)
+    setSkillSyncError('')
+    setSkillSyncMessage('')
+    try {
+      const response = mode === 'preview'
+        ? await api.previewLocalSkillSync(activeTeamID || undefined)
+        : mode === 'apply'
+          ? await api.applyLocalSkillSync(activeTeamID || undefined)
+          : await api.cleanupLocalSkillSync(activeTeamID || undefined)
+      setSkillSyncPreview(response)
+      const total = syncResponseTotal(response)
+      if (mode === 'preview') {
+        setSkillSyncMessage(tx(
+          `已生成预览：新增 ${total.add}，更新 ${total.update}，冲突 ${total.conflict}，可清理 ${total.removable}，可导出 ${total.export}。`,
+          `Preview ready: ${total.add} add, ${total.update} update, ${total.conflict} conflicts, ${total.removable} removable, ${total.export} export.`,
+        ))
+      } else if (mode === 'apply') {
+        setSkillSyncMessage(tx(
+          `已应用到本地：写入 ${total.written} 个文件。`,
+          `Applied locally: ${total.written} files written.`,
+        ))
+      } else {
+        setSkillSyncMessage(tx(
+          `已清理 neuDrive 管理的未分配 Skill：${total.deleted} 个目录。`,
+          `Cleaned ${total.deleted} neuDrive-managed unassigned skill folders.`,
+        ))
+      }
+    } catch (err: any) {
+      setSkillSyncError(err.message || tx('本地 Skill 同步失败', 'Local skill sync failed'))
+    } finally {
+      setSkillSyncBusy('')
+    }
+  }
+
+  const downloadLocalSkillExport = async (agentId: string) => {
+    if (assignmentChanged || skillExportBusy) return
+    setSkillExportBusy(agentId)
+    setSkillSyncError('')
+    setSkillSyncMessage('')
+    try {
+      await api.downloadLocalSkillSyncExport(agentId, activeTeamID || undefined)
+      setSkillSyncMessage(tx('导出包已生成。', 'Export package created.'))
+    } catch (err: any) {
+      setSkillSyncError(err.message || tx('生成导出包失败', 'Failed to create export package'))
+    } finally {
+      setSkillExportBusy('')
+    }
+  }
+
+  const buildConversionRequest = (): SkillConversionRequest => ({
+    source_path: conversionSourcePath,
+    source_platform: conversionSourcePlatform,
+    target_platform: conversionTargetPlatform,
+    target_path: conversionTargetPath,
+    overwrite: conversionOverwrite,
+    team_id: activeTeamID || undefined,
+  })
+
+  const runSkillConversion = async (mode: 'preview' | 'apply') => {
+    if (!conversionSourcePath || conversionBusy) return
+    setConversionBusy(mode)
+    setConversionError('')
+    setConversionMessage('')
+    try {
+      const req = buildConversionRequest()
+      const response = mode === 'preview'
+        ? await api.previewSkillConversion(req)
+        : (await api.applySkillConversion(req)).data
+      setConversionPreview(response)
+      if (mode === 'preview') {
+        setConversionMessage(tx(
+          `转换预览已生成：转换 ${response.summary.converted}，复制 ${response.summary.copied}，冲突 ${response.summary.conflicts}，需处理 ${response.summary.manual}。`,
+          `Conversion preview ready: ${response.summary.converted} converted, ${response.summary.copied} copied, ${response.summary.conflicts} conflicts, ${response.summary.manual} need review.`,
+        ))
+      } else {
+        setConversionMessage(tx(
+          `已生成转换副本：${response.target_path}`,
+          `Converted copy created: ${response.target_path}`,
+        ))
+        void load()
+      }
+    } catch (err: any) {
+      setConversionError(err.message || tx('Skill 转换失败', 'Skill conversion failed'))
+    } finally {
+      setConversionBusy('')
+    }
+  }
+
   const sortOptions = getMaterialsSortOptions(locale)
   const relativeSegments = currentRelativeDir.split('/').filter(Boolean)
+  const skillScopeControl = (
+    <div className="skill-scope-control">
+      <div className="materials-toggle-group" role="tablist" aria-label={tx('Skill 范围', 'Skill scope')}>
+        <button
+          type="button"
+          className={`materials-toggle-item ${skillScope === 'personal' ? 'is-active' : ''}`}
+          onClick={selectPersonalScope}
+        >
+          {tx('个人', 'Personal')}
+        </button>
+        <button
+          type="button"
+          className={`materials-toggle-item ${skillScope === 'team' ? 'is-active' : ''}`}
+          disabled={teams.length === 0}
+          onClick={() => selectTeamScope()}
+        >
+          {tx('团队', 'Team')}
+        </button>
+      </div>
+      {skillScope === 'team' && teams.length > 0 ? (
+        <select
+          className="input skill-team-select"
+          value={selectedTeam?.id || ''}
+          onChange={(event) => selectTeamScope(event.target.value)}
+          aria-label={tx('选择团队', 'Select team')}
+        >
+          {teams.map((team) => (
+            <option key={team.id} value={team.id}>{team.name} / {team.slug}</option>
+          ))}
+        </select>
+      ) : null}
+      <span className="materials-tile-pill skill-scope-pill">{skillScopeLabel}</span>
+    </div>
+  )
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -319,7 +820,7 @@ export default function DataSkillsPage() {
         <section className="materials-hero">
           <div className="materials-hero-copy">
             <nav aria-label={tx('面包屑', 'Breadcrumbs')} className="materials-breadcrumbs">
-              <button className="btn-text" onClick={() => navigate('/data/skills')}>{tx('技能', 'Skills')}</button>
+              <button className="btn-text" onClick={() => navigate(dataSkillsRoute(activeTeamID))}>{tx('技能', 'Skills')}</button>
               {currentBundleContext ? (
                 <>
                   <span className="breadcrumbs-sep">/</span>
@@ -342,15 +843,29 @@ export default function DataSkillsPage() {
               {tx('在技能包内继续下钻时，顶部会持续显示该技能包的上下文。', 'The bundle context stays visible while you browse deeper inside this skill bundle.')}
             </p>
           </div>
+          <div className="materials-actions">
+            {skillScopeControl}
+            {activeTeamID && currentBundleContext ? (
+              <button
+                className="btn"
+                disabled={copyingSkillPath === normalizeSkillPath(currentBundlePath)}
+                onClick={() => { void copyTeamSkillToPersonal(currentBundlePath) }}
+              >
+                {copyingSkillPath === normalizeSkillPath(currentBundlePath) ? tx('复制中...', 'Copying...') : tx('复制到个人空间', 'Copy to personal')}
+              </button>
+            ) : null}
+          </div>
         </section>
 
         {error && <div className="alert alert-warn">{error}</div>}
+        {scopeMessage && <div className="alert alert-success">{scopeMessage}</div>}
         {!error && !currentBundleContext && (
           <div className="alert alert-warn">{tx('没有找到这个技能包。', 'This skill bundle could not be found.')}</div>
         )}
 
         {currentBundleContext ? (
           <GitHubTreeList
+            key={`${activeTeamID || 'personal'}:${currentBundlePath}`}
             rootPath={currentBundlePath}
             rootLabel={currentBundleContext.name}
             initialPath={currentBrowsePath || currentBundlePath}
@@ -358,6 +873,8 @@ export default function DataSkillsPage() {
             description={tx('按 GitHub 文件列表样式浏览这个技能包的所有文件。', 'Browse every file in this skill bundle with the GitHub-style file list.')}
             actionHref="/?type=Skill"
             actionLabel={tx('在首页查看', 'View on Home')}
+            loadNode={scopedGetNode}
+            fileRoute={(path) => dataFileEditorRoute(path, activeTeamID)}
           />
         ) : null}
 
@@ -448,7 +965,7 @@ export default function DataSkillsPage() {
                                 setSelectedEntryPath((value) => (value === entry.path ? null : entry.path))
                               },
                             },
-                            ...(currentBundleContext.read_only
+                            ...(currentBundleContext.read_only || !canWriteCurrentScope
                               ? []
                               : [{
                                   key: 'delete',
@@ -500,21 +1017,399 @@ export default function DataSkillsPage() {
           <p className="materials-subtitle">{tx('Skills 是你的 AI 工具箱，可以被 Claude、ChatGPT、Cursor 等工具复用。', 'Reusable instructions and tools for your AI agents across Claude, ChatGPT, Cursor, and more.')}</p>
         </div>
         <div className="materials-actions">
-          <button className="btn btn-primary" onClick={() => setShowNewForm(true)}>{tx('创建 Skill', 'Create skill')}</button>
-          <button className="btn" onClick={() => navigate('/import/skills')}>{tx('导入 Skill', 'Import skill')}</button>
+          {skillScopeControl}
+          <button className="btn btn-primary" disabled={!canWriteCurrentScope} onClick={() => setShowNewForm(true)}>{tx('创建 Skill', 'Create skill')}</button>
+          <button className="btn" onClick={() => navigate(activeTeamID ? `/import/skills?team=${encodeURIComponent(activeTeamID)}` : '/import/skills')}>{tx('导入 Skill', 'Import skill')}</button>
         </div>
       </section>
 
       {error && <div className="alert alert-warn">{error}</div>}
+      {scopeMessage && <div className="alert alert-success">{scopeMessage}</div>}
 
       <GitHubTreeList
+        key={activeTeamID || 'personal'}
         rootPath="/skills"
         rootLabel={tx('技能', 'Skills')}
         title={tx('技能文件', 'Skill files')}
         description={tx('按文件夹层级浏览所有技能包。', 'Browse all skill bundles by folder.')}
         actionHref="/?type=Skill"
         actionLabel={tx('在首页查看', 'View on Home')}
+        loadNode={scopedGetNode}
+        fileRoute={(path) => dataFileEditorRoute(path, activeTeamID)}
       />
+
+      {assignmentState && (
+        <section className="materials-section">
+          <div className="materials-section-head">
+            <div>
+              <h3 className="materials-section-title">{tx('Agent 分配', 'Agent assignments')}</h3>
+              <p className="materials-section-copy">{tx('按 Agent 选择可用 Skill。Claude Code 写入 ~/.claude/skills，Codex 写入 ~/.codex/skills；Cursor 和 Gemini CLI 只保存分配并生成导出包。', 'Choose skills per agent. Claude Code writes to ~/.claude/skills, Codex writes to ~/.codex/skills, while Cursor and Gemini CLI keep assignments and export packages only.')}</p>
+            </div>
+            <div className="materials-actions">
+              <button className="btn btn-sm" disabled={!assignmentChanged || assignmentSaving} onClick={resetSkillAssignments}>
+                {tx('还原', 'Reset')}
+              </button>
+              <button className="btn btn-sm btn-primary" disabled={!canWriteCurrentScope || !assignmentChanged || assignmentSaving} onClick={() => { void saveSkillAssignments() }}>
+                {assignmentSaving ? tx('保存中...', 'Saving...') : tx('保存分配', 'Save')}
+              </button>
+            </div>
+          </div>
+
+          {assignmentError && <div className="alert alert-warn">{assignmentError}</div>}
+          {assignmentMessage && <div className="alert alert-success">{assignmentMessage}</div>}
+
+          <div className="skill-assignment-grid">
+            {assignmentState.agents.map((agent) => {
+              const saved = savedAssignmentLookup[agent.id] || new Set<string>()
+              const draft = draftAssignmentLookup[agent.id] || new Set<string>()
+              const diff = diffSkillPaths(saved, draft)
+              const selectedCount = draft.size
+              const statusLabel = agent.supports_apply
+                ? tx('可自动同步', 'Auto sync')
+                : agent.export_supported
+                  ? tx('可分配、可导出、暂不自动写入', 'Assignable, exportable, no auto-write')
+                  : tx('可分配', 'Assignable')
+              return (
+                <div key={agent.id} className="materials-panel skill-assignment-card">
+                  <div className="skill-assignment-card-head">
+                    <div>
+                      <strong>{agent.name}</strong>
+                      <span>{agent.install_path_hint || agent.platform}</span>
+                    </div>
+                    <em>{tx(`${selectedCount} 个`, `${selectedCount}`)}</em>
+                  </div>
+                  <div className="skill-assignment-diff">
+                    <span>{statusLabel}</span>
+                    {agent.auto_apply_reason ? <span>{agent.auto_apply_reason}</span> : null}
+                  </div>
+                  <div className="skill-assignment-options">
+                    {sortedSkills.length === 0 ? (
+                      <p className="dashboard-empty-copy">{tx('暂无可分配 Skill。', 'No skills available.')}</p>
+                    ) : (
+                      sortedSkills.map((skill) => {
+                        const skillPath = normalizeSkillPath(skill.bundlePath || skill.path)
+                        return (
+                          <label key={`${agent.id}-${skillPath}`} className="skill-assignment-option">
+                            <input
+                              type="checkbox"
+                              disabled={!canWriteCurrentScope}
+                              checked={draft.has(skillPath)}
+                              onChange={() => toggleSkillAssignment(agent.id, skillPath)}
+                            />
+                            <span>
+                              <strong>{skill.name}</strong>
+                              <small>{skillPath}</small>
+                            </span>
+                          </label>
+                        )
+                      })
+                    )}
+                  </div>
+                  {(diff.added.length > 0 || diff.removed.length > 0) && (
+                    <div className="skill-assignment-diff">
+                      {diff.added.length > 0 && (
+                        <span>{tx(`新增 ${diff.added.map((item) => skillNameByPath[item] || item).join('、')}`, `Add ${diff.added.map((item) => skillNameByPath[item] || item).join(', ')}`)}</span>
+                      )}
+                      {diff.removed.length > 0 && (
+                        <span>{tx(`移除 ${diff.removed.map((item) => skillNameByPath[item] || item).join('、')}`, `Remove ${diff.removed.map((item) => skillNameByPath[item] || item).join(', ')}`)}</span>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {localMode && (
+            <div className="materials-panel skill-local-sync-panel">
+              <div className="materials-section-head">
+                <div>
+                  <h3 className="materials-section-title">{tx('本地同步', 'Local sync')}</h3>
+                  <p className="materials-section-copy">{tx('预览会列出新增、更新、冲突和导出项。只有 Claude Code 与 Codex 会写本地目录，且只更新带 .neudrive-managed.json 的 Skill；Cursor / Gemini CLI 只导出包。', 'Preview lists additions, updates, conflicts, and export items. Only Claude Code and Codex write local folders, and only .neudrive-managed.json skills are updated; Cursor / Gemini CLI export packages only.')}</p>
+                </div>
+                <div className="materials-actions">
+                  <button
+                    className="btn btn-sm"
+                    disabled={assignmentChanged || Boolean(skillSyncBusy)}
+                    onClick={() => { void runLocalSkillSync('preview') }}
+                  >
+                    {skillSyncBusy === 'preview' ? tx('预览中...', 'Previewing...') : tx('预览同步', 'Preview')}
+                  </button>
+                  <button
+                    className="btn btn-sm btn-primary"
+                    disabled={assignmentChanged || Boolean(skillSyncBusy)}
+                    onClick={() => { void runLocalSkillSync('apply') }}
+                  >
+                    {skillSyncBusy === 'apply' ? tx('应用中...', 'Applying...') : tx('应用 Claude/Codex', 'Apply Claude/Codex')}
+                  </button>
+                  <button
+                    className="btn btn-sm"
+                    disabled={assignmentChanged || Boolean(skillSyncBusy)}
+                    onClick={() => { void runLocalSkillSync('cleanup') }}
+                  >
+                    {skillSyncBusy === 'cleanup' ? tx('清理中...', 'Cleaning...') : tx('清理已取消分配', 'Clean unassigned')}
+                  </button>
+                </div>
+              </div>
+
+              {assignmentChanged && (
+                <div className="alert alert-warn">{tx('分配有未保存修改，保存后再同步到本地。', 'Save assignment changes before syncing locally.')}</div>
+              )}
+              {skillSyncError && <div className="alert alert-warn">{skillSyncError}</div>}
+              {skillSyncMessage && <div className="alert alert-success">{skillSyncMessage}</div>}
+
+              {skillSyncPreview && (
+                <div className="data-sync-preview skill-local-sync-preview">
+                  <div className="data-sync-preview-sections">
+                    {skillSyncPreview.agents.map((agent) => (
+                      <details key={agent.agent_id} className="data-sync-preview-section" open={agent.summary.conflict > 0 || agent.summary.add > 0 || agent.summary.update > 0 || agent.summary.removable > 0 || agent.summary.export > 0}>
+                        <summary className="data-sync-preview-summary">
+                          <span>
+                            <strong>{agent.name}</strong>
+                            <small>{agent.target_root || agent.export_file_name || agent.support_status}</small>
+                          </span>
+                          <span>{agent.supported ? syncAgentSummaryText(agent, tx) : tx(`可导出 ${agent.summary.export} 个`, `${agent.summary.export} export`)}</span>
+                        </summary>
+                        {agent.message && <p className="dashboard-empty-copy">{agent.message}</p>}
+                        {agent.auto_apply_reason && <p className="dashboard-empty-copy">{agent.auto_apply_reason}</p>}
+                        {agent.directory_rules?.length ? (
+                          <div className="data-sync-preview-list">
+                            {agent.directory_rules.map((rule, index) => (
+                              <div key={`${agent.agent_id}-rule-${index}`} className="data-sync-preview-entry">
+                                <span className="preview-action preview-action-skip">{tx('规则', 'rule')}</span>
+                                <span className="skill-conversion-report-text">{rule}</span>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {agent.detected_roots?.length ? (
+                          <div className="data-sync-preview-list">
+                            {agent.detected_roots.map((root, index) => (
+                              <div key={`${agent.agent_id}-root-${index}`} className="data-sync-preview-entry">
+                                <span className={root.exists ? 'preview-action preview-action-update' : 'preview-action preview-action-skip'}>{root.exists ? tx('已发现', 'found') : tx('未发现', 'missing')}</span>
+                                <span className="skill-local-sync-path">{root.path}</span>
+                                <small>{root.role || root.message || ''}{root.exists ? ` · ${root.is_dir ? tx('目录', 'directory') : tx('文件', 'file')}` : root.message ? ` · ${root.message}` : ''}</small>
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                        {agent.errors?.length ? (
+                          <div className="alert alert-warn">
+                            {agent.errors.join('；')}
+                          </div>
+                        ) : null}
+                        {agent.summary.conflict > 0 ? (
+                          <div className="alert alert-warn">
+                            {tx('有同名本地目录或文件冲突。应用时 neuDrive 不会覆盖没有 .neudrive-managed.json 标记的内容。', 'Conflicts detected. neuDrive will not overwrite local content without a .neudrive-managed.json marker.')}
+                          </div>
+                        ) : null}
+                        {agent.changes.length === 0 ? (
+                          <p className="dashboard-empty-copy">{tx('没有需要处理的本地变化。', 'No local changes to process.')}</p>
+                        ) : (
+                          <div className="data-sync-preview-list">
+                            {agent.changes.filter((change) => change.action !== 'marker').slice(0, 24).map((change, index) => (
+                              <div key={`${agent.agent_id}-${change.target_path}-${index}`} className={`data-sync-preview-entry ${change.action === 'conflict' ? 'is-danger' : ''}`}>
+                                <span className={syncActionClass(change.action)}>{syncActionLabel(change.action, tx)}</span>
+                                <span className="skill-local-sync-path">{change.skill_path}{change.rel_path ? `/${change.rel_path}` : ''}</span>
+                                {change.reason ? <small>{change.reason}</small> : null}
+                              </div>
+                            ))}
+                            {agent.changes.filter((change) => change.action !== 'marker').length > 24 && (
+                              <p className="dashboard-empty-copy">{tx('只显示前 24 条变化。', 'Showing the first 24 changes only.')}</p>
+                            )}
+                          </div>
+                        )}
+                        {agent.export_available && (
+                          <div className="materials-actions">
+                            <button
+                              className="btn btn-sm"
+                              disabled={assignmentChanged || Boolean(skillExportBusy)}
+                              onClick={() => { void downloadLocalSkillExport(agent.agent_id) }}
+                            >
+                              {skillExportBusy === agent.agent_id ? tx('生成中...', 'Creating...') : tx('下载导出包', 'Download export')}
+                            </button>
+                          </div>
+                        )}
+                      </details>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+      )}
+
+      {skills.length > 0 && (
+        <section className="materials-section">
+          <div className="materials-section-head">
+            <div>
+              <h3 className="materials-section-title">{tx('Skill 转换', 'Skill conversion')}</h3>
+              <p className="materials-section-copy">{tx('生成 Claude Code / Codex 互通副本，并附带脚本、依赖、外部引用和 MCP 配置检查报告。', 'Create a Claude Code / Codex compatible copy with a report for scripts, dependencies, external references, and MCP config.')}</p>
+            </div>
+            <div className="materials-actions">
+              <button
+                className="btn btn-sm"
+                disabled={!conversionSourcePath || conversionSourcePlatform === conversionTargetPlatform || Boolean(conversionBusy)}
+                onClick={() => { void runSkillConversion('preview') }}
+              >
+                {conversionBusy === 'preview' ? tx('预览中...', 'Previewing...') : tx('预览转换', 'Preview')}
+              </button>
+              <button
+                className="btn btn-sm btn-primary"
+                disabled={!canWriteCurrentScope || !conversionSourcePath || conversionSourcePlatform === conversionTargetPlatform || Boolean(conversionBusy)}
+                onClick={() => { void runSkillConversion('apply') }}
+              >
+                {conversionBusy === 'apply' ? tx('生成中...', 'Creating...') : tx('生成转换副本', 'Create copy')}
+              </button>
+            </div>
+          </div>
+
+          <div className="materials-panel skill-conversion-panel">
+            <div className="skill-conversion-grid">
+              <div className="form-group">
+                <label htmlFor="skill-conversion-source">{tx('源 Skill', 'Source skill')}</label>
+                <select
+                  id="skill-conversion-source"
+                  value={conversionSourcePath}
+                  onChange={(event) => {
+                    const next = event.target.value
+                    setConversionSourcePath(next)
+                    setConversionTargetPath(defaultConversionTargetPath(next, conversionTargetPlatform))
+                    setConversionPreview(null)
+                    setConversionMessage('')
+                    setConversionError('')
+                  }}
+                >
+                  {sortedSkills.map((skill) => {
+                    const skillPath = normalizeSkillPath(skill.bundlePath || skill.path)
+                    return <option key={skillPath} value={skillPath}>{skill.name}</option>
+                  })}
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="skill-conversion-source-platform">{tx('源平台', 'Source platform')}</label>
+                <select
+                  id="skill-conversion-source-platform"
+                  value={conversionSourcePlatform}
+                  onChange={(event) => {
+                    const next = event.target.value as 'claude-code' | 'codex'
+                    setConversionSourcePlatform(next)
+                    setConversionTargetPlatform(next === 'claude-code' ? 'codex' : 'claude-code')
+                    setConversionTargetPath(defaultConversionTargetPath(conversionSourcePath, next === 'claude-code' ? 'codex' : 'claude-code'))
+                    setConversionPreview(null)
+                  }}
+                >
+                  <option value="claude-code">Claude Code</option>
+                  <option value="codex">Codex</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label htmlFor="skill-conversion-target-platform">{tx('目标平台', 'Target platform')}</label>
+                <select
+                  id="skill-conversion-target-platform"
+                  value={conversionTargetPlatform}
+                  onChange={(event) => {
+                    const next = event.target.value as 'claude-code' | 'codex'
+                    setConversionTargetPlatform(next)
+                    if (next === conversionSourcePlatform) {
+                      setConversionSourcePlatform(next === 'claude-code' ? 'codex' : 'claude-code')
+                    }
+                    setConversionTargetPath(defaultConversionTargetPath(conversionSourcePath, next))
+                    setConversionPreview(null)
+                  }}
+                >
+                  <option value="codex">Codex</option>
+                  <option value="claude-code">Claude Code</option>
+                </select>
+              </div>
+              <div className="form-group skill-conversion-grid-wide">
+                <label htmlFor="skill-conversion-target-path">{tx('目标路径', 'Target path')}</label>
+                <input
+                  id="skill-conversion-target-path"
+                  type="text"
+                  value={conversionTargetPath}
+                  onChange={(event) => {
+                    setConversionTargetPath(event.target.value)
+                    setConversionPreview(null)
+                  }}
+                  placeholder="/skills/example-codex"
+                />
+              </div>
+              <label className="skill-conversion-checkbox">
+                <input
+                  type="checkbox"
+                  checked={conversionOverwrite}
+                  onChange={(event) => {
+                    setConversionOverwrite(event.target.checked)
+                    setConversionPreview(null)
+                  }}
+                />
+                <span>{tx('允许覆盖目标路径已有文件', 'Allow overwriting existing files at target path')}</span>
+              </label>
+            </div>
+
+            {conversionSourcePlatform === conversionTargetPlatform && (
+              <div className="alert alert-warn">{tx('源平台和目标平台不能相同。', 'Source and target platform must be different.')}</div>
+            )}
+            {conversionError && <div className="alert alert-warn">{conversionError}</div>}
+            {conversionMessage && <div className="alert alert-success">{conversionMessage}</div>}
+
+            {conversionPreview && (
+              <div className="data-sync-preview skill-conversion-preview">
+                <div className="data-sync-preview-sections">
+                  <details className="data-sync-preview-section" open>
+                    <summary className="data-sync-preview-summary">
+                      <span>
+                        <strong>{conversionPreview.source_platform} → {conversionPreview.target_platform}</strong>
+                        <small>{conversionPreview.source_path} → {conversionPreview.target_path}</small>
+                      </span>
+                      <span>{tx(
+                        `转换 ${conversionPreview.summary.converted} / 复制 ${conversionPreview.summary.copied} / 冲突 ${conversionPreview.summary.conflicts}`,
+                        `convert ${conversionPreview.summary.converted} / copy ${conversionPreview.summary.copied} / conflicts ${conversionPreview.summary.conflicts}`,
+                      )}</span>
+                    </summary>
+                    <div className="data-sync-preview-list">
+                      {conversionPreview.files.slice(0, 28).map((file) => (
+                        <div key={`${file.target_path}-${file.action}`} className={`data-sync-preview-entry ${file.action === 'conflict' ? 'is-danger' : ''}`}>
+                          <span className={conversionActionClass(file.action)}>{conversionActionLabel(file.action, tx)}</span>
+                          <span className="skill-local-sync-path">{file.rel_path}</span>
+                          {file.reason ? <small>{file.reason}</small> : null}
+                        </div>
+                      ))}
+                      {conversionPreview.files.length > 28 && (
+                        <p className="dashboard-empty-copy">{tx('只显示前 28 个文件。', 'Showing the first 28 files only.')}</p>
+                      )}
+                    </div>
+                  </details>
+
+                  {[
+                    { title: tx('可自动处理', 'Automatic'), items: conversionPreview.auto_items || [] },
+                    { title: tx('需要处理', 'Needs review'), items: conversionPreview.manual_items || [] },
+                    { title: tx('暂不自动转换', 'Not auto-converted'), items: conversionPreview.unsupported || [] },
+                    { title: tx('提示', 'Notes'), items: conversionPreview.warnings || [] },
+                  ].filter((section) => section.items.length > 0).map((section) => (
+                    <details key={section.title} className="data-sync-preview-section" open>
+                      <summary className="data-sync-preview-summary">
+                        <strong>{section.title}</strong>
+                        <span>{section.items.length}</span>
+                      </summary>
+                      <div className="data-sync-preview-list">
+                        {section.items.slice(0, 12).map((item, index) => (
+                          <div key={`${section.title}-${item.code}-${index}`} className="data-sync-preview-entry">
+                            <span className="preview-action preview-action-skip">{item.code}</span>
+                            <span className="skill-conversion-report-text">{item.path ? `${item.path}: ` : ''}{item.message}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </details>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {showNewForm && (
         <div className="materials-panel form-card">
@@ -533,12 +1428,12 @@ export default function DataSkillsPage() {
                 value={newBundleName}
                 onChange={(event) => setNewBundleName(event.target.value)}
                 placeholder={tx('例如：meeting-notes', 'For example: meeting-notes')}
-                disabled={creating}
+                disabled={creating || !canWriteCurrentScope}
                 autoFocus
               />
             </div>
             <div className="form-actions">
-              <button type="submit" className="btn btn-primary" disabled={creating}>
+              <button type="submit" className="btn btn-primary" disabled={creating || !canWriteCurrentScope}>
                 {creating ? tx('创建中...', 'Creating...') : tx('创建', 'Create')}
               </button>
               <button type="button" className="btn" onClick={() => setShowNewForm(false)} disabled={creating}>
@@ -622,6 +1517,17 @@ export default function DataSkillsPage() {
                             void handleDownloadZip(skill.bundlePath)
                           },
                         },
+                        ...(activeTeamID
+                          ? [{
+                              key: 'copy-to-personal',
+                              label: copyingSkillPath === normalizeSkillPath(skill.bundlePath) ? tx('复制中...', 'Copying...') : tx('复制到个人空间', 'Copy to personal'),
+                              disabled: Boolean(copyingSkillPath),
+                              onSelect: () => {
+                                closeMenu()
+                                void copyTeamSkillToPersonal(skill.bundlePath)
+                              },
+                            }]
+                          : []),
                         {
                           key: 'select',
                           label: selectedBundlePath === tile.node.path ? tx('取消选中', 'Unselect') : tx('加入选择', 'Select'),
@@ -630,7 +1536,7 @@ export default function DataSkillsPage() {
                             setSelectedBundlePath((value) => (value === tile.node.path ? null : tile.node.path))
                           },
                         },
-                        ...(!skill.read_only
+                        ...(!skill.read_only && canWriteCurrentScope
                           ? [{
                               key: 'delete',
                               label: tx('删除', 'Delete'),

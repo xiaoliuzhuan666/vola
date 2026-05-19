@@ -30,6 +30,7 @@ type preparedSkillArchiveEntry struct {
 	content     string
 	data        []byte
 	binary      bool
+	generated   bool
 	checksum    string
 	blobSHA256  string
 }
@@ -81,8 +82,12 @@ func (s *ImportService) importSkillsArchiveEntriesOptimized(ctx context.Context,
 		if _, err := tx.Exec(ctx, "RELEASE SAVEPOINT "+savepoint); err != nil {
 			return nil, fmt.Errorf("import.ImportSkillsArchiveEntries: release savepoint: %w", err)
 		}
-		result.Imported++
-		result.Skills = appendUniqueString(result.Skills, entry.skillName)
+		if entry.generated {
+			result.ManifestFiles++
+		} else {
+			result.Imported++
+			result.Skills = appendUniqueString(result.Skills, entry.skillName)
+		}
 	}
 
 	if err := tx.Commit(ctx); err != nil {
@@ -129,6 +134,7 @@ func prepareSkillArchiveEntries(entries []skillsarchive.Entry, platform, archive
 				metadata:    metadata,
 				data:        entry.Data,
 				binary:      true,
+				generated:   entry.Generated,
 				checksum:    entryChecksum(hubpath.NormalizePublic(storagePath), "", contentType, metadata),
 				blobSHA256:  hashHex,
 			})
@@ -144,6 +150,7 @@ func prepareSkillArchiveEntries(entries []skillsarchive.Entry, platform, archive
 				metadata:    metadata,
 				content:     content,
 				data:        entry.Data,
+				generated:   entry.Generated,
 				checksum:    entryChecksum(hubpath.NormalizePublic(storagePath), content, contentType, metadata),
 			})
 		}
@@ -265,6 +272,12 @@ func (s *FileTreeService) writePreparedBinaryImportTx(ctx context.Context, tx pg
 		if err := s.enforceStorageQuotaTx(ctx, tx, userID, current, int64(len(entry.data))); err != nil {
 			return err
 		}
+		blobInfo, err := s.storeBlob(ctx, current.ID, userID, entry.data, entry.contentType, entry.blobSHA256)
+		if err != nil {
+			return err
+		}
+		metadata := mergeMetadata(entry.metadata, blobInfo.Metadata())
+		checksum := entryChecksum(hubpath.NormalizePublic(storagePath), "", entry.contentType, metadata)
 		var updated models.FileTreeEntry
 		err = tx.QueryRow(ctx,
 			fmt.Sprintf(`UPDATE file_tree
@@ -280,7 +293,7 @@ func (s *FileTreeService) writePreparedBinaryImportTx(ctx context.Context, tx pg
 			     updated_at = $8
 			 WHERE user_id = $1 AND path = $2
 			 RETURNING %s`, fileTreeSelectColumns),
-			userID, current.Path, entry.kind, entry.contentType, entry.metadata, entry.checksum, minTrust, now,
+			userID, current.Path, entry.kind, entry.contentType, metadata, checksum, minTrust, now,
 		).Scan(
 			&updated.ID,
 			&updated.UserID,
@@ -300,22 +313,28 @@ func (s *FileTreeService) writePreparedBinaryImportTx(ctx context.Context, tx pg
 		if err != nil {
 			return fmt.Errorf("update binary file: %w", err)
 		}
-		if err := s.upsertBlobTxWithSHA(ctx, tx, updated.ID, userID, entry.data, entry.blobSHA256, now); err != nil {
+		if err := s.upsertBlobTxWithInfo(ctx, tx, updated.ID, userID, entry.data, blobInfo, now); err != nil {
 			return err
 		}
 		return s.insertEntryVersion(ctx, tx, &updated, "update")
 	}
 
+	recordID := uuid.New()
+	blobInfo, err := s.storeBlob(ctx, recordID, userID, entry.data, entry.contentType, entry.blobSHA256)
+	if err != nil {
+		return err
+	}
+	metadata := mergeMetadata(entry.metadata, blobInfo.Metadata())
 	record := &models.FileTreeEntry{
-		ID:            uuid.New(),
+		ID:            recordID,
 		UserID:        userID,
 		Path:          storagePath,
 		Kind:          entry.kind,
 		IsDirectory:   false,
 		Content:       "",
 		ContentType:   entry.contentType,
-		Metadata:      entry.metadata,
-		Checksum:      entry.checksum,
+		Metadata:      metadata,
+		Checksum:      entryChecksum(hubpath.NormalizePublic(storagePath), "", entry.contentType, metadata),
 		Version:       1,
 		MinTrustLevel: minTrust,
 		CreatedAt:     now,
@@ -335,7 +354,7 @@ func (s *FileTreeService) writePreparedBinaryImportTx(ctx context.Context, tx pg
 	if err != nil {
 		return fmt.Errorf("insert binary file: %w", err)
 	}
-	if err := s.upsertBlobTxWithSHA(ctx, tx, record.ID, userID, entry.data, entry.blobSHA256, now); err != nil {
+	if err := s.upsertBlobTxWithInfo(ctx, tx, record.ID, userID, entry.data, blobInfo, now); err != nil {
 		return err
 	}
 	return s.insertEntryVersion(ctx, tx, record, "create")

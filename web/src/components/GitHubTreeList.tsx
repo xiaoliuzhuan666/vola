@@ -14,6 +14,8 @@ interface GitHubTreeListProps {
   actionHref?: string
   actionLabel?: string
   className?: string
+  loadNode?: (path: string) => Promise<FileNode>
+  fileRoute?: (path: string) => string
   onPathChange?: (path: string) => void
 }
 
@@ -77,6 +79,8 @@ export default function GitHubTreeList({
   actionHref,
   actionLabel,
   className = '',
+  loadNode,
+  fileRoute,
   onPathChange,
 }: GitHubTreeListProps) {
   const { locale, tx } = useI18n()
@@ -98,7 +102,7 @@ export default function GitHubTreeList({
       setLoading(true)
       setError('')
       try {
-        const next = await api.getTree(currentPath)
+        const next = await (loadNode ? loadNode(currentPath) : api.getTree(currentPath))
         if (!cancelled) setNode(next)
       } catch (err: any) {
         if (!cancelled) setError(err?.message || tx('加载文件失败', 'Failed to load files'))
@@ -110,7 +114,7 @@ export default function GitHubTreeList({
     return () => {
       cancelled = true
     }
-  }, [currentPath, tx])
+  }, [currentPath, loadNode, tx])
 
   const entries = useMemo(() => {
     const children = node?.children || []
@@ -181,7 +185,7 @@ export default function GitHubTreeList({
             )
           }
           return (
-            <Link key={nextPath} to={dataFileEditorRoute(nextPath)} className="dashboard-file-row">
+            <Link key={nextPath} to={fileRoute ? fileRoute(nextPath) : dataFileEditorRoute(nextPath)} className="dashboard-file-row">
               <span className="dashboard-file-icon">•</span>
               <span className="dashboard-file-name">{entry.name}</span>
               <span className="dashboard-file-kind">{fileTypeLabel(entry, locale)} · {formatBytes(entry.size || entry.content?.length)}</span>

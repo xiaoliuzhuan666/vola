@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/agi-bar/neudrive/internal/hubpath"
 	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/neudrive/internal/objectstore"
 	"github.com/agi-bar/neudrive/internal/systemskills"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -78,12 +80,16 @@ func (s *FileTreeService) WriteBinaryEntry(
 		if opts.ExpectedChecksum != "" && current.Checksum != opts.ExpectedChecksum {
 			return nil, ErrOptimisticLockConflict
 		}
-		metadata = mergeMetadata(current.Metadata, opts.Metadata)
-		metadata = WithSourceContextMetadata(metadata, ctx)
-		metadata = mergeMetadata(metadata, binaryMetadata(data))
 		if err := s.enforceStorageQuotaTx(ctx, tx, userID, current, int64(len(data))); err != nil {
 			return nil, err
 		}
+		metadata = mergeMetadata(current.Metadata, opts.Metadata)
+		metadata = WithSourceContextMetadata(metadata, ctx)
+		blobInfo, err := s.storeBlob(ctx, current.ID, userID, data, contentType, "")
+		if err != nil {
+			return nil, err
+		}
+		metadata = mergeMetadata(metadata, blobInfo.Metadata())
 		checksum := entryChecksum(hubpath.NormalizePublic(storagePath), "", contentType, metadata)
 
 		var updated models.FileTreeEntry
@@ -121,7 +127,7 @@ func (s *FileTreeService) WriteBinaryEntry(
 		if err != nil {
 			return nil, fmt.Errorf("filetree.WriteBinaryEntry: update: %w", err)
 		}
-		if err := s.upsertBlobTx(ctx, tx, updated.ID, userID, data, now); err != nil {
+		if err := s.upsertBlobTxWithInfo(ctx, tx, updated.ID, userID, data, blobInfo, now); err != nil {
 			return nil, err
 		}
 		if err := s.insertEntryVersion(ctx, tx, &updated, "update"); err != nil {
@@ -133,15 +139,20 @@ func (s *FileTreeService) WriteBinaryEntry(
 		return &updated, nil
 	}
 
-	metadata = WithSourceContextMetadata(metadata, ctx)
-	metadata = mergeMetadata(metadata, binaryMetadata(data))
 	if err := s.enforceStorageQuotaTx(ctx, tx, userID, nil, int64(len(data))); err != nil {
 		return nil, err
 	}
+	entryID := uuid.New()
+	metadata = WithSourceContextMetadata(metadata, ctx)
+	blobInfo, err := s.storeBlob(ctx, entryID, userID, data, contentType, "")
+	if err != nil {
+		return nil, err
+	}
+	metadata = mergeMetadata(metadata, blobInfo.Metadata())
 	checksum := entryChecksum(hubpath.NormalizePublic(storagePath), "", contentType, metadata)
 
 	entry := &models.FileTreeEntry{
-		ID:            uuid.New(),
+		ID:            entryID,
 		UserID:        userID,
 		Path:          storagePath,
 		Kind:          kind,
@@ -166,7 +177,7 @@ func (s *FileTreeService) WriteBinaryEntry(
 	if err != nil {
 		return nil, fmt.Errorf("filetree.WriteBinaryEntry: insert: %w", err)
 	}
-	if err := s.upsertBlobTx(ctx, tx, entry.ID, userID, data, now); err != nil {
+	if err := s.upsertBlobTxWithInfo(ctx, tx, entry.ID, userID, data, blobInfo, now); err != nil {
 		return nil, err
 	}
 	if err := s.insertEntryVersion(ctx, tx, entry, "create"); err != nil {
@@ -206,32 +217,74 @@ func (s *FileTreeService) ReadBlobByEntryID(ctx context.Context, entryID uuid.UU
 		return nil, false, fmt.Errorf("filetree.ReadBlobByEntryID: database not configured")
 	}
 	var data []byte
-	err := s.db.QueryRow(ctx, `SELECT data FROM file_blobs WHERE entry_id = $1`, entryID).Scan(&data)
+	var storageBackend string
+	var objectKey sql.NullString
+	err := s.db.QueryRow(ctx,
+		`SELECT COALESCE(data, ''::bytea), COALESCE(storage_backend, 'db'), object_key
+		   FROM file_blobs
+		  WHERE entry_id = $1`,
+		entryID,
+	).Scan(&data, &storageBackend, &objectKey)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, false, nil
 		}
 		return nil, false, fmt.Errorf("filetree.ReadBlobByEntryID: %w", err)
 	}
+	if storageBackend == objectstore.BackendCOS {
+		if s.blobStore == nil || !s.blobStore.Enabled() {
+			return nil, true, fmt.Errorf("filetree.ReadBlobByEntryID: blob is stored in COS but object storage is not configured")
+		}
+		if !objectKey.Valid || strings.TrimSpace(objectKey.String) == "" {
+			return nil, true, fmt.Errorf("filetree.ReadBlobByEntryID: COS object key missing")
+		}
+		data, err := s.blobStore.Get(ctx, objectKey.String)
+		if err != nil {
+			if errors.Is(err, objectstore.ErrObjectNotFound) {
+				return nil, false, nil
+			}
+			return nil, true, fmt.Errorf("filetree.ReadBlobByEntryID: COS get: %w", err)
+		}
+		return data, true, nil
+	}
 	return data, true, nil
 }
 
 func (s *FileTreeService) upsertBlobTx(ctx context.Context, tx pgx.Tx, entryID, userID uuid.UUID, data []byte, now time.Time) error {
-	_, hashHex := binaryMetadataWithHash(data)
-	return s.upsertBlobTxWithSHA(ctx, tx, entryID, userID, data, hashHex, now)
+	info, err := s.storeBlob(ctx, entryID, userID, data, "", "")
+	if err != nil {
+		return err
+	}
+	return s.upsertBlobTxWithInfo(ctx, tx, entryID, userID, data, info, now)
 }
 
 func (s *FileTreeService) upsertBlobTxWithSHA(ctx context.Context, tx pgx.Tx, entryID, userID uuid.UUID, data []byte, sha256Hex string, now time.Time) error {
+	info, err := s.storeBlob(ctx, entryID, userID, data, "", sha256Hex)
+	if err != nil {
+		return err
+	}
+	return s.upsertBlobTxWithInfo(ctx, tx, entryID, userID, data, info, now)
+}
+
+func (s *FileTreeService) upsertBlobTxWithInfo(ctx context.Context, tx pgx.Tx, entryID, userID uuid.UUID, data []byte, info blobStorageInfo, now time.Time) error {
+	var blobData interface{} = data
+	var objectKey interface{}
+	if info.Backend != objectstore.BackendDB {
+		blobData = nil
+		objectKey = info.ObjectKey
+	}
 	_, err := tx.Exec(ctx,
-		`INSERT INTO file_blobs (entry_id, user_id, data, size_bytes, sha256, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $6)
+		`INSERT INTO file_blobs (entry_id, user_id, data, size_bytes, sha256, storage_backend, object_key, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $8)
 		 ON CONFLICT (entry_id) DO UPDATE SET
 		   user_id = EXCLUDED.user_id,
 		   data = EXCLUDED.data,
 		   size_bytes = EXCLUDED.size_bytes,
 		   sha256 = EXCLUDED.sha256,
+		   storage_backend = EXCLUDED.storage_backend,
+		   object_key = EXCLUDED.object_key,
 		   updated_at = EXCLUDED.updated_at`,
-		entryID, userID, data, len(data), sha256Hex, now,
+		entryID, userID, blobData, info.SizeBytes, info.SHA256, info.Backend, objectKey, now,
 	)
 	if err != nil {
 		return fmt.Errorf("filetree.upsertBlobTx: %w", err)
@@ -240,11 +293,68 @@ func (s *FileTreeService) upsertBlobTxWithSHA(ctx context.Context, tx pgx.Tx, en
 }
 
 func (s *FileTreeService) deleteBlobTx(ctx context.Context, tx pgx.Tx, entryID uuid.UUID) error {
+	if s.blobStore != nil && s.blobStore.Enabled() {
+		var storageBackend string
+		var objectKey sql.NullString
+		err := tx.QueryRow(ctx,
+			`SELECT COALESCE(storage_backend, 'db'), object_key FROM file_blobs WHERE entry_id = $1`,
+			entryID,
+		).Scan(&storageBackend, &objectKey)
+		if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+			return fmt.Errorf("filetree.deleteBlobTx: read blob metadata: %w", err)
+		}
+		if err == nil && storageBackend == objectstore.BackendCOS && objectKey.Valid && strings.TrimSpace(objectKey.String) != "" {
+			if deleteErr := s.blobStore.Delete(ctx, objectKey.String); deleteErr != nil {
+				return fmt.Errorf("filetree.deleteBlobTx: COS delete: %w", deleteErr)
+			}
+		}
+	}
 	_, err := tx.Exec(ctx, `DELETE FROM file_blobs WHERE entry_id = $1`, entryID)
 	if err != nil {
 		return fmt.Errorf("filetree.deleteBlobTx: %w", err)
 	}
 	return nil
+}
+
+type blobStorageInfo struct {
+	Backend   string
+	ObjectKey string
+	SizeBytes int
+	SHA256    string
+}
+
+func (b blobStorageInfo) Metadata() map[string]interface{} {
+	metadata := map[string]interface{}{
+		"binary":       true,
+		"blob_storage": b.Backend,
+		"size_bytes":   b.SizeBytes,
+		"sha256":       b.SHA256,
+	}
+	if b.ObjectKey != "" {
+		metadata["blob_object_key"] = b.ObjectKey
+	}
+	return metadata
+}
+
+func (s *FileTreeService) storeBlob(ctx context.Context, entryID, userID uuid.UUID, data []byte, contentType, sha256Hex string) (blobStorageInfo, error) {
+	if sha256Hex == "" {
+		_, sha256Hex = binaryMetadataWithHash(data)
+	}
+	info := blobStorageInfo{
+		Backend:   objectstore.BackendDB,
+		SizeBytes: len(data),
+		SHA256:    sha256Hex,
+	}
+	if s.blobStore == nil || !s.blobStore.Enabled() {
+		return info, nil
+	}
+	objectKey := s.blobStore.Key("users", userID.String(), "file-blobs", entryID.String(), sha256Hex)
+	if err := s.blobStore.Put(ctx, objectKey, data, contentType); err != nil {
+		return blobStorageInfo{}, fmt.Errorf("filetree.storeBlob: COS put: %w", err)
+	}
+	info.Backend = s.blobStore.Backend()
+	info.ObjectKey = objectKey
+	return info, nil
 }
 
 func binaryMetadata(data []byte) map[string]interface{} {

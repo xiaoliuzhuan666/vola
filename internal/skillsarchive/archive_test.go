@@ -152,3 +152,103 @@ func TestInferArchiveSkillNameAndBinaryDetection(t *testing.T) {
 		t.Fatal("expected content type")
 	}
 }
+
+func TestBuildManifests_ClassifiesAssetsAndExternalReferences(t *testing.T) {
+	entries := []Entry{
+		{
+			SkillName: "complex",
+			RelPath:   "SKILL.md",
+			Data:      []byte("# Complex\n\nUse ~/.claude/tools/foo.py, ~/.claude/plugins/release/plugin.json and ${OPENAI_API_KEY}.\n"),
+		},
+		{
+			SkillName: "complex",
+			RelPath:   "scripts/run.py",
+			Data:      []byte("print('run')\n"),
+		},
+		{
+			SkillName: "complex",
+			RelPath:   "external/claude-tools/foo.py",
+			Data:      []byte("print('external')\n"),
+		},
+		{
+			SkillName: "complex",
+			RelPath:   "external/claude-plugins/release/plugin.json",
+			Data:      []byte(`{"name":"release"}`),
+		},
+		{
+			SkillName: "complex",
+			RelPath:   "requirements.txt",
+			Data:      []byte("requests==2.32.0\n"),
+		},
+		{
+			SkillName: "complex",
+			RelPath:   "pyproject.toml",
+			Data:      []byte("[project]\nname = \"complex\"\n"),
+		},
+		{
+			SkillName: "complex",
+			RelPath:   "package.json",
+			Data:      []byte(`{"scripts":{"check":"node check.js"}}`),
+		},
+		{
+			SkillName: "complex",
+			RelPath:   "assets/logo.png",
+			Data:      []byte{0x89, 'P', 'N', 'G', 0x00},
+		},
+		{
+			SkillName: "complex",
+			RelPath:   ".env.local",
+			Data:      []byte("TOKEN=secret\n"),
+		},
+	}
+
+	manifests := BuildManifests(entries, "claude-web", "complex.zip")
+	if len(manifests) != 1 {
+		t.Fatalf("manifest count = %d, want 1", len(manifests))
+	}
+	manifest := manifests[0]
+	if manifest.SkillName != "complex" || manifest.EntryFile != "SKILL.md" {
+		t.Fatalf("unexpected manifest identity: %+v", manifest)
+	}
+	if manifest.Summary.Scripts != 2 || manifest.Summary.DependencyFiles != 3 || manifest.Summary.BinaryFiles != 1 {
+		t.Fatalf("unexpected summary: %+v", manifest.Summary)
+	}
+	if manifest.Summary.SecretRiskFiles != 1 {
+		t.Fatalf("secret risk count = %d, want 1", manifest.Summary.SecretRiskFiles)
+	}
+	if len(manifest.ExternalReferences) != 2 {
+		t.Fatalf("unexpected external references: %+v", manifest.ExternalReferences)
+	}
+	for _, ref := range manifest.ExternalReferences {
+		if !ref.Included || ref.Status != "included" {
+			t.Fatalf("expected external reference to be included: %+v", ref)
+		}
+	}
+	if len(manifest.EnvVars) != 2 || manifest.EnvVars[0] != "OPENAI_API_KEY" || manifest.EnvVars[1] != "TOKEN" {
+		t.Fatalf("unexpected env vars: %+v", manifest.EnvVars)
+	}
+
+	withManifests, err := AppendManifestEntries(entries, manifests)
+	if err != nil {
+		t.Fatalf("AppendManifestEntries: %v", err)
+	}
+	found := false
+	foundPlugin := false
+	for _, entry := range withManifests {
+		if entry.SkillName == "complex" && entry.RelPath == ManifestFile {
+			found = true
+			if !entry.Generated {
+				t.Fatal("manifest entry should be generated")
+			}
+		}
+		if entry.SkillName == "complex" && entry.RelPath == "external/claude-plugins/release/plugin.json" {
+			foundPlugin = true
+		}
+	}
+	if !found {
+		t.Fatal("generated manifest entry not found")
+	}
+	if !foundPlugin {
+		t.Fatal("included Claude plugin reference not found")
+	}
+}

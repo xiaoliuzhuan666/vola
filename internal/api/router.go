@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/agi-bar/neudrive/internal/auth"
+	"github.com/agi-bar/neudrive/internal/backups"
 	"github.com/agi-bar/neudrive/internal/config"
 	"github.com/agi-bar/neudrive/internal/localgitsync"
 	"github.com/agi-bar/neudrive/internal/models"
@@ -42,6 +43,7 @@ type Server struct {
 	Router                   *chi.Mux
 	Storage                  string
 	UserService              *services.UserService
+	TeamService              *services.TeamService
 	AuthService              *services.AuthService
 	ExternalAuthService      *services.ExternalAuthService
 	ConnectionService        *services.ConnectionService
@@ -61,6 +63,7 @@ type Server struct {
 	WebhookService           *services.WebhookService
 	OAuthService             *services.OAuthService
 	LocalGitSync             *localgitsync.Service
+	BackupService            *backups.Service
 	LocalOwnerID             uuid.UUID
 	Vault                    *vaultpkg.Vault
 	AuthHandler              *auth.Handler
@@ -79,6 +82,7 @@ type ServerDeps struct {
 	Storage               string
 	Config                *config.Config
 	UserService           *services.UserService
+	TeamService           *services.TeamService
 	AuthService           *services.AuthService
 	ExternalAuthService   *services.ExternalAuthService
 	ConnectionService     *services.ConnectionService
@@ -98,6 +102,7 @@ type ServerDeps struct {
 	WebhookService        *services.WebhookService
 	OAuthService          *services.OAuthService
 	LocalGitSync          *localgitsync.Service
+	BackupService         *backups.Service
 	LocalOwnerID          uuid.UUID
 	Vault                 *vaultpkg.Vault
 	JWTSecret             string
@@ -138,6 +143,7 @@ func NewServer(
 		Storage:              "postgres",
 		Config:               cfg,
 		UserService:          userSvc,
+		TeamService:          nil,
 		AuthService:          authSvc,
 		ConnectionService:    connSvc,
 		FileTreeService:      fileTreeSvc,
@@ -167,6 +173,7 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 		Router:                chi.NewRouter(),
 		Storage:               deps.Storage,
 		UserService:           deps.UserService,
+		TeamService:           deps.TeamService,
 		AuthService:           deps.AuthService,
 		ExternalAuthService:   deps.ExternalAuthService,
 		ConnectionService:     deps.ConnectionService,
@@ -185,6 +192,7 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 		WebhookService:        deps.WebhookService,
 		OAuthService:          deps.OAuthService,
 		LocalGitSync:          deps.LocalGitSync,
+		BackupService:         deps.BackupService,
 		LocalOwnerID:          deps.LocalOwnerID,
 		ExportService:         deps.ExportService,
 		Vault:                 deps.Vault,
@@ -298,6 +306,15 @@ func (s *Server) setupRoutes() {
 		r.Delete("/api/connections/{id}", s.handleConnectionsDelete)
 
 		// Skills
+		r.Get("/api/skills/assignments", s.handleSkillAssignmentsGet)
+		r.Put("/api/skills/assignments", s.handleSkillAssignmentsSave)
+		r.Post("/api/skills/copy-to-personal", s.handleSkillCopyToPersonal)
+		r.Post("/api/skills/convert/preview", s.handleSkillConversionPreview)
+		r.Post("/api/skills/convert/apply", s.handleSkillConversionApply)
+		r.Post("/api/local/skills/sync/preview", s.handleLocalSkillSyncPreview)
+		r.Post("/api/local/skills/sync/apply", s.handleLocalSkillSyncApply)
+		r.Post("/api/local/skills/sync/cleanup", s.handleLocalSkillSyncCleanup)
+		r.Post("/api/local/skills/sync/export", s.handleLocalSkillSyncExport)
 		r.Get("/api/skills", s.handleSkillsList)
 
 		// Memory
@@ -318,6 +335,28 @@ func (s *Server) setupRoutes() {
 
 		// Dashboard
 		r.Get("/api/dashboard/stats", s.handleDashboardStats)
+		r.Get("/api/ops/status", s.handleOpsStatus)
+
+		// Admin account management
+		r.Get("/api/admin/users", s.handleAdminUsersList)
+		r.Post("/api/admin/users", s.handleAdminUsersCreate)
+		r.Put("/api/admin/users/{id}/quota", s.handleAdminUserQuotaUpdate)
+
+		// Teams
+		r.Get("/api/teams", s.handleTeamsList)
+		r.Post("/api/teams", s.handleTeamsCreate)
+		r.Get("/api/teams/{team}/members", s.handleTeamMembersList)
+		r.Post("/api/teams/{team}/members", s.handleTeamMembersAdd)
+		r.Put("/api/teams/{team}/members/{user_id}", s.handleTeamMemberUpdate)
+		r.Delete("/api/teams/{team}/members/{user_id}", s.handleTeamMemberRemove)
+		r.Get("/api/teams/{team}/skills", s.handleTeamSkillsList)
+		r.Get("/api/teams/{team}/tree/archive", s.handleTeamTreeDownloadZip)
+		r.Get("/api/teams/{team}/tree/snapshot", s.handleTeamTreeSnapshot)
+		r.Get("/api/teams/{team}/tree/*", s.handleTeamTreeRead)
+		r.Put("/api/teams/{team}/tree/*", s.handleTeamTreeWrite)
+		r.Delete("/api/teams/{team}/tree/*", s.handleTeamTreeDelete)
+		r.Get("/api/teams/{team}", s.handleTeamsGet)
+		r.Put("/api/teams/{team}", s.handleTeamsUpdate)
 
 		// Git mirror
 		r.Get("/api/git-mirror", s.handleGitMirrorGet)
@@ -331,6 +370,14 @@ func (s *Server) setupRoutes() {
 		r.Get("/api/git-mirror/github-app/repos", s.handleGitMirrorGitHubAppReposList)
 		r.Post("/api/git-mirror/github-app/repos", s.handleGitMirrorGitHubAppReposCreate)
 		r.Post("/api/git-mirror/github-app/default-backup-repo", s.handleGitMirrorGitHubAppDefaultBackupRepo)
+
+		// External backup targets
+		r.Get("/api/backup/runs", s.handleBackupRunsList)
+		r.Get("/api/backup/targets", s.handleBackupTargetsList)
+		r.Post("/api/backup/targets", s.handleBackupTargetsSave)
+		r.Post("/api/backup/targets/{id}/run", s.handleBackupTargetRun)
+		r.With(MaxBodySizeMiddleware(50<<20)).Post("/api/backup/restore/preview", s.handleBackupRestorePreview)
+		r.With(MaxBodySizeMiddleware(50<<20)).Post("/api/backup/restore/apply", s.handleBackupRestoreApply)
 
 		// Local Git mirror settings
 		r.Get("/api/local/config", s.handleLocalConfigGet)
@@ -405,6 +452,10 @@ func (s *Server) setupRoutes() {
 		r.Get("/agent/search", s.handleAgentSearch)
 		r.Post("/agent/search", s.handleAgentSearch)
 		r.Get("/agent/skills", s.handleAgentListSkills)
+		r.Get("/agent/teams", s.handleAgentTeamsList)
+		r.Get("/agent/teams/{team}/skills", s.handleAgentTeamSkillsList)
+		r.Get("/agent/teams/{team}/tree/*", s.handleAgentTeamTreeRead)
+		r.Put("/agent/teams/{team}/tree/*", s.handleAgentTeamTreeWrite)
 		r.Put("/agent/tree/*", s.handleAgentTreeWrite)
 		r.Get("/agent/vault/scopes", s.handleAgentVaultListScopes)
 		r.Get("/agent/vault/{scope}", s.handleAgentVaultRead)
@@ -432,6 +483,7 @@ func (s *Server) setupRoutes() {
 		// Agent Import (bulk API)
 		r.Post("/agent/import/profile", s.handleAgentImportProfile)
 		r.With(MaxBodySizeMiddleware(50<<20)).Post("/agent/import/skills", s.handleAgentImportSkills)
+		r.With(MaxBodySizeMiddleware(8<<20)).Post("/agent/import/skills/external", s.handleAgentImportSkillExternalFile)
 		r.Post("/agent/import/skill", s.handleAgentImportSkill)
 		r.Post("/agent/import/claude-memory", s.handleAgentImportClaudeMemory)
 		r.Post("/agent/import/bulk", s.handleAgentImportBulk)
