@@ -59,25 +59,28 @@ cd web && npm run build
 git diff --check -- internal/api/errors.go internal/api/git_mirror.go internal/localgitsync/github_app.go internal/api/sqlite_shared_test.go internal/localgitsync/github_app_test.go web/src/pages/GitMirrorPage.tsx
 ```
 
-Note: `make build` was not run after the web build in this deployment pass, so the embedded `internal/web/dist` bundle should be refreshed before a production release commit.
+Note: the Docker image build does not depend on the local `internal/web/dist` directory. The root `Dockerfile` runs `npm ci`, builds `web/dist`, copies that output into `internal/web/dist`, and then builds the Linux `neudrive` binary. Run `make build` separately only when publishing local binaries or committing refreshed embedded web assets.
 
 ## Codeup repository
 
-Status: repository created, not pushed yet.
+Status: repository created and pushed.
 
 ```text
 Codeup web URL: https://codeup.aliyun.com/69ead0c5fa2a62bc8595a145/sxhx/neudrive
 Git HTTPS URL: https://codeup.aliyun.com/69ead0c5fa2a62bc8595a145/sxhx/neudrive.git
 Local remote: codeup
 Visibility: private
-Initial refs: empty
+Default branch: main
+Pushed commit: 805ff50d1c4d4c16c313aec9c3c34c29f59f9913
+Commit message: Prepare neuDrive deployment pipeline
 ```
 
-Reason not pushed yet:
+Verified:
 
-- The local neuDrive worktree contains many existing uncommitted changes from ongoing secondary development.
-- Pushing the current branch directly would mix deployment scaffolding, upstream cherry-picks, generated web assets, and unrelated feature work into Codeup.
-- Create a clean release commit or a dedicated Codeup branch before pushing.
+```text
+git ls-remote --symref codeup HEAD refs/heads/main
+git remote show codeup
+```
 
 ## ACR / Flow values
 
