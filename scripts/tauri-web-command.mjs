@@ -28,9 +28,9 @@ if (!webDir) {
   process.exit(1)
 }
 
-const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-const result = spawnSync(npm, ['run', command], {
+const result = spawnSync('npm', ['run', command], {
   cwd: webDir,
+  shell: process.platform === 'win32',
   stdio: 'inherit',
 })
 
