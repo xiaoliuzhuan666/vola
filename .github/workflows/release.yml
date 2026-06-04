@@ -56,26 +56,31 @@ jobs:
           - artifact: macos-aarch64
             platform: macos-15
             tauriTarget: aarch64-apple-darwin
+            bundles: ""
             goos: darwin
             goarch: arm64
           - artifact: macos-x86_64
             platform: macos-15-intel
             tauriTarget: x86_64-apple-darwin
+            bundles: ""
             goos: darwin
             goarch: amd64
           - artifact: linux-x86_64
             platform: ubuntu-22.04
             tauriTarget: ""
+            bundles: ""
             goos: linux
             goarch: amd64
           - artifact: linux-aarch64
             platform: ubuntu-24.04-arm
             tauriTarget: ""
+            bundles: "deb,rpm"
             goos: linux
             goarch: arm64
           - artifact: windows-x86_64
             platform: windows-latest
             tauriTarget: ""
+            bundles: ""
             goos: windows
             goarch: amd64
     env:
@@ -163,6 +168,9 @@ jobs:
           args=()
           if [ -n "${{ matrix.tauriTarget }}" ]; then
             args+=(--target "${{ matrix.tauriTarget }}")
+          fi
+          if [ -n "${{ matrix.bundles }}" ]; then
+            args+=(--bundles "${{ matrix.bundles }}")
           fi
           node ../web/node_modules/@tauri-apps/cli/tauri.js build --ci "${args[@]}"
 
