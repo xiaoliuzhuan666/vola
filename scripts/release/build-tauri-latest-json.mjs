@@ -80,34 +80,31 @@ function classifyAsset(fileName) {
   const lower = fileName.toLowerCase();
 
   if (lower.endsWith('.app.tar.gz')) {
-    if (lower.includes('aarch64') || lower.includes('arm64')) return ['darwin-aarch64', 'darwin-aarch64-app'];
-    if (lower.includes('x64') || lower.includes('x86_64') || lower.includes('amd64')) return ['darwin-x86_64', 'darwin-x86_64-app'];
+    if (lower.includes('aarch64') || lower.includes('arm64')) return ['darwin-aarch64'];
+    if (lower.includes('x64') || lower.includes('x86_64') || lower.includes('amd64')) return ['darwin-x86_64'];
     if (lower.includes('universal')) return ['darwin-aarch64', 'darwin-x86_64', 'darwin-universal'];
   }
 
   if (lower.endsWith('.msi')) {
-    if (lower.includes('arm64') || lower.includes('aarch64')) return ['windows-aarch64-msi'];
-    return ['windows-x86_64-msi'];
+    return [];
   }
 
   if (lower.endsWith('-setup.exe') || lower.endsWith('setup.exe')) {
-    if (lower.includes('arm64') || lower.includes('aarch64')) return ['windows-aarch64', 'windows-aarch64-nsis'];
-    return ['windows-x86_64', 'windows-x86_64-nsis'];
+    if (lower.includes('arm64') || lower.includes('aarch64')) return ['windows-aarch64'];
+    return ['windows-x86_64'];
   }
 
   if (lower.endsWith('.appimage')) {
-    if (lower.includes('aarch64') || lower.includes('arm64')) return ['linux-aarch64', 'linux-aarch64-appimage'];
-    if (lower.includes('amd64') || lower.includes('x86_64') || lower.includes('x64')) return ['linux-x86_64', 'linux-x86_64-appimage'];
+    if (lower.includes('aarch64') || lower.includes('arm64')) return ['linux-aarch64'];
+    if (lower.includes('amd64') || lower.includes('x86_64') || lower.includes('x64')) return ['linux-x86_64'];
   }
 
   if (lower.endsWith('.deb')) {
-    if (lower.includes('arm64') || lower.includes('aarch64')) return ['linux-aarch64-deb'];
-    if (lower.includes('amd64') || lower.includes('x86_64') || lower.includes('x64')) return ['linux-x86_64-deb'];
+    return [];
   }
 
   if (lower.endsWith('.rpm')) {
-    if (lower.includes('aarch64') || lower.includes('arm64')) return ['linux-aarch64-rpm'];
-    if (lower.includes('x86_64') || lower.includes('amd64') || lower.includes('x64')) return ['linux-x86_64-rpm'];
+    return [];
   }
 
   return [];

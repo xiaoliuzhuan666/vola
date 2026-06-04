@@ -14,38 +14,6 @@ permissions:
   contents: write
 
 jobs:
-  cli-binaries:
-    name: CLI binaries
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        goos: [linux, darwin, windows]
-        goarch: [amd64, arm64]
-    steps:
-      - uses: actions/checkout@v6
-
-      - uses: actions/setup-go@v6
-        with:
-          go-version: "1.25"
-
-      - name: Build CLI binary
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p release-artifacts
-          suffix=""
-          if [ "${{ matrix.goos }}" = "windows" ]; then
-            suffix=".exe"
-          fi
-          output="release-artifacts/vola-${{ matrix.goos }}-${{ matrix.goarch }}${suffix}"
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o "$output" ./cmd/vola/
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: cli-${{ matrix.goos }}-${{ matrix.goarch }}
-          path: release-artifacts/*
-
   desktop:
     name: Desktop ${{ matrix.artifact }}
     runs-on: ${{ matrix.platform }}
@@ -68,19 +36,13 @@ jobs:
           - artifact: linux-x86_64
             platform: ubuntu-22.04
             tauriTarget: ""
-            bundles: ""
+            bundles: "appimage"
             goos: linux
             goarch: amd64
-          - artifact: linux-aarch64
-            platform: ubuntu-24.04-arm
-            tauriTarget: ""
-            bundles: "deb,rpm"
-            goos: linux
-            goarch: arm64
           - artifact: windows-x86_64
             platform: windows-latest
             tauriTarget: ""
-            bundles: ""
+            bundles: "nsis"
             goos: windows
             goarch: amd64
     env:
@@ -187,14 +149,7 @@ jobs:
             -name "*.AppImage.sig" -o \
             -name "*.app.tar.gz" -o \
             -name "*.app.tar.gz.sig" -o \
-            -name "*.deb" -o \
-            -name "*.deb.sig" -o \
             -name "*.dmg" -o \
-            -name "*.dmg.sig" -o \
-            -name "*.msi" -o \
-            -name "*.msi.sig" -o \
-            -name "*.rpm" -o \
-            -name "*.rpm.sig" -o \
             -name "*-setup.exe" -o \
             -name "*-setup.exe.sig" \
           \) -print0)
@@ -209,7 +164,6 @@ jobs:
   publish-release:
     name: Publish GitHub release
     needs:
-      - cli-binaries
       - desktop
     runs-on: ubuntu-latest
     steps:
@@ -253,19 +207,22 @@ jobs:
             --published-at "$PUBLISHED_AT" \
             --output release-artifacts/latest.json
 
-      - name: Generate checksums
+      - name: Prepare public release assets
         shell: bash
         run: |
           set -euo pipefail
-          cd release-artifacts
-          find . -type f -print0 \
-            | sort -z \
-            | while IFS= read -r -d '' file; do
-                sha256sum "$file"
-              done \
-            | sed 's#  \./#  #' \
-            > SHA256SUMS.txt
-          cat SHA256SUMS.txt
+          mkdir -p release-upload
+          while IFS= read -r -d '' asset; do
+            cp "$asset" release-upload/
+          done < <(find release-artifacts -maxdepth 1 -type f \( \
+            -name "latest.json" -o \
+            -name "*.AppImage" -o \
+            -name "*.app.tar.gz" -o \
+            -name "*.dmg" -o \
+            -name "*-setup.exe" \
+          \) -print0)
+          test -n "$(find release-upload -type f -print -quit)"
+          find release-upload -maxdepth 1 -type f -print | sort
 
       - uses: softprops/action-gh-release@v2
         with:
@@ -274,6 +231,6 @@ jobs:
           body: |
             Vola ${{ env.TAG_NAME }}
 
-            This release includes signed desktop updater artifacts and `latest.json`.
-          files: release-artifacts/*
+            This release includes desktop installers, required updater bundles, and `latest.json`.
+          files: release-upload/*
           fail_on_unmatched_files: true
