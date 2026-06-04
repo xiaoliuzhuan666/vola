@@ -1,5 +1,5 @@
 /**
- * neuDrive - Content Script
+ * Vola - Content Script
  * Injects floating Hub button and context panel into AI chat interfaces.
  */
 
@@ -10,8 +10,8 @@
   if (window.__agentHubInjected) return;
   window.__agentHubInjected = true;
 
-  const OFFICIAL_HUB_URL = 'https://www.neudrive.ai';
-  const OFFICIAL_HUB_HOSTS = ['www.neudrive.ai', 'neudrive.ai'];
+  const OFFICIAL_HUB_URL = 'https://www.vola.ai';
+  const OFFICIAL_HUB_HOSTS = ['www.vola.ai', 'vola.ai'];
   const hostname = window.location.hostname;
 
   // --- Send message to background ---
@@ -79,11 +79,11 @@
   const platform = PLATFORMS[hostname];
 
   if (!platform) {
-    console.log('[NeuDrive] Unsupported platform:', hostname);
+    console.log('[Vola] Unsupported platform:', hostname);
     return;
   }
 
-  console.log(`[NeuDrive] Detected platform: ${platform.name}`);
+  console.log(`[Vola] Detected platform: ${platform.name}`);
 
   // --- State ---
 
@@ -105,14 +105,14 @@
 
   function createFloatingButton() {
     const btn = document.createElement('div');
-    btn.id = 'neudrive-fab';
+    btn.id = 'vola-fab';
     btn.innerHTML = `
       <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
         <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2"/>
         <text x="12" y="16" text-anchor="middle" font-size="10" font-weight="bold" fill="currentColor">H</text>
       </svg>
     `;
-    btn.title = 'neuDrive';
+    btn.title = 'Vola';
     btn.addEventListener('click', togglePanel);
     document.body.appendChild(btn);
     return btn;
@@ -120,54 +120,54 @@
 
   function createPanel() {
     const panel = document.createElement('div');
-    panel.id = 'neudrive-panel';
+    panel.id = 'vola-panel';
     const mainImportActions = supportsConversationImport ? `
-      <button class="neudrive-btn neudrive-btn-primary-lite" data-action="import-current-conversation">
-        <span class="neudrive-btn-icon">&#8681;</span>
+      <button class="vola-btn vola-btn-primary-lite" data-action="import-current-conversation">
+        <span class="vola-btn-icon">&#8681;</span>
         导入当前对话
       </button>
       ${supportsClaudeConversationBatchImport ? `
-      <button class="neudrive-btn" data-action="open-batch-import">
-        <span class="neudrive-btn-icon">&#9776;</span>
+      <button class="vola-btn" data-action="open-batch-import">
+        <span class="vola-btn-icon">&#9776;</span>
         批量导入对话
       </button>
       ` : ''}
     ` : '';
     const batchImportView = supportsClaudeConversationBatchImport ? `
-      <div id="neudrive-batch-page" class="neudrive-batch-page" style="display:none;">
-        <div class="neudrive-batch-page-top">
-          <button id="neudrive-batch-back" class="neudrive-batch-back" type="button">
-            <span class="neudrive-btn-icon">&#8592;</span>
+      <div id="vola-batch-page" class="vola-batch-page" style="display:none;">
+        <div class="vola-batch-page-top">
+          <button id="vola-batch-back" class="vola-batch-back" type="button">
+            <span class="vola-btn-icon">&#8592;</span>
             返回
           </button>
-          <div class="neudrive-batch-page-title">批量导入 Claude 对话</div>
+          <div class="vola-batch-page-title">批量导入 Claude 对话</div>
         </div>
-        <div class="neudrive-batch-page-body">
-          <p class="neudrive-batch-hint">滚动 Claude 左侧栏时，当前可抓取的会话列表会自动变化。默认全选；你也可以手动取消部分会话。</p>
-          <div class="neudrive-batch-toolbar">
-            <label class="neudrive-batch-select-all">
-              <input id="neudrive-batch-select-all" type="checkbox" />
+        <div class="vola-batch-page-body">
+          <p class="vola-batch-hint">滚动 Claude 左侧栏时，当前可抓取的会话列表会自动变化。默认全选；你也可以手动取消部分会话。</p>
+          <div class="vola-batch-toolbar">
+            <label class="vola-batch-select-all">
+              <input id="vola-batch-select-all" type="checkbox" />
               <span>全选</span>
             </label>
-            <div id="neudrive-batch-summary" class="neudrive-batch-summary">正在读取当前列表…</div>
+            <div id="vola-batch-summary" class="vola-batch-summary">正在读取当前列表…</div>
           </div>
-          <div id="neudrive-batch-progress" class="neudrive-batch-progress" style="display:none;">
-            <div class="neudrive-batch-progress-bar">
-              <div id="neudrive-batch-progress-fill" class="neudrive-batch-progress-fill"></div>
+          <div id="vola-batch-progress" class="vola-batch-progress" style="display:none;">
+            <div class="vola-batch-progress-bar">
+              <div id="vola-batch-progress-fill" class="vola-batch-progress-fill"></div>
             </div>
-            <div id="neudrive-batch-progress-text" class="neudrive-batch-progress-text"></div>
-            <div id="neudrive-batch-warning" class="neudrive-batch-warning">导入进行中，请不要关闭当前页面、切换账号或刷新 Claude。</div>
+            <div id="vola-batch-progress-text" class="vola-batch-progress-text"></div>
+            <div id="vola-batch-warning" class="vola-batch-warning">导入进行中，请不要关闭当前页面、切换账号或刷新 Claude。</div>
           </div>
-          <div id="neudrive-batch-empty" class="neudrive-batch-empty" style="display:none;">当前还没有抓到可导入的对话。先展开 Claude 左侧栏，或点“尽量加载更多历史”。</div>
-          <div id="neudrive-batch-list" class="neudrive-batch-list" style="display:none;"></div>
-          <p id="neudrive-batch-status" class="neudrive-inline-message" style="display:none;"></p>
-          <div class="neudrive-batch-actions">
-            <button class="neudrive-btn" data-action="load-more-conversations">
-              <span class="neudrive-btn-icon">&#8645;</span>
+          <div id="vola-batch-empty" class="vola-batch-empty" style="display:none;">当前还没有抓到可导入的对话。先展开 Claude 左侧栏，或点“尽量加载更多历史”。</div>
+          <div id="vola-batch-list" class="vola-batch-list" style="display:none;"></div>
+          <p id="vola-batch-status" class="vola-inline-message" style="display:none;"></p>
+          <div class="vola-batch-actions">
+            <button class="vola-btn" data-action="load-more-conversations">
+              <span class="vola-btn-icon">&#8645;</span>
               尽量加载更多历史
             </button>
-            <button class="neudrive-btn neudrive-btn-primary-lite" data-action="confirm-batch-import">
-              <span class="neudrive-btn-icon">&#10003;</span>
+            <button class="vola-btn vola-btn-primary-lite" data-action="confirm-batch-import">
+              <span class="vola-btn-icon">&#10003;</span>
               确认导入
             </button>
           </div>
@@ -175,83 +175,83 @@
       </div>
     ` : '';
     panel.innerHTML = `
-      <div class="neudrive-panel-header">
-        <span class="neudrive-panel-title">neuDrive</span>
-        <button class="neudrive-panel-close" title="关闭">&times;</button>
+      <div class="vola-panel-header">
+        <span class="vola-panel-title">Vola</span>
+        <button class="vola-panel-close" title="关闭">&times;</button>
       </div>
-      <div class="neudrive-panel-body">
-        <div id="neudrive-status" class="neudrive-status">检查连接中...</div>
-        <div id="neudrive-profile" class="neudrive-profile" style="display:none;"></div>
-        <div id="neudrive-actions" class="neudrive-actions" style="display:none;">
-          <div id="neudrive-main-actions" class="neudrive-main-actions">
+      <div class="vola-panel-body">
+        <div id="vola-status" class="vola-status">检查连接中...</div>
+        <div id="vola-profile" class="vola-profile" style="display:none;"></div>
+        <div id="vola-actions" class="vola-actions" style="display:none;">
+          <div id="vola-main-actions" class="vola-main-actions">
             ${mainImportActions}
-            <button class="neudrive-btn" data-action="inject-preferences">
-              <span class="neudrive-btn-icon">&#9881;</span>
+            <button class="vola-btn" data-action="inject-preferences">
+              <span class="vola-btn-icon">&#9881;</span>
               注入偏好
             </button>
-            <button class="neudrive-btn" data-action="inject-project">
-              <span class="neudrive-btn-icon">&#128193;</span>
+            <button class="vola-btn" data-action="inject-project">
+              <span class="vola-btn-icon">&#128193;</span>
               注入项目上下文
             </button>
-            <button class="neudrive-btn" data-action="inject-skills">
-              <span class="neudrive-btn-icon">&#9889;</span>
+            <button class="vola-btn" data-action="inject-skills">
+              <span class="vola-btn-icon">&#9889;</span>
               注入技能
             </button>
-            <p id="neudrive-action-status" class="neudrive-inline-message" style="display:none;"></p>
+            <p id="vola-action-status" class="vola-inline-message" style="display:none;"></p>
           </div>
           ${batchImportView}
         </div>
-        <div id="neudrive-not-connected" style="display:none;">
-          <p id="neudrive-hint" class="neudrive-hint">首次使用可以直接登录 neuDrive 官方版，或手动填写 Hub URL 和 Token。</p>
-          <div class="neudrive-empty-actions">
-            <button id="neudrive-btn-official-login" class="neudrive-btn neudrive-btn-primary-lite" type="button">
-              <span class="neudrive-btn-icon">&#128274;</span>
-              登录 neuDrive 官方版
+        <div id="vola-not-connected" style="display:none;">
+          <p id="vola-hint" class="vola-hint">首次使用可以直接登录 Vola 官方版，或手动填写 Hub URL 和 Token。</p>
+          <div class="vola-empty-actions">
+            <button id="vola-btn-official-login" class="vola-btn vola-btn-primary-lite" type="button">
+              <span class="vola-btn-icon">&#128274;</span>
+              登录 Vola 官方版
             </button>
-            <button id="neudrive-btn-manual-toggle" class="neudrive-btn" type="button">
-              <span class="neudrive-btn-icon">&#9881;</span>
+            <button id="vola-btn-manual-toggle" class="vola-btn" type="button">
+              <span class="vola-btn-icon">&#9881;</span>
               手动配置 URL + Token
             </button>
           </div>
-          <div id="neudrive-manual-form" class="neudrive-manual-form" style="display:none;">
-            <label class="neudrive-field">
-              <span class="neudrive-field-label">Hub URL</span>
-              <input id="neudrive-input-url" class="neudrive-input" type="url" placeholder="https://www.neudrive.ai" />
+          <div id="vola-manual-form" class="vola-manual-form" style="display:none;">
+            <label class="vola-field">
+              <span class="vola-field-label">Hub URL</span>
+              <input id="vola-input-url" class="vola-input" type="url" placeholder="https://www.vola.ai" />
             </label>
-            <label class="neudrive-field">
-              <span class="neudrive-field-label">Scoped Token</span>
-              <input id="neudrive-input-token" class="neudrive-input" type="password" placeholder="ndt_xxx" />
+            <label class="vola-field">
+              <span class="vola-field-label">Scoped Token</span>
+              <input id="vola-input-token" class="vola-input" type="password" placeholder="ndt_xxx" />
             </label>
-            <button id="neudrive-btn-manual-connect" class="neudrive-btn neudrive-btn-primary-lite" type="button">
-              <span class="neudrive-btn-icon">&#10132;</span>
+            <button id="vola-btn-manual-connect" class="vola-btn vola-btn-primary-lite" type="button">
+              <span class="vola-btn-icon">&#10132;</span>
               连接
             </button>
-            <p id="neudrive-manual-message" class="neudrive-inline-message" style="display:none;"></p>
+            <p id="vola-manual-message" class="vola-inline-message" style="display:none;"></p>
           </div>
         </div>
       </div>
     `;
 
     // Event listeners
-    panel.querySelector('.neudrive-panel-close').addEventListener('click', togglePanel);
-    panel.querySelectorAll('.neudrive-btn[data-action]').forEach(btn => {
+    panel.querySelector('.vola-panel-close').addEventListener('click', togglePanel);
+    panel.querySelectorAll('.vola-btn[data-action]').forEach(btn => {
       btn.addEventListener('click', () => handleInjectAction(btn.dataset.action));
     });
     if (supportsClaudeConversationBatchImport) {
-      panel.querySelector('#neudrive-batch-back').addEventListener('click', closeBatchImportPage);
-      panel.querySelector('#neudrive-batch-select-all').addEventListener('change', handleBatchSelectAllChange);
-      panel.querySelector('#neudrive-batch-list').addEventListener('change', handleBatchItemSelectionChange);
+      panel.querySelector('#vola-batch-back').addEventListener('click', closeBatchImportPage);
+      panel.querySelector('#vola-batch-select-all').addEventListener('change', handleBatchSelectAllChange);
+      panel.querySelector('#vola-batch-list').addEventListener('change', handleBatchItemSelectionChange);
     }
-    panel.querySelector('#neudrive-btn-official-login').addEventListener('click', handleOfficialLogin);
-    panel.querySelector('#neudrive-btn-manual-toggle').addEventListener('click', () => toggleManualConfig());
-    panel.querySelector('#neudrive-btn-manual-connect').addEventListener('click', handleManualConnect);
-    panel.querySelector('#neudrive-input-url').addEventListener('keydown', (event) => {
+    panel.querySelector('#vola-btn-official-login').addEventListener('click', handleOfficialLogin);
+    panel.querySelector('#vola-btn-manual-toggle').addEventListener('click', () => toggleManualConfig());
+    panel.querySelector('#vola-btn-manual-connect').addEventListener('click', handleManualConnect);
+    panel.querySelector('#vola-input-url').addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
-        panel.querySelector('#neudrive-input-token').focus();
+        panel.querySelector('#vola-input-token').focus();
       }
     });
-    panel.querySelector('#neudrive-input-token').addEventListener('keydown', (event) => {
+    panel.querySelector('#vola-input-token').addEventListener('keydown', (event) => {
       if (event.key === 'Enter') {
         event.preventDefault();
         handleManualConnect();
@@ -271,13 +271,13 @@
       return;
     }
     panelVisible = !panelVisible;
-    const panel = document.getElementById('neudrive-panel');
-    const fab = document.getElementById('neudrive-fab');
+    const panel = document.getElementById('vola-panel');
+    const fab = document.getElementById('vola-fab');
     if (panel) {
-      panel.classList.toggle('neudrive-panel-visible', panelVisible);
+      panel.classList.toggle('vola-panel-visible', panelVisible);
     }
     if (fab) {
-      fab.classList.toggle('neudrive-fab-active', panelVisible);
+      fab.classList.toggle('vola-fab-active', panelVisible);
     }
     if (panelVisible) {
       updateBatchViewVisibility();
@@ -289,8 +289,8 @@
   }
 
   function updateBatchViewVisibility() {
-    const mainActionsEl = document.getElementById('neudrive-main-actions');
-    const batchPageEl = document.getElementById('neudrive-batch-page');
+    const mainActionsEl = document.getElementById('vola-main-actions');
+    const batchPageEl = document.getElementById('vola-batch-page');
     if (mainActionsEl) {
       mainActionsEl.style.display = claudeBatchViewVisible ? 'none' : 'flex';
     }
@@ -329,11 +329,11 @@
   // --- Status & Profile ---
 
   async function refreshStatus() {
-    const statusEl = document.getElementById('neudrive-status');
-    const profileEl = document.getElementById('neudrive-profile');
-    const actionsEl = document.getElementById('neudrive-actions');
-    const notConnectedEl = document.getElementById('neudrive-not-connected');
-    const hintEl = document.getElementById('neudrive-hint');
+    const statusEl = document.getElementById('vola-status');
+    const profileEl = document.getElementById('vola-profile');
+    const actionsEl = document.getElementById('vola-actions');
+    const notConnectedEl = document.getElementById('vola-not-connected');
+    const hintEl = document.getElementById('vola-hint');
 
     if (!statusEl) return;
 
@@ -345,11 +345,11 @@
 
       if (status.connected && status.profile) {
         const p = status.profile;
-        statusEl.innerHTML = '<span class="neudrive-dot neudrive-dot-ok"></span> 已连接';
+        statusEl.innerHTML = '<span class="vola-dot vola-dot-ok"></span> 已连接';
         profileEl.style.display = 'block';
         profileEl.innerHTML = `
-          <div class="neudrive-profile-name">${escapeHtml(p.name || p.username || 'User')}</div>
-          ${p.bio ? `<div class="neudrive-profile-bio">${escapeHtml(p.bio)}</div>` : ''}
+          <div class="vola-profile-name">${escapeHtml(p.name || p.username || 'User')}</div>
+          ${p.bio ? `<div class="vola-profile-bio">${escapeHtml(p.bio)}</div>` : ''}
         `;
         actionsEl.style.display = 'flex';
         notConnectedEl.style.display = 'none';
@@ -359,52 +359,52 @@
           refreshClaudeBatchPreview();
         }
       } else if (status.configured && !status.connected) {
-        statusEl.innerHTML = '<span class="neudrive-dot neudrive-dot-err"></span> 连接失败';
+        statusEl.innerHTML = '<span class="vola-dot vola-dot-err"></span> 连接失败';
         profileEl.style.display = 'none';
         actionsEl.style.display = 'none';
         notConnectedEl.style.display = 'block';
         hintEl.textContent = status.error || '当前保存的连接不可用。你可以重新登录官方版，或改用手动配置。';
         renderClaudeBatchPreview([]);
       } else {
-        statusEl.innerHTML = '<span class="neudrive-dot neudrive-dot-off"></span> 未配置';
+        statusEl.innerHTML = '<span class="vola-dot vola-dot-off"></span> 未配置';
         profileEl.style.display = 'none';
         actionsEl.style.display = 'none';
         notConnectedEl.style.display = 'block';
-        hintEl.textContent = '首次使用可以直接登录 neuDrive 官方版，或手动填写 Hub URL 和 Token。';
+        hintEl.textContent = '首次使用可以直接登录 Vola 官方版，或手动填写 Hub URL 和 Token。';
         renderClaudeBatchPreview([]);
       }
     } catch (err) {
-      statusEl.innerHTML = '<span class="neudrive-dot neudrive-dot-err"></span> 错误';
-      console.error('[NeuDrive] Status check failed:', err);
+      statusEl.innerHTML = '<span class="vola-dot vola-dot-err"></span> 错误';
+      console.error('[Vola] Status check failed:', err);
     }
   }
 
   function showActionStatus(text, isError) {
-    const messageEl = document.getElementById('neudrive-action-status');
+    const messageEl = document.getElementById('vola-action-status');
     if (!messageEl) return;
     if (!text) {
       messageEl.style.display = 'none';
       messageEl.textContent = '';
-      messageEl.className = 'neudrive-inline-message';
+      messageEl.className = 'vola-inline-message';
       return;
     }
     messageEl.style.display = 'block';
     messageEl.textContent = text;
-    messageEl.className = `neudrive-inline-message ${isError ? 'neudrive-inline-message-error' : 'neudrive-inline-message-success'}`;
+    messageEl.className = `vola-inline-message ${isError ? 'vola-inline-message-error' : 'vola-inline-message-success'}`;
   }
 
   function showBatchStatus(text, isError) {
-    const messageEl = document.getElementById('neudrive-batch-status');
+    const messageEl = document.getElementById('vola-batch-status');
     if (!messageEl) return;
     if (!text) {
       messageEl.style.display = 'none';
       messageEl.textContent = '';
-      messageEl.className = 'neudrive-inline-message';
+      messageEl.className = 'vola-inline-message';
       return;
     }
     messageEl.style.display = 'block';
     messageEl.textContent = text;
-    messageEl.className = `neudrive-inline-message ${isError ? 'neudrive-inline-message-error' : 'neudrive-inline-message-success'}`;
+    messageEl.className = `vola-inline-message ${isError ? 'vola-inline-message-error' : 'vola-inline-message-success'}`;
   }
 
   function clearBatchStatus() {
@@ -412,10 +412,10 @@
   }
 
   function setBatchProgress(progress) {
-    const progressEl = document.getElementById('neudrive-batch-progress');
-    const fillEl = document.getElementById('neudrive-batch-progress-fill');
-    const textEl = document.getElementById('neudrive-batch-progress-text');
-    const warningEl = document.getElementById('neudrive-batch-warning');
+    const progressEl = document.getElementById('vola-batch-progress');
+    const fillEl = document.getElementById('vola-batch-progress-fill');
+    const textEl = document.getElementById('vola-batch-progress-text');
+    const warningEl = document.getElementById('vola-batch-warning');
     if (!progressEl || !fillEl || !textEl || !warningEl) {
       return;
     }
@@ -438,7 +438,7 @@
   }
 
   function setActionBusy(action, busy, busyLabel) {
-    const buttons = Array.from(document.querySelectorAll('.neudrive-btn[data-action]'));
+    const buttons = Array.from(document.querySelectorAll('.vola-btn[data-action]'));
     buttons.forEach(button => {
       const buttonAction = button.dataset.action;
       if (!buttonAction) return;
@@ -447,9 +447,9 @@
       }
       if (IMPORT_ACTIONS.includes(action) && IMPORT_ACTIONS.includes(buttonAction)) {
         button.disabled = busy;
-        button.classList.toggle('neudrive-btn-busy', busy && buttonAction === action);
+        button.classList.toggle('vola-btn-busy', busy && buttonAction === action);
         button.innerHTML = (busy && buttonAction === action)
-          ? `<span class="neudrive-btn-icon">&#8987;</span>${busyLabel || '处理中...'}`
+          ? `<span class="vola-btn-icon">&#8987;</span>${busyLabel || '处理中...'}`
           : button.dataset.defaultHtml;
         return;
       }
@@ -457,18 +457,18 @@
         return;
       }
       button.disabled = busy;
-      button.classList.toggle('neudrive-btn-busy', busy);
+      button.classList.toggle('vola-btn-busy', busy);
       button.innerHTML = busy
-        ? `<span class="neudrive-btn-icon">&#8987;</span>${busyLabel || '处理中...'}`
+        ? `<span class="vola-btn-icon">&#8987;</span>${busyLabel || '处理中...'}`
         : button.dataset.defaultHtml;
     });
     updateBatchSelectionControlsState();
   }
 
   function updateBatchSelectionControlsState() {
-    const selectAll = document.getElementById('neudrive-batch-select-all');
-    const backButton = document.getElementById('neudrive-batch-back');
-    const itemCheckboxes = Array.from(document.querySelectorAll('.neudrive-batch-item-checkbox'));
+    const selectAll = document.getElementById('vola-batch-select-all');
+    const backButton = document.getElementById('vola-batch-back');
+    const itemCheckboxes = Array.from(document.querySelectorAll('.vola-batch-item-checkbox'));
     if (selectAll) {
       selectAll.disabled = importInFlight;
     }
@@ -481,7 +481,7 @@
   }
 
   async function preloadManualConfig() {
-    const inputUrl = document.getElementById('neudrive-input-url');
+    const inputUrl = document.getElementById('vola-input-url');
     if (!inputUrl) return;
     const data = await chrome.storage.local.get(['hubUrl']);
     if (!inputUrl.value) {
@@ -490,7 +490,7 @@
   }
 
   function toggleManualConfig(nextVisible) {
-    const manualForm = document.getElementById('neudrive-manual-form');
+    const manualForm = document.getElementById('vola-manual-form');
     if (!manualForm) return;
     manualConfigVisible = typeof nextVisible === 'boolean' ? nextVisible : !manualConfigVisible;
     manualForm.style.display = manualConfigVisible ? 'block' : 'none';
@@ -500,32 +500,32 @@
   }
 
   function showManualMessage(text, isError) {
-    const messageEl = document.getElementById('neudrive-manual-message');
+    const messageEl = document.getElementById('vola-manual-message');
     if (!messageEl) return;
     if (!text) {
       messageEl.style.display = 'none';
       messageEl.textContent = '';
-      messageEl.className = 'neudrive-inline-message';
+      messageEl.className = 'vola-inline-message';
       return;
     }
     messageEl.style.display = 'block';
     messageEl.textContent = text;
-    messageEl.className = `neudrive-inline-message ${isError ? 'neudrive-inline-message-error' : 'neudrive-inline-message-success'}`;
+    messageEl.className = `vola-inline-message ${isError ? 'vola-inline-message-error' : 'vola-inline-message-success'}`;
   }
 
   async function handleOfficialLogin() {
     try {
       await sendMessage('startOfficialLogin');
-      showToast('已打开 neuDrive 官方登录页，完成授权后扩展会自动连接');
+      showToast('已打开 Vola 官方登录页，完成授权后扩展会自动连接');
     } catch (err) {
-      console.error('[NeuDrive] Failed to start official login:', err);
+      console.error('[Vola] Failed to start official login:', err);
       showToast('打开官方登录失败: ' + err.message);
     }
   }
 
   async function handleManualConnect() {
-    const inputUrl = document.getElementById('neudrive-input-url');
-    const inputToken = document.getElementById('neudrive-input-token');
+    const inputUrl = document.getElementById('vola-input-url');
+    const inputToken = document.getElementById('vola-input-token');
     if (!inputUrl || !inputToken) return;
 
     const hubUrl = inputUrl.value.trim();
@@ -554,9 +554,9 @@
       inputToken.value = '';
       toggleManualConfig(false);
       await refreshStatus();
-      showToast('neuDrive 已连接');
+      showToast('Vola 已连接');
     } catch (err) {
-      console.error('[NeuDrive] Manual connect failed:', err);
+      console.error('[Vola] Manual connect failed:', err);
       showManualMessage(err.message, true);
     }
   }
@@ -580,8 +580,8 @@
           }
           importInFlight = true;
           setActionBusy(action, true, '导入中...');
-          showActionStatus('正在导入当前对话到 neuDrive…', false);
-          showToast('正在导入当前对话到 neuDrive…', 3200);
+          showActionStatus('正在导入当前对话到 Vola…', false);
+          showToast('正在导入当前对话到 Vola…', 3200);
           const result = await importCurrentConversation();
           showActionStatus(`已导入 ${result.turnCount} 条消息，主文件已整理成可读 transcript。`, false);
           showToast(`已导入 ${result.turnCount} 条消息`, 4200);
@@ -705,7 +705,7 @@
         showToast('上下文已注入');
       }
     } catch (err) {
-      console.error('[NeuDrive] Inject failed:', err);
+      console.error('[Vola] Inject failed:', err);
       if (action === 'confirm-batch-import' || action === 'load-more-conversations') {
         showBatchStatus(`导入失败：${err.message}`, true);
         setBatchProgress(null);
@@ -729,7 +729,7 @@
       try {
         payload = await buildClaudeConversationImportPayload();
       } catch (err) {
-        console.warn('[NeuDrive] Claude API import failed, falling back to DOM capture:', err);
+        console.warn('[Vola] Claude API import failed, falling back to DOM capture:', err);
       }
     } else if (hostname === 'chat.openai.com' || hostname === 'chatgpt.com') {
       payload = buildChatGPTConversationImportPayload();
@@ -801,7 +801,7 @@
       try {
         const result = await importSingleClaudeConversationWithRetry(ref, organizations, {
           onRateLimit({ delayMs, source }) {
-            const sourceLabel = source === 'claude' ? 'Claude' : 'neuDrive';
+            const sourceLabel = source === 'claude' ? 'Claude' : 'Vola';
             const waitSeconds = Math.ceil(delayMs / 1000);
             const message = `${sourceLabel} 触发限流，等待 ${waitSeconds} 秒后重试… (${index + 1}/${refs.length})`;
             showBatchStatus(message, false);
@@ -824,7 +824,7 @@
           kind: failureInfo.kind,
           message: failureInfo.message,
         });
-        console.warn('[NeuDrive] Claude batch import failed for conversation:', ref.conversationId, err);
+        console.warn('[Vola] Claude batch import failed for conversation:', ref.conversationId, err);
       }
 
       if (index < refs.length - 1) {
@@ -1086,7 +1086,7 @@
   }) {
     const normalizedTurns = Array.isArray(turns) ? turns.filter(turn => turn && Array.isArray(turn.parts) && turn.parts.length > 0) : [];
     return {
-      version: 'neudrive.conversation/v1',
+      version: 'vola.conversation/v1',
       source_platform: sourcePlatform || '',
       source_url: url || '',
       source_conversation_id: conversationId || '',
@@ -1414,11 +1414,11 @@
     claudeBatchPreviewRefs = Array.isArray(refs) ? refs.slice() : [];
     syncClaudeBatchSelection(claudeBatchPreviewRefs);
 
-    const summaryEl = document.getElementById('neudrive-batch-summary');
-    const emptyEl = document.getElementById('neudrive-batch-empty');
-    const listEl = document.getElementById('neudrive-batch-list');
-    const importButton = document.querySelector('.neudrive-btn[data-action="confirm-batch-import"]');
-    const selectAll = document.getElementById('neudrive-batch-select-all');
+    const summaryEl = document.getElementById('vola-batch-summary');
+    const emptyEl = document.getElementById('vola-batch-empty');
+    const listEl = document.getElementById('vola-batch-list');
+    const importButton = document.querySelector('.vola-btn[data-action="confirm-batch-import"]');
+    const selectAll = document.getElementById('vola-batch-select-all');
     if (!summaryEl || !emptyEl || !listEl || !importButton || !selectAll) {
       return;
     }
@@ -1443,16 +1443,16 @@
 
     listEl.innerHTML = claudeBatchPreviewRefs
       .map((ref, index) => `
-        <div class="neudrive-batch-item" title="${escapeHtml(ref.title || ref.conversationId)}">
-          <label class="neudrive-batch-item-label">
+        <div class="vola-batch-item" title="${escapeHtml(ref.title || ref.conversationId)}">
+          <label class="vola-batch-item-label">
             <input
-              class="neudrive-batch-item-checkbox"
+              class="vola-batch-item-checkbox"
               type="checkbox"
               data-conversation-id="${escapeHtml(ref.conversationId)}"
               ${claudeBatchSelection[ref.conversationId] ? 'checked' : ''}
             />
-            <span class="neudrive-batch-item-index">${index + 1}</span>
-            <span class="neudrive-batch-item-title">${escapeHtml(ref.title || ref.conversationId)}</span>
+            <span class="vola-batch-item-index">${index + 1}</span>
+            <span class="vola-batch-item-title">${escapeHtml(ref.title || ref.conversationId)}</span>
           </label>
         </div>
       `)
@@ -1734,7 +1734,7 @@
     if (message.includes('读取 claude 会话失败')) {
       return 'claude';
     }
-    return 'neudrive';
+    return 'vola';
   }
 
   function getErrorStatus(err) {
@@ -1822,33 +1822,33 @@
         showAutoInjectBanner();
       }, 1000);
     } catch (err) {
-      console.error('[NeuDrive] Auto-inject check failed:', err);
+      console.error('[Vola] Auto-inject check failed:', err);
     }
   }
 
   function showAutoInjectBanner() {
     // Don't show if already present
-    if (document.getElementById('neudrive-auto-banner')) return;
+    if (document.getElementById('vola-auto-banner')) return;
 
     const banner = document.createElement('div');
-    banner.id = 'neudrive-auto-banner';
+    banner.id = 'vola-auto-banner';
     banner.innerHTML = `
-      <span>neuDrive: 检测到新对话，是否注入用户上下文？</span>
-      <button id="neudrive-auto-yes" class="neudrive-banner-btn neudrive-banner-btn-yes">注入</button>
-      <button id="neudrive-auto-no" class="neudrive-banner-btn neudrive-banner-btn-no">跳过</button>
+      <span>Vola: 检测到新对话，是否注入用户上下文？</span>
+      <button id="vola-auto-yes" class="vola-banner-btn vola-banner-btn-yes">注入</button>
+      <button id="vola-auto-no" class="vola-banner-btn vola-banner-btn-no">跳过</button>
     `;
     document.body.appendChild(banner);
 
     // Auto-dismiss after 10 seconds
     const timer = setTimeout(() => removeBanner(), 10000);
 
-    banner.querySelector('#neudrive-auto-yes').addEventListener('click', async () => {
+    banner.querySelector('#vola-auto-yes').addEventListener('click', async () => {
       clearTimeout(timer);
       removeBanner();
       await handleInjectAction('inject-preferences');
     });
 
-    banner.querySelector('#neudrive-auto-no').addEventListener('click', () => {
+    banner.querySelector('#vola-auto-no').addEventListener('click', () => {
       clearTimeout(timer);
       removeBanner();
     });
@@ -1861,21 +1861,21 @@
   // --- Toast Notification ---
 
   function showToast(message, duration = 2500) {
-    const existing = document.getElementById('neudrive-toast');
+    const existing = document.getElementById('vola-toast');
     if (existing) existing.remove();
 
     const toast = document.createElement('div');
-    toast.id = 'neudrive-toast';
+    toast.id = 'vola-toast';
     toast.textContent = message;
     document.body.appendChild(toast);
 
     // Trigger animation
     requestAnimationFrame(() => {
-      toast.classList.add('neudrive-toast-visible');
+      toast.classList.add('vola-toast-visible');
     });
 
     setTimeout(() => {
-      toast.classList.remove('neudrive-toast-visible');
+      toast.classList.remove('vola-toast-visible');
       setTimeout(() => toast.remove(), 300);
     }, duration);
   }
@@ -1905,7 +1905,7 @@
       }
     } else if (message.action === 'officialLoginComplete') {
       refreshStatus();
-      showToast('neuDrive 官方账号已连接');
+      showToast('Vola 官方账号已连接');
     } else if (message.action === 'officialLoginError') {
       showToast('官方登录失败: ' + (message.payload?.message || '请重试'));
     }
@@ -1928,7 +1928,7 @@
       // Not configured yet, that's fine
     });
 
-    console.log(`[NeuDrive] Content script initialized on ${platform.name}`);
+    console.log(`[Vola] Content script initialized on ${platform.name}`);
   }
 
   // Wait for DOM to be ready
@@ -1976,7 +1976,7 @@
           finished = true;
         }
       } catch (err) {
-        console.error('[NeuDrive] Official auth bridge failed:', err);
+        console.error('[Vola] Official auth bridge failed:', err);
         finished = true;
       }
     };

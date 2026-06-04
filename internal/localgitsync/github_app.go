@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
 )
@@ -388,7 +388,7 @@ func (s *Service) CreateOrReuseDefaultGitHubAppBackupRepo(ctx context.Context, u
 		created := gitHubRepoItem{}
 		if err := s.githubRequestWithTokenJSON(ctx, token, http.MethodPost, "/user/repos", gitHubCreateRepoRequest{
 			Name:        DefaultBackupRepoName,
-			Description: "neuDrive backup repository",
+			Description: "Vola backup repository",
 			Private:     true,
 			AutoInit:    false,
 		}, &created); err != nil {

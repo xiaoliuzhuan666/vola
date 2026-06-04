@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/google/uuid"
 )
 
@@ -281,7 +281,7 @@ func (s *Service) upload(ctx context.Context, target Target, secret targetSecret
 
 func (s *Service) deleteRemoteObject(ctx context.Context, target Target, secret targetSecret, objectName string) error {
 	if !isNeuDriveBackupObject(objectName) {
-		return fmt.Errorf("refusing to delete non-neuDrive backup object %q", objectName)
+		return fmt.Errorf("refusing to delete non-Vola backup object %q", objectName)
 	}
 	switch target.Kind {
 	case KindWebDAV:
@@ -440,7 +440,7 @@ func autoBackupInterval(target Target) time.Duration {
 }
 
 func targetObjectName(target Target, now time.Time) string {
-	filename := "neudrive-export-" + now.UTC().Format("20060102-150405Z") + ".zip"
+	filename := "vola-export-" + now.UTC().Format("20060102-150405Z") + ".zip"
 	if target.Kind == KindS3 && strings.TrimSpace(target.S3Prefix) != "" {
 		return path.Join(target.S3Prefix, filename)
 	}
@@ -485,5 +485,5 @@ func (s *Service) applyRetention(ctx context.Context, target Target, secret targ
 
 func isNeuDriveBackupObject(objectName string) bool {
 	base := path.Base(strings.TrimSpace(objectName))
-	return strings.HasPrefix(base, "neudrive-export-") && strings.HasSuffix(base, ".zip")
+	return strings.HasPrefix(base, "vola-export-") && strings.HasSuffix(base, ".zip")
 }

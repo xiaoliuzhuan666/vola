@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/google/uuid"
 )
 
@@ -52,7 +52,7 @@ func (s *Store) UpsertProfile(ctx context.Context, userID uuid.UUID, category, c
 		source = services.SourceFromContext(ctx)
 	}
 	if strings.TrimSpace(source) == "" {
-		source = "neudrive"
+		source = "vola"
 	}
 	_, err := s.WriteEntry(ctx, userID, hubpath.ProfilePath(category), content, "text/markdown", models.FileTreeWriteOptions{
 		Kind:          "memory_profile",
@@ -83,7 +83,7 @@ func (s *Store) writeScratchEntry(ctx context.Context, userID uuid.UUID, content
 		source = services.SourceFromContext(ctx)
 	}
 	if strings.TrimSpace(source) == "" {
-		source = "neudrive"
+		source = "vola"
 	}
 	if expiresAt == nil {
 		defaultExpiry := createdAt.AddDate(0, 0, 7)
@@ -341,7 +341,7 @@ func (s *Store) AppendProjectLog(ctx context.Context, userID uuid.UUID, name str
 		logEntry.CreatedAt = time.Now().UTC()
 	}
 	if strings.TrimSpace(logEntry.Source) == "" {
-		logEntry.Source = services.SourceOrDefault(ctx, "neudrive")
+		logEntry.Source = services.SourceOrDefault(ctx, "vola")
 	}
 	line, err := json.Marshal(logEntry)
 	if err != nil {

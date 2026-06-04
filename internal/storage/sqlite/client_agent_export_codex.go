@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
 )
 
 func (c *Client) importCodexInventory(ctx context.Context, platform string, inventory CodexInventory, result *AgentImportResult) error {
@@ -272,7 +272,7 @@ func buildNormalizedConversationFromCodexConversation(convo ClaudeConversation, 
 		})
 	}
 	return NormalizedConversation{
-		Version:              "neudrive.conversation/v1",
+		Version:              "vola.conversation/v1",
 		SourcePlatform:       platform,
 		SourceConversationID: strings.TrimSpace(convo.SessionID),
 		Title:                title,

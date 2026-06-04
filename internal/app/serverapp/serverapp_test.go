@@ -3,8 +3,8 @@ package serverapp
 import (
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/app/appcore"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/app/appcore"
+	"github.com/agi-bar/vola/internal/services"
 )
 
 func TestSchedulerTokenServiceAllowsSQLiteBackends(t *testing.T) {
@@ -20,7 +20,7 @@ func TestSchedulerTokenServiceAllowsSQLiteBackends(t *testing.T) {
 	if !ok || tokenSvc == nil {
 		t.Fatal("expected scheduler to start for sqlite-backed app when deps are present")
 	}
-	if cfg.CleanExpiredScratch.Enabled || cfg.GenerateDailyScratch.Enabled {
+	if cfg.CleanExpiredScratch.Enabled {
 		t.Fatal("expected scratch maintenance jobs to be disabled when memory service lacks db maintenance support")
 	}
 }

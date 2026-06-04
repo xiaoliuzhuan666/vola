@@ -1,5 +1,5 @@
 /* ============================================
-   neuDrive - Content Script Styles
+   Vola - Content Script Styles
    Non-intrusive floating UI for AI chat platforms.
    Supports light and dark modes.
    ============================================ */
@@ -44,7 +44,7 @@ body[data-theme="dark"] :root {
 }
 
 /* --- Floating Action Button --- */
-#neudrive-fab {
+#vola-fab {
   position: fixed;
   bottom: 24px;
   right: 24px;
@@ -64,24 +64,24 @@ body[data-theme="dark"] :root {
   -webkit-user-select: none;
 }
 
-#neudrive-fab:hover {
+#vola-fab:hover {
   transform: scale(1.08);
   box-shadow: 0 6px 20px rgba(99, 102, 241, 0.5);
   background: var(--ah-primary-hover);
 }
 
-#neudrive-fab.neudrive-fab-active {
+#vola-fab.vola-fab-active {
   transform: scale(0.95);
   background: var(--ah-primary-hover);
 }
 
-#neudrive-fab svg {
+#vola-fab svg {
   width: 24px;
   height: 24px;
 }
 
 /* --- Panel --- */
-#neudrive-panel {
+#vola-panel {
   position: fixed;
   bottom: 84px;
   right: 24px;
@@ -102,14 +102,14 @@ body[data-theme="dark"] :root {
   transition: opacity 0.2s ease, transform 0.2s ease;
 }
 
-#neudrive-panel.neudrive-panel-visible {
+#vola-panel.vola-panel-visible {
   opacity: 1;
   transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 
 /* Panel Header */
-.neudrive-panel-header {
+.vola-panel-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -118,13 +118,13 @@ body[data-theme="dark"] :root {
   background: var(--ah-bg-secondary);
 }
 
-.neudrive-panel-title {
+.vola-panel-title {
   font-weight: 600;
   font-size: 14px;
   color: var(--ah-text);
 }
 
-.neudrive-panel-close {
+.vola-panel-close {
   background: none;
   border: none;
   color: var(--ah-text-secondary);
@@ -135,19 +135,19 @@ body[data-theme="dark"] :root {
   transition: color 0.15s;
 }
 
-.neudrive-panel-close:hover {
+.vola-panel-close:hover {
   color: var(--ah-text);
 }
 
 /* Panel Body */
-.neudrive-panel-body {
+.vola-panel-body {
   padding: 16px;
   overflow-y: auto;
   max-height: 380px;
 }
 
 /* Status */
-.neudrive-status {
+.vola-status {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -156,7 +156,7 @@ body[data-theme="dark"] :root {
   margin-bottom: 12px;
 }
 
-.neudrive-dot {
+.vola-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -164,50 +164,50 @@ body[data-theme="dark"] :root {
   flex-shrink: 0;
 }
 
-.neudrive-dot-ok {
+.vola-dot-ok {
   background: #22c55e;
 }
 
-.neudrive-dot-err {
+.vola-dot-err {
   background: #ef4444;
 }
 
-.neudrive-dot-off {
+.vola-dot-off {
   background: #94a3b8;
 }
 
 /* Profile */
-.neudrive-profile {
+.vola-profile {
   margin-bottom: 16px;
 }
 
-.neudrive-profile-name {
+.vola-profile-name {
   font-weight: 600;
   font-size: 15px;
   color: var(--ah-text);
   margin-bottom: 4px;
 }
 
-.neudrive-profile-bio {
+.vola-profile-bio {
   font-size: 12px;
   color: var(--ah-text-secondary);
   line-height: 1.4;
 }
 
 /* Action Buttons */
-.neudrive-actions {
+.vola-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.neudrive-main-actions {
+.vola-main-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.neudrive-batch-page {
+.vola-batch-page {
   display: flex;
   flex-direction: column;
   gap: 0;
@@ -217,7 +217,7 @@ body[data-theme="dark"] :root {
   background: var(--ah-bg-secondary);
 }
 
-.neudrive-batch-page-top {
+.vola-batch-page-top {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -230,7 +230,7 @@ body[data-theme="dark"] :root {
   border-bottom: 1px solid var(--ah-border);
 }
 
-.neudrive-batch-back {
+.vola-batch-back {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -244,31 +244,31 @@ body[data-theme="dark"] :root {
   cursor: pointer;
 }
 
-.neudrive-batch-back:disabled {
+.vola-batch-back:disabled {
   cursor: not-allowed;
   opacity: 0.72;
 }
 
-.neudrive-batch-page-title {
+.vola-batch-page-title {
   font-weight: 600;
   font-size: 13px;
   color: var(--ah-text);
 }
 
-.neudrive-batch-page-body {
+.vola-batch-page-body {
   display: flex;
   flex-direction: column;
   gap: 10px;
 }
 
-.neudrive-batch-toolbar {
+.vola-batch-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
 }
 
-.neudrive-batch-select-all {
+.vola-batch-select-all {
   display: inline-flex;
   align-items: center;
   gap: 8px;
@@ -276,20 +276,20 @@ body[data-theme="dark"] :root {
   color: var(--ah-text);
 }
 
-.neudrive-batch-summary {
+.vola-batch-summary {
   font-size: 12px;
   color: var(--ah-text-secondary);
   text-align: right;
 }
 
-.neudrive-batch-hint {
+.vola-batch-hint {
   margin: 0;
   font-size: 12px;
   line-height: 1.5;
   color: var(--ah-text-secondary);
 }
 
-.neudrive-batch-empty {
+.vola-batch-empty {
   font-size: 12px;
   line-height: 1.5;
   color: var(--ah-text-secondary);
@@ -299,7 +299,7 @@ body[data-theme="dark"] :root {
   background: var(--ah-bg);
 }
 
-.neudrive-batch-progress {
+.vola-batch-progress {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -309,7 +309,7 @@ body[data-theme="dark"] :root {
   background: var(--ah-bg);
 }
 
-.neudrive-batch-progress-bar {
+.vola-batch-progress-bar {
   width: 100%;
   height: 8px;
   border-radius: 999px;
@@ -317,25 +317,25 @@ body[data-theme="dark"] :root {
   overflow: hidden;
 }
 
-.neudrive-batch-progress-fill {
+.vola-batch-progress-fill {
   width: 0%;
   height: 100%;
   background: var(--ah-primary);
   transition: width 0.2s ease;
 }
 
-.neudrive-batch-progress-text {
+.vola-batch-progress-text {
   font-size: 12px;
   color: var(--ah-text);
 }
 
-.neudrive-batch-warning {
+.vola-batch-warning {
   font-size: 12px;
   line-height: 1.5;
   color: #b45309;
 }
 
-.neudrive-batch-list {
+.vola-batch-list {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -344,7 +344,7 @@ body[data-theme="dark"] :root {
   padding-right: 2px;
 }
 
-.neudrive-batch-item {
+.vola-batch-item {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -354,7 +354,7 @@ body[data-theme="dark"] :root {
   background: var(--ah-bg);
 }
 
-.neudrive-batch-item-label {
+.vola-batch-item-label {
   display: flex;
   align-items: flex-start;
   gap: 8px;
@@ -362,31 +362,31 @@ body[data-theme="dark"] :root {
   cursor: pointer;
 }
 
-.neudrive-batch-item-checkbox {
+.vola-batch-item-checkbox {
   margin: 2px 0 0;
 }
 
-.neudrive-batch-item-index {
+.vola-batch-item-index {
   min-width: 18px;
   font-size: 12px;
   line-height: 1.5;
   color: var(--ah-text-secondary);
 }
 
-.neudrive-batch-item-title {
+.vola-batch-item-title {
   font-size: 12px;
   line-height: 1.5;
   color: var(--ah-text);
   word-break: break-word;
 }
 
-.neudrive-batch-actions {
+.vola-batch-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.neudrive-btn {
+.vola-btn {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -403,60 +403,60 @@ body[data-theme="dark"] :root {
   text-align: left;
 }
 
-.neudrive-btn:hover {
+.vola-btn:hover {
   background: var(--ah-primary);
   color: #ffffff;
   border-color: var(--ah-primary);
 }
 
-.neudrive-btn:disabled {
+.vola-btn:disabled {
   cursor: not-allowed;
   opacity: 0.72;
 }
 
-.neudrive-btn:disabled:hover {
+.vola-btn:disabled:hover {
   background: var(--ah-bg-secondary);
   color: var(--ah-text);
   border-color: var(--ah-border);
 }
 
-.neudrive-btn-busy {
+.vola-btn-busy {
   position: relative;
 }
 
-.neudrive-btn-icon {
+.vola-btn-icon {
   font-size: 16px;
   flex-shrink: 0;
 }
 
 /* Hint Text */
-.neudrive-hint {
+.vola-hint {
   font-size: 12px;
   color: var(--ah-text-secondary);
   line-height: 1.5;
   margin: 0;
 }
 
-.neudrive-empty-actions {
+.vola-empty-actions {
   display: flex;
   flex-direction: column;
   gap: 8px;
   margin-top: 12px;
 }
 
-.neudrive-btn-primary-lite {
+.vola-btn-primary-lite {
   background: var(--ah-primary);
   color: #ffffff;
   border-color: var(--ah-primary);
 }
 
-.neudrive-btn-primary-lite:hover {
+.vola-btn-primary-lite:hover {
   background: var(--ah-primary-hover);
   color: #ffffff;
   border-color: var(--ah-primary-hover);
 }
 
-.neudrive-manual-form {
+.vola-manual-form {
   display: flex;
   flex-direction: column;
   gap: 10px;
@@ -465,13 +465,13 @@ body[data-theme="dark"] :root {
   border-top: 1px solid var(--ah-border);
 }
 
-.neudrive-field {
+.vola-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.neudrive-field-label {
+.vola-field-label {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
@@ -479,7 +479,7 @@ body[data-theme="dark"] :root {
   color: var(--ah-text-secondary);
 }
 
-.neudrive-input {
+.vola-input {
   width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--ah-border);
@@ -490,32 +490,32 @@ body[data-theme="dark"] :root {
   transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
-.neudrive-input:focus {
+.vola-input:focus {
   outline: none;
   border-color: var(--ah-primary);
   box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
 }
 
-.neudrive-inline-message {
+.vola-inline-message {
   margin: 0;
   font-size: 12px;
   line-height: 1.4;
 }
 
-#neudrive-action-status {
+#vola-action-status {
   margin-top: 4px;
 }
 
-.neudrive-inline-message-error {
+.vola-inline-message-error {
   color: #ef4444;
 }
 
-.neudrive-inline-message-success {
+.vola-inline-message-success {
   color: #22c55e;
 }
 
 /* --- Toast Notification --- */
-#neudrive-toast {
+#vola-toast {
   position: fixed;
   bottom: 84px;
   left: 50%;
@@ -534,13 +534,13 @@ body[data-theme="dark"] :root {
   box-shadow: var(--ah-shadow);
 }
 
-#neudrive-toast.neudrive-toast-visible {
+#vola-toast.vola-toast-visible {
   opacity: 1;
   transform: translateX(-50%) translateY(0);
 }
 
 /* --- Auto-Inject Banner --- */
-#neudrive-auto-banner {
+#vola-auto-banner {
   position: fixed;
   top: 16px;
   left: 50%;
@@ -557,10 +557,10 @@ body[data-theme="dark"] :root {
   color: var(--ah-text);
   z-index: 2147483647;
   box-shadow: var(--ah-shadow);
-  animation: neudrive-slide-in 0.3s ease;
+  animation: vola-slide-in 0.3s ease;
 }
 
-@keyframes neudrive-slide-in {
+@keyframes vola-slide-in {
   from {
     opacity: 0;
     transform: translateX(-50%) translateY(-20px);
@@ -571,7 +571,7 @@ body[data-theme="dark"] :root {
   }
 }
 
-.neudrive-banner-btn {
+.vola-banner-btn {
   padding: 6px 14px;
   border-radius: 6px;
   border: none;
@@ -582,21 +582,21 @@ body[data-theme="dark"] :root {
   transition: background 0.15s;
 }
 
-.neudrive-banner-btn-yes {
+.vola-banner-btn-yes {
   background: var(--ah-primary);
   color: #ffffff;
 }
 
-.neudrive-banner-btn-yes:hover {
+.vola-banner-btn-yes:hover {
   background: var(--ah-primary-hover);
 }
 
-.neudrive-banner-btn-no {
+.vola-banner-btn-no {
   background: var(--ah-bg-secondary);
   color: var(--ah-text-secondary);
   border: 1px solid var(--ah-border);
 }
 
-.neudrive-banner-btn-no:hover {
+.vola-banner-btn-no:hover {
   background: var(--ah-border);
 }

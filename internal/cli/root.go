@@ -18,16 +18,16 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/api"
-	"github.com/agi-bar/neudrive/internal/app/appcore"
-	"github.com/agi-bar/neudrive/internal/app/mcpapp"
-	"github.com/agi-bar/neudrive/internal/app/serverapp"
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/platforms"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/synccli"
+	"github.com/agi-bar/vola/internal/api"
+	"github.com/agi-bar/vola/internal/app/appcore"
+	"github.com/agi-bar/vola/internal/app/mcpapp"
+	"github.com/agi-bar/vola/internal/app/serverapp"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/platforms"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/synccli"
 )
 
 func Run(args []string) int {
@@ -121,6 +121,17 @@ func runServer(args []string) int {
 		return 2
 	}
 	selectedStorage := chooseStorageBackend(appcore.DefaultServerStorage, *storage, *sqlitePath, *databaseURL)
+
+	if *localMode {
+		go func() {
+			ticker := time.NewTicker(2 * time.Second)
+			for range ticker.C {
+				if os.Getppid() == 1 {
+					os.Exit(0)
+				}
+			}
+		}()
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
@@ -528,7 +539,7 @@ func runDisconnect(args []string) int {
 		fmt.Fprintf(os.Stderr, "save config: %v\n", err)
 		return 1
 	}
-	fmt.Printf("Disconnected %s and removed neuDrive managed entrypoints.\n", args[0])
+	fmt.Printf("Disconnected %s and removed Vola managed entrypoints.\n", args[0])
 	return 0
 }
 
@@ -847,7 +858,7 @@ func runBrowse(args []string) int {
 		fmt.Println(target)
 		return 0
 	}
-	fmt.Printf("Opening neuDrive dashboard:\n%s\n", target)
+	fmt.Printf("Opening Vola dashboard:\n%s\n", target)
 	if err := openBrowser(target); err != nil {
 		fmt.Fprintf(os.Stderr, "open browser: %v\n", err)
 		fmt.Println(target)
@@ -858,7 +869,7 @@ func runBrowse(args []string) int {
 
 func runFiles(args []string) int {
 	if len(args) == 0 || isHelpArg(args) {
-		fmt.Println(renderCLIText("Usage: neudrive files ls [path]\n       neudrive files cat <path>"))
+		fmt.Println(renderCLIText("Usage: vola files ls [path]\n       vola files cat <path>"))
 		return 0
 	}
 	switch args[0] {
@@ -947,7 +958,7 @@ func runFilesCat(args []string) int {
 		return 2
 	}
 	if node.Content == "" && !isTextLikeContent(node.MimeType) {
-		fmt.Fprintf(os.Stderr, "%s\n", renderCLIText(fmt.Sprintf("files cat: %s is a binary file (%s); use neudrive browse or export instead", node.Path, node.MimeType)))
+		fmt.Fprintf(os.Stderr, "%s\n", renderCLIText(fmt.Sprintf("files cat: %s is a binary file (%s); use vola browse or export instead", node.Path, node.MimeType)))
 		return 1
 	}
 	fmt.Print(node.Content)
@@ -1059,10 +1070,10 @@ func runSync(args []string) int {
 			fmt.Fprintf(os.Stderr, "prepare local sync defaults: %v\n", err)
 			return 1
 		}
-		envRestore = append(envRestore, setTempEnv("NEUDRIVE_SYNC_API_BASE", state.APIBase))
-		envRestore = append(envRestore, setTempEnv("NEUDRIVE_API_BASE", state.APIBase))
-		envRestore = append(envRestore, setTempEnv("NEUDRIVE_SYNC_TOKEN", cfg.Local.OwnerToken))
-		envRestore = append(envRestore, setTempEnv("NEUDRIVE_TOKEN", cfg.Local.OwnerToken))
+		envRestore = append(envRestore, setTempEnv("VOLA_SYNC_API_BASE", state.APIBase))
+		envRestore = append(envRestore, setTempEnv("VOLA_API_BASE", state.APIBase))
+		envRestore = append(envRestore, setTempEnv("VOLA_SYNC_TOKEN", cfg.Local.OwnerToken))
+		envRestore = append(envRestore, setTempEnv("VOLA_TOKEN", cfg.Local.OwnerToken))
 	}
 
 	if err := synccli.Run(args); err != nil {
@@ -1432,7 +1443,7 @@ func isHelpArg(args []string) bool {
 func SelfContainedBinaryPath() string {
 	exe, err := os.Executable()
 	if err != nil {
-		return "neudrive"
+		return "vola"
 	}
 	return filepath.Clean(exe)
 }

@@ -58,7 +58,7 @@ func TestAgenthubPlatformCommands_LocalSQLiteFixture(t *testing.T) {
 		t.Fatalf("read shim log: %v", err)
 	}
 	logText := string(logData)
-	if !strings.Contains(logText, "ARG=add") || !strings.Contains(logText, "NEUDRIVE_TOKEN=") {
+	if !strings.Contains(logText, "ARG=add") || !strings.Contains(logText, "VOLA_TOKEN=") {
 		t.Fatalf("unexpected shim log after connect: %s", logText)
 	}
 
@@ -66,10 +66,10 @@ func TestAgenthubPlatformCommands_LocalSQLiteFixture(t *testing.T) {
 	if !strings.Contains(stdout, "Connected: true") || !strings.Contains(stdout, "Entrypoint installed: true") {
 		t.Fatalf("expected connected codex status: %s", stdout)
 	}
-	if !strings.Contains(stdout, filepath.Join(home, ".agents", "skills", "neudrive")) {
+	if !strings.Contains(stdout, filepath.Join(home, ".agents", "skills", "vola")) {
 		t.Fatalf("expected codex skill path in output: %s", stdout)
 	}
-	if !strings.Contains(stdout, "$neudrive status") {
+	if !strings.Contains(stdout, "$vola status") {
 		t.Fatalf("expected codex status chat usage in output: %s", stdout)
 	}
 
@@ -107,10 +107,10 @@ func TestAgenthubPlatformCommands_LocalSQLiteFixture(t *testing.T) {
 	if !strings.Contains(stdout, "Connected: true") || !strings.Contains(stdout, "Entrypoint type: command") {
 		t.Fatalf("expected connected claude status: %s", stdout)
 	}
-	if !strings.Contains(stdout, filepath.Join(home, ".claude", "commands", "neudrive.md")) {
+	if !strings.Contains(stdout, filepath.Join(home, ".claude", "commands", "vola.md")) {
 		t.Fatalf("expected claude command path in output: %s", stdout)
 	}
-	if !strings.Contains(stdout, "/neudrive status") {
+	if !strings.Contains(stdout, "/vola status") {
 		t.Fatalf("expected claude status chat usage in output: %s", stdout)
 	}
 
@@ -160,7 +160,7 @@ func TestAgenthubPlatformCommands_LocalSQLiteFixture(t *testing.T) {
 	if _, ok := cfg.Local.Connections["codex"]; ok {
 		t.Fatal("expected codex connection removed after disconnect")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "neudrive")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "vola")); !os.IsNotExist(err) {
 		t.Fatal("expected codex managed skill removed after disconnect")
 	}
 	logData, err = os.ReadFile(shimLog)
@@ -176,10 +176,10 @@ func TestAgenthubPlatformCommands_LocalSQLiteFixture(t *testing.T) {
 	if _, ok := cfg.Local.Connections["claude-code"]; ok {
 		t.Fatal("expected claude connection removed after disconnect")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "neudrive")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".claude", "skills", "vola")); !os.IsNotExist(err) {
 		t.Fatal("expected claude managed skill removed after disconnect")
 	}
-	if _, err := os.Stat(filepath.Join(home, ".claude", "commands", "neudrive.md")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(home, ".claude", "commands", "vola.md")); !os.IsNotExist(err) {
 		t.Fatal("expected claude managed command removed after disconnect")
 	}
 

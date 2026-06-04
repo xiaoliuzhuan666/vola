@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { api, type FileNode, type MemoryConflict } from '../api'
+import { api, isTauri, type FileNode, type MemoryConflict } from '../api'
 import { useI18n } from '../i18n'
+import CustomSelect from '../components/CustomSelect'
 
 const profileFields = [
   { key: 'preferences', label: { zh: '工作偏好', en: 'Work preferences' } },
@@ -31,6 +32,8 @@ const commonLanguages = [
   { value: 'pl', label: 'Polski' },
 ]
 
+type DesktopUpdateStatus = 'idle' | 'checking' | 'downloading' | 'ready' | 'up-to-date' | 'error'
+
 export default function InfoPage() {
   const { locale, tx } = useI18n()
   const [values, setValues] = useState<Record<string, string>>({})
@@ -42,14 +45,28 @@ export default function InfoPage() {
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
 
+  // Cloud login states
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [syncLoading, setSyncLoading] = useState(false)
+  const [localMode, setLocalMode] = useState(false)
+  const [isSignUpMode, setIsSignUpMode] = useState(false)
+  const [signupSlug, setSignupSlug] = useState('')
+  const [signupDisplayName, setSignupDisplayName] = useState('')
+  const [desktopUpdateStatus, setDesktopUpdateStatus] = useState<DesktopUpdateStatus>('idle')
+  const [desktopUpdateDetail, setDesktopUpdateDetail] = useState('')
+  const [desktopUpdateProgress, setDesktopUpdateProgress] = useState(0)
+
   const load = async () => {
     setLoading(true)
     setError('')
-    const [meResult, profileResult, snapshotResult, conflictsResult] = await Promise.allSettled([
+    const [meResult, profileResult, snapshotResult, conflictsResult, configResult] = await Promise.allSettled([
       api.getMe(),
       api.getProfile(),
       api.getTreeSnapshot('/'),
       api.getConflicts(),
+      api.getPublicConfig(),
     ])
     const me = meResult.status === 'fulfilled' ? meResult.value || {} : {}
     if (meResult.status === 'fulfilled') setUserProfile(me)
@@ -67,6 +84,9 @@ export default function InfoPage() {
     }
     if (snapshotResult.status === 'fulfilled') setEntries(snapshotResult.value.entries)
     if (conflictsResult.status === 'fulfilled') setConflicts(conflictsResult.value || [])
+    if (configResult.status === 'fulfilled') {
+      setLocalMode(!!configResult.value?.local_mode)
+    }
     setLoading(false)
   }
 
@@ -147,7 +167,163 @@ export default function InfoPage() {
     setMessage(tx('Token 已全部撤销。', 'All tokens revoked.'))
   }
 
+  const handleCloudLogin = async (e: any) => {
+    e.preventDefault()
+    if (syncLoading) return
+    setSyncLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      const resp = await api.login({ email, password })
+      localStorage.setItem('token', resp.access_token)
+      localStorage.setItem('refresh_token', resp.refresh_token)
+      setMessage(tx('云端账号绑定成功！正在拉取云端数据...', 'Cloud account connected! Fetching cloud data...'))
+      setTimeout(() => {
+        window.location.replace('/settings/profile')
+      }, 1000)
+    } catch (err: any) {
+      setError(err?.message || tx('登录失败，请检查您的邮箱和密码。', 'Login failed. Please check your email and password.'))
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
+  const handleCloudSignup = async (e: any) => {
+    e.preventDefault()
+    if (syncLoading) return
+    setSyncLoading(true)
+    setError('')
+    setMessage('')
+    if (password !== confirmPassword) {
+      setError(tx('两次输入的密码不一致，请重新输入。', 'Passwords do not match. Please try again.'))
+      setSyncLoading(false)
+      return
+    }
+    const accountSlug = (signupSlug.trim() || slugFromEmail(email)).toLowerCase()
+    if (!accountSlug) {
+      setError(tx('请填写账户名。', 'Please enter an account name.'))
+      setSyncLoading(false)
+      return
+    }
+    try {
+      const resp = await api.register({
+        email,
+        password,
+        slug: accountSlug,
+        display_name: signupDisplayName.trim() || accountSlug,
+      })
+      localStorage.setItem('token', resp.access_token)
+      localStorage.setItem('refresh_token', resp.refresh_token)
+      setConfirmPassword('')
+      setMessage(tx('云端账号注册并绑定成功！正在拉取云端数据...', 'Cloud account created and connected! Fetching cloud data...'))
+      setTimeout(() => {
+        window.location.replace('/settings/profile')
+      }, 1000)
+    } catch (err: any) {
+      setError(err?.message || tx('注册并绑定失败，请检查表单信息。', 'Failed to register and bind account. Check form fields.'))
+    } finally {
+      setSyncLoading(false)
+    }
+  }
+
+  const handleCloudLogout = async () => {
+    if (!window.confirm(tx('确定要解除云端账号绑定并回退到纯本地单机模式吗？', 'Are you sure you want to disconnect from your cloud account and return to Local-Only mode?'))) return
+    setSyncLoading(true)
+    setError('')
+    setMessage('')
+    try {
+      await api.logout()
+    } catch (err) {
+      console.warn('Logout API failed, proceeding locally:', err)
+    } finally {
+      localStorage.removeItem('token')
+      localStorage.removeItem('refresh_token')
+      try {
+        const localSession = await api.bootstrapLocalOwnerToken()
+        if (localSession?.token) {
+          localStorage.setItem('token', localSession.token)
+        }
+      } catch (err) {
+        console.warn('Local owner bootstrap failed after cloud disconnect:', err)
+      }
+      setMessage(tx('已成功解除云账号绑定，正在切换回本地单机状态...', 'Disconnected successfully! Returning to Local-Only mode...'))
+      setTimeout(() => {
+        window.location.replace('/settings/profile')
+      }, 1000)
+    }
+  }
+
+  const checkDesktopUpdate = async () => {
+    if (!isTauri || desktopUpdateStatus === 'checking' || desktopUpdateStatus === 'downloading') return
+    setError('')
+    setMessage('')
+    setDesktopUpdateStatus('checking')
+    setDesktopUpdateDetail(tx('正在检查桌面版本...', 'Checking desktop version...'))
+    setDesktopUpdateProgress(0)
+
+    let updateHandle: any = null
+    try {
+      const { check } = await import('@tauri-apps/plugin-updater')
+      updateHandle = await check()
+      if (!updateHandle) {
+        setDesktopUpdateStatus('up-to-date')
+        setDesktopUpdateDetail(tx('当前已经是最新版本。', 'You are already on the latest version.'))
+        return
+      }
+
+      const nextVersion = String(updateHandle.version || '')
+      let downloaded = 0
+      let contentLength = 0
+      setDesktopUpdateStatus('downloading')
+      setDesktopUpdateDetail(tx(`正在下载 v${nextVersion}...`, `Downloading v${nextVersion}...`))
+
+      await updateHandle.downloadAndInstall((event: any) => {
+        if (event.event === 'Started') {
+          contentLength = Number(event.data?.contentLength || 0)
+          downloaded = 0
+          setDesktopUpdateProgress(0)
+          return
+        }
+        if (event.event === 'Progress') {
+          downloaded += Number(event.data?.chunkLength || 0)
+          setDesktopUpdateProgress((current) => {
+            if (contentLength > 0) {
+              return Math.min(100, Math.round((downloaded / contentLength) * 100))
+            }
+            return Math.min(95, current + 1)
+          })
+          return
+        }
+        if (event.event === 'Finished') {
+          setDesktopUpdateProgress(100)
+        }
+      })
+
+      setDesktopUpdateStatus('ready')
+      setDesktopUpdateDetail(tx(`v${nextVersion} 已安装，重启后生效。`, `v${nextVersion} is installed and will apply after restart.`))
+    } catch (err: any) {
+      setDesktopUpdateStatus('error')
+      setDesktopUpdateDetail(err?.message || String(err || tx('更新检查失败。', 'Update check failed.')))
+    } finally {
+      if (updateHandle) {
+        await updateHandle.close().catch(() => {})
+      }
+    }
+  }
+
+  const restartDesktopApp = async () => {
+    try {
+      const { relaunch } = await import('@tauri-apps/plugin-process')
+      await relaunch()
+    } catch (err: any) {
+      setDesktopUpdateStatus('error')
+      setDesktopUpdateDetail(err?.message || String(err || tx('重启失败。', 'Relaunch failed.')))
+    }
+  }
+
   if (loading) return <div className="page-loading">{tx('加载中...', 'Loading...')}</div>
+
+  const isLocalOnly = !userProfile.slug || userProfile.slug === 'local'
 
   return (
     <div className="page profile-page">
@@ -156,7 +332,7 @@ export default function InfoPage() {
 
       <section className="card profile-main-card">
         <div className="card-header">
-          <h3 className="card-title">{tx('neuDrive 了解你的信息', 'What neuDrive knows about you')}</h3>
+          <h3 className="card-title">{tx('Vola 了解你的信息', 'What Vola knows about you')}</h3>
           <button className="btn btn-primary" disabled={saving !== ''} onClick={() => { void saveProfile() }}>{saving ? tx('保存中...', 'Saving...') : tx('保存', 'Save Profile')}</button>
         </div>
         <div className="profile-field-grid">
@@ -166,11 +342,12 @@ export default function InfoPage() {
           </label>
           <label className="profile-edit-field">
             <span>{tx('语言偏好', 'Language preference')}</span>
-            <select value={values.language || locale} onChange={(event) => setValues({ ...values, language: event.target.value })}>
-              {commonLanguages.map((language) => (
-                <option key={language.value} value={language.value}>{language.label}</option>
-              ))}
-            </select>
+            <CustomSelect
+              value={values.language || locale}
+              onChange={(val) => setValues({ ...values, language: val })}
+              options={commonLanguages}
+              ariaLabel={tx('语言偏好', 'Language preference')}
+            />
           </label>
           {profileFields.map((field) => (
             <label key={field.key} className="profile-edit-field profile-long-field">
@@ -200,6 +377,227 @@ export default function InfoPage() {
         </section>
       )}
 
+      {localMode && (
+        <section className="card cloud-sync-card">
+          <div className="card-header">
+            <h3 className="card-title">{tx('云同步与团队协作', 'Cloud Sync & Team Collaboration')}</h3>
+          </div>
+          <div className="card-body" style={{ padding: '20px' }}>
+            {isLocalOnly ? (
+              <div className="cloud-bind-flow">
+                <p style={{ fontSize: '13.5px', color: '#506074', marginBottom: '16px', lineHeight: '1.6' }}>
+                  {tx(
+                    '您当前正处于本地单机工作状态。绑定官方云账户即可激活多设备数据同步、安全云端备份以及团队 AI 资料库协作共享。',
+                    'You are currently running in Local-Only mode. Sign in to your cloud account to activate multi-device sync, secure backup, and Team Library collaboration.'
+                  )}
+                </p>
+
+                <div style={{ display: 'flex', gap: '16px', marginBottom: '18px', borderBottom: '1px solid rgba(65, 77, 136, 0.08)', paddingBottom: '10px' }}>
+                  <button
+                    type="button"
+                    onClick={() => { setIsSignUpMode(false); setError(''); }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '14px',
+                      fontWeight: !isSignUpMode ? 700 : 500,
+                      color: !isSignUpMode ? '#6366f1' : '#506074',
+                      padding: '4px 8px',
+                      cursor: 'pointer',
+                      borderBottom: !isSignUpMode ? '2px solid #6366f1' : '2px solid transparent',
+                      marginBottom: '-11px',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {tx('登录已有账号', 'Sign In')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsSignUpMode(true); setError(''); }}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      fontSize: '14px',
+                      fontWeight: isSignUpMode ? 700 : 500,
+                      color: isSignUpMode ? '#6366f1' : '#506074',
+                      padding: '4px 8px',
+                      cursor: 'pointer',
+                      borderBottom: isSignUpMode ? '2px solid #6366f1' : '2px solid transparent',
+                      marginBottom: '-11px',
+                      transition: 'all 0.2s',
+                    }}
+                  >
+                    {tx('创建新云账号', 'Create Account')}
+                  </button>
+                </div>
+
+                <form onSubmit={(e) => { void (isSignUpMode ? handleCloudSignup(e) : handleCloudLogin(e)) }} style={{ display: 'flex', flexDirection: 'column', gap: '14px', maxWidth: '420px' }}>
+                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 600, color: '#324057' }}>{tx('邮箱地址', 'Email Address')}</label>
+                    <input
+                      className="input"
+                      type="email"
+                      placeholder="name@example.com"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      required
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+                  <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                    <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 600, color: '#324057' }}>{tx('登录密码', 'Password')}</label>
+                    <input
+                      className="input"
+                      type="password"
+                      placeholder={isSignUpMode ? tx('至少 8 位密码', 'At least 8 characters') : '••••••••'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      required
+                      minLength={8}
+                      style={{ width: '100%' }}
+                    />
+                  </div>
+
+                  {isSignUpMode && (
+                    <>
+                      <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 600, color: '#324057' }}>{tx('确认密码', 'Confirm Password')}</label>
+                        <input
+                          className="input"
+                          type="password"
+                          placeholder="••••••••"
+                          value={confirmPassword}
+                          onChange={(e) => setConfirmPassword(e.target.value)}
+                          required
+                          minLength={8}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 600, color: '#324057' }}>{tx('账户名 (Slug)', 'Account Name (Slug)')}</label>
+                        <input
+                          className="input"
+                          type="text"
+                          placeholder={slugFromEmail(email) || 'my-account'}
+                          value={signupSlug}
+                          onChange={(e) => setSignupSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                          minLength={3}
+                          required
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                      <div className="form-group" style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <label className="form-label" style={{ fontSize: '12.5px', fontWeight: 600, color: '#324057' }}>{tx('显示名称', 'Display Name')}</label>
+                        <input
+                          className="input"
+                          type="text"
+                          placeholder={tx('例如：张三', 'e.g. John Doe')}
+                          value={signupDisplayName}
+                          onChange={(e) => setSignupDisplayName(e.target.value)}
+                          style={{ width: '100%' }}
+                        />
+                      </div>
+                    </>
+                  )}
+
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginTop: '6px', gap: '16px' }}>
+                    <button className="btn btn-primary" type="submit" disabled={syncLoading} style={{
+                      borderRadius: '8px',
+                      padding: '8px 20px',
+                      background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
+                      border: 'none',
+                      fontWeight: 600,
+                      boxShadow: '0 4px 12px rgba(99, 102, 241, 0.2)',
+                    }}>
+                      {syncLoading
+                        ? (isSignUpMode ? tx('注册并同步中...', 'Registering & Syncing...') : tx('登录并同步中...', 'Signing in & Syncing...'))
+                        : (isSignUpMode ? tx('注册并激活同步', 'Register & Enable Sync') : tx('登录并激活同步', 'Sign In & Enable Sync'))
+                      }
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => { setIsSignUpMode(!isSignUpMode); setError(''); }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        fontSize: '13px',
+                        color: '#6366f1',
+                        cursor: 'pointer',
+                        padding: '4px 8px',
+                        fontWeight: 600,
+                      }}
+                    >
+                      {isSignUpMode ? tx('已有账户？立即登录', 'Already have an account? Sign In') : tx('还没有账户？立即注册', 'Need an account? Register')}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div className="cloud-unbind-flow">
+                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+                  <span style={{ fontSize: '24px' }}>☁️</span>
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: '14px', color: '#12192d' }}>
+                      {tx('已绑定 Vola 云服务', 'Connected to Vola Cloud')}
+                    </div>
+                    <div style={{ fontSize: '12.5px', color: '#506074', marginTop: '2px' }}>
+                      {tx(`绑定账户：${userProfile.email || userProfile.display_name || userProfile.slug}`, `Connected Account: ${userProfile.email || userProfile.display_name || userProfile.slug}`)}
+                    </div>
+                  </div>
+                </div>
+                <p style={{ fontSize: '13px', color: '#506074', marginBottom: '16px', lineHeight: '1.6' }}>
+                  {tx(
+                    '解除绑定后，桌面端将回归安全的本地单机运行状态，多端同步和团队协作功能将暂停使用。',
+                    'Disconnecting will revert your workspace back to safe Local-Only mode. Team libraries and cloud sync will be disabled.'
+                  )}
+                </p>
+                <button className="btn btn-danger" type="button" onClick={handleCloudLogout} disabled={syncLoading}>
+                  {syncLoading ? tx('解除绑定中...', 'Disconnecting...') : tx('退出云端账号绑定', 'Disconnect Cloud Account')}
+                </button>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {isTauri && (
+        <section className="card desktop-update-card">
+          <div className="card-header">
+            <h3 className="card-title">{tx('桌面应用更新', 'Desktop App Update')}</h3>
+          </div>
+          <div className="card-body" style={{ padding: '20px' }}>
+            <p className="data-record-secondary" style={{ marginBottom: '14px' }}>
+              {desktopUpdateDetail || tx('当前桌面版会从 GitHub Release 获取签名更新包。', 'The desktop app checks signed updates from GitHub Releases.')}
+            </p>
+            {desktopUpdateStatus === 'downloading' && (
+              <div style={{ height: '8px', maxWidth: '360px', borderRadius: '999px', background: 'rgba(63, 76, 133, 0.12)', overflow: 'hidden', marginBottom: '14px' }}>
+                <div style={{ width: `${desktopUpdateProgress}%`, height: '100%', background: '#414d88', transition: 'width 0.18s ease' }} />
+              </div>
+            )}
+            <div className="page-actions">
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={desktopUpdateStatus === 'checking' || desktopUpdateStatus === 'downloading'}
+                onClick={() => { void checkDesktopUpdate() }}
+              >
+                {desktopUpdateStatus === 'checking'
+                  ? tx('检查中...', 'Checking...')
+                  : desktopUpdateStatus === 'downloading'
+                    ? tx('下载中...', 'Downloading...')
+                    : tx('检查更新', 'Check for Updates')}
+              </button>
+              {desktopUpdateStatus === 'ready' && (
+                <button className="btn btn-outline" type="button" onClick={() => { void restartDesktopApp() }}>
+                  {tx('重启应用', 'Restart App')}
+                </button>
+              )}
+            </div>
+          </div>
+        </section>
+      )}
+
       <section className="card privacy-actions">
         <div className="card-header">
           <h3 className="card-title">{tx('隐私操作', 'Privacy Actions')}</h3>
@@ -213,4 +611,9 @@ export default function InfoPage() {
       </section>
     </div>
   )
+}
+
+function slugFromEmail(value: string) {
+  const prefix = value.trim().toLowerCase().split('@')[0] || ''
+  return prefix.replace(/[^a-z0-9_-]/g, '').slice(0, 32)
 }

@@ -4,7 +4,7 @@
   "mappings": [
     {
       "source_feature": "workspace or project instructions",
-      "neudrive_target": [
+      "vola_target": [
         "/projects/<name>/context.md",
         "/memory/profile/*"
       ],
@@ -12,7 +12,7 @@
     },
     {
       "source_feature": "reusable prompts",
-      "neudrive_target": [
+      "vola_target": [
         "skill_reference_material",
         "project_assets"
       ],
@@ -20,7 +20,7 @@
     },
     {
       "source_feature": "tools / MCP config",
-      "neudrive_target": [
+      "vola_target": [
         "tool_metadata",
         "connection_metadata"
       ],
@@ -28,14 +28,14 @@
     },
     {
       "source_feature": "automation manifests",
-      "neudrive_target": [
+      "vola_target": [
         "automation_shadow"
       ],
       "restore_strategy": "manual_recreation"
     },
     {
       "source_feature": "session transcripts or notes",
-      "neudrive_target": [
+      "vola_target": [
         "conversation_archive",
         "/projects/<name>/log.jsonl"
       ],

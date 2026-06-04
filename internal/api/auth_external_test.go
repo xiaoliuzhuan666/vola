@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/config"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/config"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 )
 
 type stubExternalAuthRepo struct {
@@ -84,8 +84,8 @@ func TestAuthProvidersEndpointListsEnabledProviders(t *testing.T) {
 }
 
 func TestNormalizeAuthRedirectURLRejectsForeignOrigins(t *testing.T) {
-	server := &Server{Config: &config.Config{PublicBaseURL: "https://neudrive.example.com"}}
-	req := httptest.NewRequest(http.MethodGet, "https://neudrive.example.com/login", nil)
+	server := &Server{Config: &config.Config{PublicBaseURL: "https://vola.example.com"}}
+	req := httptest.NewRequest(http.MethodGet, "https://vola.example.com/login", nil)
 
 	if got := server.normalizeAuthRedirectURL(req, "/oauth/authorize?client_id=abc"); got != "/oauth/authorize?client_id=abc" {
 		t.Fatalf("expected relative redirect to be preserved, got %q", got)
@@ -93,26 +93,29 @@ func TestNormalizeAuthRedirectURLRejectsForeignOrigins(t *testing.T) {
 	if got := server.normalizeAuthRedirectURL(req, "https://evil.example.com/phish"); got != "/" {
 		t.Fatalf("expected foreign redirect to be rejected, got %q", got)
 	}
-	if got := server.normalizeAuthRedirectURL(req, "https://neudrive.example.com/oauth/authorize?client_id=abc"); got != "https://neudrive.example.com/oauth/authorize?client_id=abc" {
+	if got := server.normalizeAuthRedirectURL(req, "https://vola.example.com/oauth/authorize?client_id=abc"); got != "https://vola.example.com/oauth/authorize?client_id=abc" {
 		t.Fatalf("expected same-origin absolute redirect to be preserved, got %q", got)
 	}
 }
 
 func TestNormalizeAuthRedirectURLRejectsUnsafeAuthLoops(t *testing.T) {
-	server := &Server{Config: &config.Config{PublicBaseURL: "https://neudrive.example.com"}}
-	req := httptest.NewRequest(http.MethodGet, "https://neudrive.example.com/login", nil)
+	server := &Server{Config: &config.Config{PublicBaseURL: "https://vola.example.com"}}
+	req := httptest.NewRequest(http.MethodGet, "https://vola.example.com/login", nil)
 
 	cases := []string{
 		"/login",
 		"/login?redirect=%2Fprojects",
+		"/signup",
+		"/signup?redirect=%2Fprojects",
 		"/assets/index-demo.js",
 		"/favicon.ico",
+		"/vola-app-icon.png",
 		"/logo-mark.png",
 		"/logo-social.png",
 		"/api/auth/providers/pocket/callback?code=demo&state=abc",
-		"https://neudrive.example.com/login?redirect=%2Fprojects",
-		"https://neudrive.example.com/assets/index-demo.js",
-		"https://neudrive.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
+		"https://vola.example.com/login?redirect=%2Fprojects",
+		"https://vola.example.com/assets/index-demo.js",
+		"https://vola.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
 	}
 
 	for _, raw := range cases {
@@ -132,9 +135,10 @@ func TestAuthSuccessRedirectRejectsUnsafeTargets(t *testing.T) {
 	cases := []string{
 		"",
 		"/login?redirect=%2Fprojects",
+		"/signup?redirect=%2Fprojects",
 		"/assets/index-demo.js",
 		"/api/auth/providers/pocket/callback?code=demo&state=abc",
-		"https://neudrive.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
+		"https://vola.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
 	}
 
 	for _, target := range cases {
@@ -161,9 +165,10 @@ func TestAuthErrorRedirectDropsUnsafeRedirectTarget(t *testing.T) {
 	cases := []string{
 		"",
 		"/login?redirect=%2Fprojects",
+		"/signup?redirect=%2Fprojects",
 		"/assets/index-demo.js",
 		"/api/auth/providers/pocket/callback?code=demo&state=abc",
-		"https://neudrive.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
+		"https://vola.example.com/api/auth/providers/pocket/callback?code=demo&state=abc",
 	}
 
 	for _, target := range cases {
@@ -228,7 +233,7 @@ func TestAuthProviderStartPocketLoginWrapsAuthorizeURL(t *testing.T) {
 		CORSOrigins:        []string{"http://localhost:3000"},
 		RateLimit:          100,
 		MaxBodySize:        10 * 1024 * 1024,
-		PublicBaseURL:      "https://neudrive.example.com",
+		PublicBaseURL:      "https://vola.example.com",
 		PocketProviderID:   "pocket",
 		PocketIssuer:       issuer,
 		PocketDiscoveryURL: issuer + "/.well-known/openid-configuration",
@@ -288,7 +293,7 @@ func TestAuthProviderStartPocketLoginWrapsAuthorizeURL(t *testing.T) {
 	if got := inner.Query().Get("client_id"); got != "pocket-client" {
 		t.Fatalf("unexpected client_id: %q", got)
 	}
-	if got := inner.Query().Get("redirect_uri"); got != "https://neudrive.example.com/api/auth/providers/pocket/callback" {
+	if got := inner.Query().Get("redirect_uri"); got != "https://vola.example.com/api/auth/providers/pocket/callback" {
 		t.Fatalf("unexpected callback url: %q", got)
 	}
 	if got := inner.Query().Get("response_type"); got != "code" {

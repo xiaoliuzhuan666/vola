@@ -1,7 +1,7 @@
 {
-  "name": "@neudrive/sdk",
+  "name": "@vola/sdk",
   "version": "0.1.0",
-  "description": "neuDrive SDK - AI identity and trust infrastructure",
+  "description": "Vola SDK - AI identity and trust infrastructure",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "files": ["dist/"],

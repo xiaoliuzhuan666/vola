@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -69,7 +69,7 @@ func TestImmediateChildEntriesSkillsRootCollapsesBundleFiles(t *testing.T) {
 
 	entries := []models.FileTreeEntry{
 		{
-			Path:        "/skills/neudrive/SKILL.md",
+			Path:        "/skills/vola/SKILL.md",
 			Kind:        "skill",
 			ContentType: "text/markdown",
 			UpdatedAt:   now,
@@ -110,15 +110,15 @@ func TestImmediateChildEntriesSkillsRootCollapsesBundleFiles(t *testing.T) {
 
 	wantPaths := []string{
 		"/skills/legacy-demo/",
-		"/skills/neudrive/",
 		"/skills/portability/",
+		"/skills/vola/",
 		"/skills/notes.md",
 	}
 	if !reflect.DeepEqual(gotPaths, wantPaths) {
 		t.Fatalf("immediateChildEntries() paths = %#v, want %#v", gotPaths, wantPaths)
 	}
 
-	for _, path := range []string{"/skills/neudrive/", "/skills/legacy-demo/", "/skills/portability/"} {
+	for _, path := range []string{"/skills/vola/", "/skills/legacy-demo/", "/skills/portability/"} {
 		if !gotKinds[path] {
 			t.Fatalf("expected %s to be rendered as a directory", path)
 		}

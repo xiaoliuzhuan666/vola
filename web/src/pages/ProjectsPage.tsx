@@ -331,7 +331,7 @@ export default function ProjectsPage() {
                 )
               })}
             </nav>
-            <div className="materials-kicker">neuDrive Data</div>
+            <div className="materials-kicker">Vola Data</div>
             <h2 className="materials-title">{currentBundleContext?.name || projectName}</h2>
             <p className="materials-subtitle">
               {tx('项目详情现在按 project bundle 浏览模式展示，深入子目录时也会保留上下文。', 'Project details now use a project-bundle browsing view, with context preserved while you drill into subfolders.')}
@@ -506,7 +506,7 @@ export default function ProjectsPage() {
     <div className="page materials-page">
       <section className="materials-hero">
         <div className="materials-hero-copy">
-          <div className="materials-kicker">neuDrive Data</div>
+          <div className="materials-kicker">Vola Data</div>
           <h2 className="materials-title">{tx('项目', 'Projects')}</h2>
           <p className="materials-subtitle">{tx('把项目看成一组长期上下文卡片。点开后会进入 project bundle 视图。', 'Treat projects as long-lived context cards. Opening one jumps into the project bundle view.')}</p>
         </div>

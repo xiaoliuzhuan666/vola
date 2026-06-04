@@ -19,15 +19,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/services"
 )
 
 var (
-	neudriveBinaryOnce sync.Once
-	neudriveBinaryPath string
-	neudriveBinaryErr  error
+	volaBinaryOnce sync.Once
+	volaBinaryPath string
+	volaBinaryErr  error
 )
 
 type syncFixturePlan struct {
@@ -204,26 +204,26 @@ func TestAgenthubHostedCommands_LocalSQLiteProfile(t *testing.T) {
 func buildAgenthubBinary(t *testing.T) string {
 	t.Helper()
 	requireCLIIntegration(t)
-	neudriveBinaryOnce.Do(func() {
+	volaBinaryOnce.Do(func() {
 		root := repoRoot(t)
-		binDir, err := os.MkdirTemp("", "neudrive-cli-bin-")
+		binDir, err := os.MkdirTemp("", "vola-cli-bin-")
 		if err != nil {
-			neudriveBinaryErr = err
+			volaBinaryErr = err
 			return
 		}
-		neudriveBinaryPath = filepath.Join(binDir, "neudrive")
-		cmd := exec.Command("go", "build", "-o", neudriveBinaryPath, "./cmd/neudrive")
+		volaBinaryPath = filepath.Join(binDir, "vola")
+		cmd := exec.Command("go", "build", "-o", volaBinaryPath, "./cmd/vola")
 		cmd.Dir = root
 		output, err := cmd.CombinedOutput()
 		if err != nil {
-			neudriveBinaryErr = fmt.Errorf("go build failed: %w\n%s", err, string(output))
+			volaBinaryErr = fmt.Errorf("go build failed: %w\n%s", err, string(output))
 			return
 		}
 	})
-	if neudriveBinaryErr != nil {
-		t.Fatal(neudriveBinaryErr)
+	if volaBinaryErr != nil {
+		t.Fatal(volaBinaryErr)
 	}
-	return neudriveBinaryPath
+	return volaBinaryPath
 }
 
 func repoRoot(t *testing.T) string {
@@ -249,23 +249,23 @@ func isolatedAgenthubEnv(t *testing.T) ([]string, string, string, string, string
 		}
 	}
 	env := append([]string{}, os.Environ()...)
-	configPath := filepath.Join(configHome, "neudrive", "config.json")
-	statePath := filepath.Join(configHome, "neudrive", "runtime.json")
+	configPath := filepath.Join(configHome, "vola", "config.json")
+	statePath := filepath.Join(configHome, "vola", "runtime.json")
 	env = appendOrReplaceEnv(env, "HOME", home)
 	env = appendOrReplaceEnv(env, "XDG_CONFIG_HOME", configHome)
 	env = appendOrReplaceEnv(env, "XDG_STATE_HOME", stateHome)
 	env = appendOrReplaceEnv(env, "XDG_DATA_HOME", dataHome)
-	env = appendOrReplaceEnv(env, "NEUDRIVE_CONFIG", configPath)
+	env = appendOrReplaceEnv(env, "VOLA_CONFIG", configPath)
 	for _, key := range []string{
-		"NEUDRIVE_TOKEN",
-		"NEUDRIVE_SYNC_TOKEN",
-		"NEUDRIVE_API_BASE",
-		"NEUDRIVE_SYNC_API_BASE",
-		"NEUDRIVE_SYNC_PROFILE",
+		"VOLA_TOKEN",
+		"VOLA_SYNC_TOKEN",
+		"VOLA_API_BASE",
+		"VOLA_SYNC_API_BASE",
+		"VOLA_SYNC_PROFILE",
 	} {
 		env = appendOrReplaceEnv(env, key, "")
 	}
-	sqlitePath := filepath.Join(dataHome, "neudrive", "local.db")
+	sqlitePath := filepath.Join(dataHome, "vola", "local.db")
 	return env, configPath, statePath, sqlitePath, workDir
 }
 
@@ -293,7 +293,7 @@ func mustRunAgenthub(t *testing.T, binary string, env []string, args ...string) 
 	t.Helper()
 	stdout, stderr, code := runAgenthub(t, binary, env, args...)
 	if code != 0 {
-		t.Fatalf("neudrive %v exit=%d\nstdout:\n%s\nstderr:\n%s", args, code, stdout, stderr)
+		t.Fatalf("vola %v exit=%d\nstdout:\n%s\nstderr:\n%s", args, code, stdout, stderr)
 	}
 	return stdout, stderr
 }

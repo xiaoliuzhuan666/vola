@@ -9,8 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/logger"
-	"github.com/go-chi/cors"
+	"github.com/agi-bar/vola/internal/logger"
 	"github.com/google/uuid"
 )
 
@@ -45,15 +44,57 @@ type AuthenticatedUser struct {
 
 // CORSMiddleware configures CORS with the given allowed origins. Credentials
 // are allowed, and rate-limit headers are exposed to the browser.
-func CORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
-	return cors.Handler(cors.Options{
-		AllowedOrigins:   allowedOrigins,
-		AllowedMethods:   []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		AllowedHeaders:   []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token", "X-API-Key", "X-NeuDrive-Source", "X-NeuDrive-Platform"},
-		ExposedHeaders:   []string{"Link", "X-RateLimit-Limit", "X-RateLimit-Remaining", "X-RateLimit-Reset", "Retry-After", "X-Request-ID"},
-		AllowCredentials: true,
-		MaxAge:           300,
-	})
+func CORSMiddleware(allowedOrigins []string, isLocal bool) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			origin := r.Header.Get("Origin")
+
+			// 运行时 100% 动态判断本地调试源（tauri 协议、localhost 调试端等）
+			isLocalRequest := isLocal ||
+				strings.HasPrefix(origin, "tauri://") ||
+				strings.HasPrefix(origin, "http://localhost") ||
+				strings.HasPrefix(origin, "http://127.0.0.1") ||
+				origin == ""
+
+			if isLocalRequest {
+				if origin != "" {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+				} else {
+					w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+				}
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, X-NeuDrive-Source, X-NeuDrive-Platform")
+				w.Header().Set("Access-Control-Expose-Headers", "Link, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After, X-Request-ID")
+				w.Header().Set("Access-Control-Max-Age", "300")
+				w.Header().Set("Vary", "Origin")
+			} else if origin != "" {
+				matched := false
+				for _, o := range allowedOrigins {
+					if o == origin || o == "*" {
+						matched = true
+						break
+					}
+				}
+				if matched {
+					w.Header().Set("Access-Control-Allow-Origin", origin)
+					w.Header().Set("Access-Control-Allow-Credentials", "true")
+					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+					w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, X-NeuDrive-Source, X-NeuDrive-Platform")
+					w.Header().Set("Access-Control-Expose-Headers", "Link, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After, X-Request-ID")
+					w.Header().Set("Access-Control-Max-Age", "300")
+					w.Header().Set("Vary", "Origin")
+				}
+			}
+
+			if r.Method == "OPTIONS" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
 }
 
 // SecurityHeadersMiddleware adds standard security headers to every response.

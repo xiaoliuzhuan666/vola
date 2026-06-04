@@ -6,7 +6,7 @@ This matrix tracks the value-based local import surface for `Claude` and `Codex`
 - `files` mode does not zip the whole home directory.
 - Default import intent is durable, user-meaningful, reconstructable data.
 - Low-value runtime noise is excluded from default discovery and default imports.
-- `Codex` rows describe the local layout observed by neuDrive. They do not claim an official on-disk vendor spec.
+- `Codex` rows describe the local layout observed by Vola. They do not claim an official on-disk vendor spec.
 
 Status vocabulary:
 

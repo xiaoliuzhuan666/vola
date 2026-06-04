@@ -17,9 +17,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/profileauth"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/profileauth"
+	"github.com/agi-bar/vola/internal/runtimecfg"
 )
 
 const hostedLoginTimeout = 5 * time.Minute
@@ -47,9 +47,9 @@ type loginResult struct {
 }
 
 func addTargetFlags(fs *flag.FlagSet, opts *commandTargetOptions) {
-	fs.BoolVar(&opts.Local, "local", false, "force the local neuDrive target")
+	fs.BoolVar(&opts.Local, "local", false, "force the local Vola target")
 	fs.StringVar(&opts.Profile, "profile", "", "hosted profile name")
-	fs.StringVar(&opts.APIBase, "api-base", "", "explicit neuDrive API base")
+	fs.StringVar(&opts.APIBase, "api-base", "", "explicit Vola API base")
 	fs.StringVar(&opts.Token, "token", "", "explicit bearer token")
 }
 
@@ -155,7 +155,7 @@ func runLogin(args []string) int {
 	fs := flag.NewFlagSet("login", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 	profileName := fs.String("profile", "official", "profile name to save")
-	apiBase := fs.String("api-base", runtimecfg.DefaultRemoteOfficial, "neuDrive hosted base URL")
+	apiBase := fs.String("api-base", runtimecfg.DefaultRemoteOfficial, "Vola hosted base URL")
 	urlAlias := fs.String("url", "", "alias for --api-base")
 	tokenValue := fs.String("token", "", "manually save an existing bearer token instead of opening the browser")
 	if err := fs.Parse(args); err != nil {
@@ -543,7 +543,7 @@ func waitForOAuthCallback(apiBase, state, codeChallenge string) (loginResult, st
 			}
 			if result.State != state || result.Code == "" {
 				w.WriteHeader(http.StatusBadRequest)
-				_, _ = w.Write([]byte("neuDrive CLI login failed. You can close this page and try again."))
+				_, _ = w.Write([]byte("Vola CLI login failed. You can close this page and try again."))
 				return
 			}
 			select {
@@ -551,7 +551,7 @@ func waitForOAuthCallback(apiBase, state, codeChallenge string) (loginResult, st
 			default:
 			}
 			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			_, _ = w.Write([]byte("<!doctype html><html><body><h1>neuDrive CLI login complete</h1><p>You can close this page and return to the terminal.</p></body></html>"))
+			_, _ = w.Write([]byte("<!doctype html><html><body><h1>Vola CLI login complete</h1><p>You can close this page and return to the terminal.</p></body></html>"))
 		}),
 	}
 	go func() {
@@ -570,7 +570,7 @@ func waitForOAuthCallback(apiBase, state, codeChallenge string) (loginResult, st
 		"code_challenge":        []string{codeChallenge},
 		"code_challenge_method": []string{"S256"},
 	}.Encode())
-	fmt.Printf("Opening browser for neuDrive hosted login:\n%s\n", authorizeURL)
+	fmt.Printf("Opening browser for Vola hosted login:\n%s\n", authorizeURL)
 	_ = openBrowser(authorizeURL)
 
 	timer := time.NewTimer(hostedLoginTimeout)

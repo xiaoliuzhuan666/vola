@@ -66,9 +66,10 @@ type pageSEO struct {
 }
 
 const (
-	siteURL            = "https://www.neudrive.ai"
-	defaultTitle       = "Personal data hub for AI agents — neuDrive"
-	defaultDescription = "neuDrive is a personal data hub for AI agents, connecting profile, memory, projects, conversations, skills, and vault access."
+	siteURL            = "https://www.vola.cn"
+	productName        = "Vola"
+	defaultTitle       = "Personal data hub for AI agents — Vola"
+	defaultDescription = "Vola is a personal data hub for AI agents, connecting profile, memory, projects, conversations, skills, and vault access."
 )
 
 var (
@@ -99,30 +100,31 @@ func seoForPath(rawPath string) pageSEO {
 	case cleanPath == "/":
 		seo.URL = siteURL + "/"
 	case cleanPath == "/pricing":
-		seo.Title = "Pricing — neuDrive"
-		seo.Description = "Compare neuDrive Free and Pro plans for storage, sync, backup, and AI tool connections."
+		seo.Title = productName
+		seo.Description = defaultDescription
+		seo.Robots = "noindex, nofollow"
 	case cleanPath == "/integrations":
-		seo.Title = "Integrations — neuDrive"
-		seo.Description = "Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, MCP, and REST API."
+		seo.Title = "Integrations — " + productName
+		seo.Description = "Connect Vola to Claude, ChatGPT, Cursor, Windsurf, CLI agents, MCP, and REST API."
 	case cleanPath == "/docs":
-		seo.Title = "Docs — neuDrive"
-		seo.Description = "Setup guides for connecting neuDrive to Claude, ChatGPT, coding editors, CLI agents, and custom MCP clients."
+		seo.Title = "Docs — " + productName
+		seo.Description = "Setup guides for connecting Vola to Claude, ChatGPT, coding editors, CLI agents, and custom MCP clients."
 	case strings.HasPrefix(cleanPath, "/integrations/"):
 		name := integrationName(strings.TrimPrefix(cleanPath, "/integrations/"))
-		seo.Title = name + " Integration — neuDrive"
-		seo.Description = "Learn how to connect " + name + " to neuDrive so it can use shared memory, files, and skills."
+		seo.Title = name + " Integration — " + productName
+		seo.Description = "Learn how to connect " + name + " to Vola so it can use shared memory, files, and skills."
 	case strings.HasPrefix(cleanPath, "/guides/"):
 		name := integrationName(strings.TrimPrefix(cleanPath, "/guides/"))
-		seo.Title = name + " Setup Guide — neuDrive"
-		seo.Description = "Follow the neuDrive setup guide for " + name + ", including copyable URLs, authorization steps, and a test prompt."
+		seo.Title = name + " Setup Guide — " + productName
+		seo.Description = "Follow the Vola setup guide for " + name + ", including copyable URLs, authorization steps, and a test prompt."
 	case cleanPath == "/privacy":
-		seo.Title = "Privacy — neuDrive"
-		seo.Description = "How neuDrive handles AI memory, files, credentials, connections, exports, and deletion."
+		seo.Title = "Privacy — " + productName
+		seo.Description = "How Vola handles AI memory, files, credentials, connections, exports, and deletion."
 	case cleanPath == "/terms":
-		seo.Title = "Terms — neuDrive"
-		seo.Description = "Terms for using neuDrive and connecting AI tools to your memory, files, and skills."
+		seo.Title = "Terms — " + productName
+		seo.Description = "Terms for using Vola and connecting AI tools to your memory, files, and skills."
 	case cleanPath == "/login" || cleanPath == "/signup" || isPrivateAppPath(cleanPath):
-		seo.Title = "neuDrive"
+		seo.Title = productName
 		seo.Description = defaultDescription
 		seo.Robots = "noindex, nofollow"
 	}
@@ -183,23 +185,17 @@ func structuredDataScript(seo pageSEO) string {
 	payload := map[string]interface{}{
 		"@context":            "https://schema.org",
 		"@type":               "SoftwareApplication",
-		"name":                "neuDrive",
+		"name":                productName,
 		"applicationCategory": "ProductivityApplication",
 		"operatingSystem":     "Web",
 		"url":                 seo.URL,
 		"description":         seo.Description,
-		"logo":                siteURL + "/logo-mark.png",
-		"image":               siteURL + "/logo-social.png",
-		"offers": map[string]string{
-			"@type":         "Offer",
-			"price":         "60",
-			"priceCurrency": "USD",
-			"availability":  "https://schema.org/InStock",
-		},
+		"logo":                siteURL + "/vola-app-icon.png",
+		"image":               siteURL + "/vola-social.svg",
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		body = []byte(`{"@context":"https://schema.org","@type":"SoftwareApplication","name":"neuDrive"}`)
+		body = []byte(`{"@context":"https://schema.org","@type":"SoftwareApplication","name":"Vola"}`)
 	}
 	return `<script type="application/ld+json" id="structured-data">` + string(body) + `</script>`
 }
@@ -215,8 +211,8 @@ func setFrontendCacheHeaders(w http.ResponseWriter, path string) {
 	}
 }
 
-// DevProxy returns true if the NEUDRIVE_DEV environment variable is set,
+// DevProxy returns true if the VOLA_DEV environment variable is set,
 // indicating the frontend dev server should be used instead of embedded assets.
 func DevProxy() bool {
-	return os.Getenv("NEUDRIVE_DEV") != ""
+	return os.Getenv("VOLA_DEV") != ""
 }

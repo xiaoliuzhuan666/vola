@@ -13,8 +13,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 	_ "modernc.org/sqlite"
 )
@@ -418,6 +418,17 @@ func (s *Store) init(ctx context.Context) error {
 			revoked_at TEXT,
 			FOREIGN KEY (user_id) REFERENCES users(id)
 		)`,
+		`CREATE TABLE IF NOT EXISTS activity_log (
+			id TEXT PRIMARY KEY,
+			user_id TEXT NOT NULL,
+			connection_id TEXT,
+			action TEXT NOT NULL,
+			path TEXT NOT NULL DEFAULT '',
+			metadata TEXT NOT NULL DEFAULT '{}',
+			created_at TEXT NOT NULL,
+			FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+		)`,
+		`CREATE INDEX IF NOT EXISTS idx_activity_log_user ON activity_log(user_id, created_at DESC)`,
 		`CREATE TABLE IF NOT EXISTS file_tree (
 			id TEXT PRIMARY KEY,
 			user_id TEXT NOT NULL,

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 )
 
 func TestDeletableEntriesForDeletionSkipsProtectedDescendants(t *testing.T) {
@@ -13,8 +13,8 @@ func TestDeletableEntriesForDeletionSkipsProtectedDescendants(t *testing.T) {
 		{Path: "/skills/custom/"},
 		{Path: "/skills/custom/SKILL.md"},
 		{Path: "/skills/custom/assets/logo.txt"},
-		{Path: "/skills/neudrive/"},
-		{Path: "/skills/neudrive/SKILL.md"},
+		{Path: "/skills/vola/"},
+		{Path: "/skills/vola/SKILL.md"},
 		{Path: "/skills/portability/"},
 		{Path: "/skills/portability/chatgpt/SKILL.md"},
 	}

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -72,39 +72,39 @@ func TestListEntriesRootIncludesSkillsDirectory(t *testing.T) {
 	}
 }
 
-func TestListEntriesSkillsRootIncludesNeuDrive(t *testing.T) {
+func TestListEntriesSkillsRootIncludesVola(t *testing.T) {
 	entries, ok := ListEntries("/skills")
 	if !ok {
 		t.Fatal("expected /skills root to be handled")
 	}
 	if len(entries) != 2 {
-		t.Fatalf("expected neudrive + portability roots, got %d", len(entries))
+		t.Fatalf("expected vola + portability roots, got %d", len(entries))
 	}
 	paths := []string{entries[0].Path, entries[1].Path}
-	if !strings.Contains(strings.Join(paths, " "), "/skills/neudrive/") {
-		t.Fatalf("expected neudrive root in %v", paths)
+	if !strings.Contains(strings.Join(paths, " "), "/skills/vola/") {
+		t.Fatalf("expected vola root in %v", paths)
 	}
 }
 
-func TestReadEntryNeuDriveSkill(t *testing.T) {
-	entry, ok, err := ReadEntry("/skills/neudrive/SKILL.md")
+func TestReadEntryVolaSkill(t *testing.T) {
+	entry, ok, err := ReadEntry("/skills/vola/SKILL.md")
 	if err != nil {
 		t.Fatalf("ReadEntry() error = %v", err)
 	}
 	if !ok {
-		t.Fatal("expected neudrive system skill to be found")
+		t.Fatal("expected vola system skill to be found")
 	}
 	if entry.Kind != "skill" {
 		t.Fatalf("expected kind=skill, got %q", entry.Kind)
 	}
-	if !strings.Contains(entry.Content, "neuDrive") {
-		t.Fatalf("expected neuDrive skill content")
+	if !strings.Contains(entry.Content, "Vola") {
+		t.Fatalf("expected Vola skill content")
 	}
-	if got, _ := entry.Metadata["name"].(string); got != "neudrive" {
+	if got, _ := entry.Metadata["name"].(string); got != "vola" {
 		t.Fatalf("expected skill name metadata, got %q", got)
 	}
-	if !strings.Contains(entry.Content, "$neudrive help") {
-		t.Fatalf("expected help example in neuDrive skill content")
+	if !strings.Contains(entry.Content, "$vola help") {
+		t.Fatalf("expected help example in Vola skill content")
 	}
 }
 
@@ -205,8 +205,8 @@ func TestRenderSkillDocumentIncludesSnapshot(t *testing.T) {
 	}
 }
 
-func TestExportSkillFilesNeuDrive(t *testing.T) {
-	files, err := ExportSkillFiles("neudrive")
+func TestExportSkillFilesVola(t *testing.T) {
+	files, err := ExportSkillFiles("vola")
 	if err != nil {
 		t.Fatalf("ExportSkillFiles() error = %v", err)
 	}

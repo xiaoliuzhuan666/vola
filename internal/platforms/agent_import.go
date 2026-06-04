@@ -10,10 +10,10 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/systemskills"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/systemskills"
 )
 
 type ImportMode string
@@ -102,7 +102,7 @@ func PrepareAgentImportPayload(ctx context.Context, cfg *runtimecfg.CLIConfig, p
 			Platform: platform,
 			Command:  "local-scan",
 			Notes: []string{
-				"Codex import uses neuDrive's deterministic local inventory mapping; live agent semantic scan is skipped by default.",
+				"Codex import uses Vola's deterministic local inventory mapping; live agent semantic scan is skipped by default.",
 			},
 		}
 		enriched, _, err := enrichCodexPayload(payload)
@@ -136,7 +136,7 @@ func PrepareAgentImportPayload(ctx context.Context, cfg *runtimecfg.CLIConfig, p
 func ensureAgentImportReady(cfg *runtimecfg.CLIConfig, platform string) error {
 	connection, ok := cfg.Local.Connections[platform]
 	if !ok || strings.TrimSpace(connection.Token) == "" {
-		return fmt.Errorf("%s is not connected; run `neudrive connect %s` first", platformDisplayName(platform), preferredConnectName(platform))
+		return fmt.Errorf("%s is not connected; run `vola connect %s` first", platformDisplayName(platform), preferredConnectName(platform))
 	}
 	return nil
 }
@@ -195,15 +195,15 @@ func runAgentExport(ctx context.Context, platform string) (sqlite.AgentExportPay
 }
 
 func runCodexAgentExport(ctx context.Context) (sqlite.AgentExportPayload, error) {
-	skillDoc, err := readSystemDoc("/skills/neudrive/SKILL.md")
+	skillDoc, err := readSystemDoc("/skills/vola/SKILL.md")
 	if err != nil {
 		return sqlite.AgentExportPayload{}, err
 	}
-	commandDoc, err := readSystemDoc("/skills/neudrive/commands/export.md")
+	commandDoc, err := readSystemDoc("/skills/vola/commands/export.md")
 	if err != nil {
 		return sqlite.AgentExportPayload{}, err
 	}
-	platformDoc, err := readSystemDoc("/skills/neudrive/references/platforms/codex.md")
+	platformDoc, err := readSystemDoc("/skills/vola/references/platforms/codex.md")
 	if err != nil {
 		return sqlite.AgentExportPayload{}, err
 	}
@@ -212,14 +212,14 @@ func runCodexAgentExport(ctx context.Context) (sqlite.AgentExportPayload, error)
 		return sqlite.AgentExportPayload{}, err
 	}
 
-	tempDir, err := os.MkdirTemp("", "neudrive-codex-export-*")
+	tempDir, err := os.MkdirTemp("", "vola-codex-export-*")
 	if err != nil {
 		return sqlite.AgentExportPayload{}, err
 	}
 	defer os.RemoveAll(tempDir)
 
 	schemaPath := filepath.Join(tempDir, "schema.json")
-	outputPath := filepath.Join(tempDir, "neudrive-export.json")
+	outputPath := filepath.Join(tempDir, "vola-export.json")
 	schema, err := json.MarshalIndent(agentExportSchema(), "", "  ")
 	if err != nil {
 		return sqlite.AgentExportPayload{}, err
@@ -269,17 +269,17 @@ func readSystemDoc(publicPath string) (string, error) {
 }
 
 func buildAgentExportPrompt(platformDisplayName, referenceTag, portabilityTag, skillDoc, commandDoc, platformDoc, portabilityDoc string) string {
-	return strings.TrimSpace(fmt.Sprintf(`You are executing the installed neuDrive %s entrypoint.
+	return strings.TrimSpace(fmt.Sprintf(`You are executing the installed Vola %s entrypoint.
 
 Follow the umbrella skill and platform portability instructions below. Return only JSON matching the provided schema. Do not wrap the JSON in markdown fences.
 
-<neudrive-skill>
+<vola-skill>
 %s
-</neudrive-skill>
+</vola-skill>
 
-<neudrive-export-command>
+<vola-export-command>
 %s
-</neudrive-export-command>
+</vola-export-command>
 
 <%s>
 %s

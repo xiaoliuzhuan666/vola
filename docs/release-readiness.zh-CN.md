@@ -1,10 +1,10 @@
-# neuDrive Release Readiness
+# Vola Release Readiness
 
 更新时间：2026-05-13
 
 ## 评估范围
 
-本次评估面向当前工作区，把 neuDrive 整理为可评审、可演示、可部署的 release candidate。重点检查：
+本次评估面向当前工作区，把 Vola 整理为可评审、可演示、可部署的 release candidate。重点检查：
 
 - Agent 个人数据 Hub 的产品表达是否清楚。
 - README、部署文档、备份恢复文档、阶段计划是否一致。
@@ -20,12 +20,12 @@
 | 类型 | 文件或目录 | 处理建议 |
 | --- | --- | --- |
 | 产品与文档 | `README.md`、`README.zh-CN.md`、`docs/github-backup*.md`、`docs/deployment-reliability.zh-CN.md`、`docs/agent-data-hub-iteration-plan.zh-CN.md`、`docs/agent-skill-targets.zh-CN.md` | 纳入评审 |
-| 部署配置 | `deploy/k8s/app.yaml`、`deploy/prod/README.md`、`deploy/prod/deploy.sh`、`docker-compose.yml`、`neudrive.env.example` | 纳入评审 |
+| 部署配置 | `deploy/k8s/app.yaml`、`deploy/prod/README.md`、`deploy/prod/deploy.sh`、`docker-compose.yml`、`vola.env.example` | 纳入评审 |
 | 备份恢复 | `internal/api/backup_*`、`internal/backups/`、`internal/storage/sqlite/backup_targets.go`、`migrations/021_*`、`022_*`、`023_*`、`internal/jobs/scheduler.go` | 纳入评审 |
 | Skill Hub | `internal/api/local_skill_sync.go`、`skill_assignments.go`、`skill_conversion.go`、`internal/skillsarchive/manifest.go`、`web/src/pages/data/DataSkillsPage.tsx`、`web/src/pages/SkillsImportPage.tsx` | 纳入评审 |
 | 页面状态 | `web/src/api.ts`、`web/src/pages/GitMirrorPage.tsx`、`DashboardPage.tsx`、`OnboardingPage.tsx`、`PublicPages.tsx`、`web/src/index.css` | 纳入评审 |
 | 测试 | `internal/api/sqlite_shared_test.go`、`internal/platforms/claude_migration_test.go`、`internal/skillsarchive/archive_test.go` | 纳入评审 |
-| 截图与阶段记录 | `neudrive-local-home.png`、`stage3-skill-manifest-upload.png`、`stage4-*.png`、`sync-backup-*.png`、`stage4-*.md` | 建议作为演示证据单独归档，不直接混入 release commit |
+| 截图与阶段记录 | `vola-local-home.png`、`stage3-skill-manifest-upload.png`、`stage4-*.png`、`sync-backup-*.png`、`stage4-*.md` | 建议作为演示证据单独归档，不直接混入 release commit |
 | 临时输出 | `.playwright-mcp/`、`console-stage4*.txt` | 建议归档或忽略；本次不删除 |
 
 ## 当前能力
@@ -38,7 +38,7 @@
 
 ### Skill 管理
 
-- Skill 导入会生成 `manifest.neudrive.json`。
+- Skill 导入会生成 `manifest.vola.json`。
 - manifest 记录入口文件、脚本、依赖文件、assets、二进制、环境变量、外部 Claude tools/plugins 引用。
 - Claude Code / Codex 支持本地同步预览、应用和清理。
 - Cursor / Gemini CLI 当前是“可分配、可导出、暂不自动写入”。
@@ -47,7 +47,7 @@
 ### 备份与恢复
 
 - GitHub Backup 保存用户可见文件树的 Git 版本历史。
-- WebDAV / S3-compatible / OSS / R2 通过 S3-compatible endpoint 上传 neuDrive 导出 zip。
+- WebDAV / S3-compatible / OSS / R2 通过 S3-compatible endpoint 上传 Vola 导出 zip。
 - 外部备份目标支持手动运行、自动计划、运行历史、最近失败、保留策略。
 - ZIP 恢复支持预览、跳过已有文件、覆盖已有文件，并拒绝路径穿越。
 - Postgres dump 仍是完整服务恢复的必要条件。
@@ -76,9 +76,9 @@
 ## 本地开发命令
 
 ```bash
-cp neudrive.env.example neudrive.env
-set -a; source neudrive.env; set +a
-go run ./cmd/neudrive server --listen :8080
+cp vola.env.example vola.env
+set -a; source vola.env; set +a
+go run ./cmd/vola server --listen :8080
 cd web && npm run dev
 ```
 
@@ -92,7 +92,7 @@ cd web && npm run dev
 go test ./...
 cd web && npm run build
 make build
-docker build -t neudrive:rc .
+docker build -t vola:rc .
 ```
 
 如果 Docker build 因 registry、镜像下载或网络问题失败，不应写成构建成功；记录失败摘要即可。
@@ -178,13 +178,13 @@ curl -fsS "$PUBLIC_BASE_URL/api/ops/status" \
 - 部署配置检查：K8s 和 prod 脚本已有 `GIT_MIRROR_HOSTED_ROOT=/data/git-mirrors` 与持久卷；本次把 `docker-compose.yml` 也对齐为 `gitmirrors:/data/git-mirrors`，并在 `docs/deployment-reliability.zh-CN.md` 增加 Compose 持久化说明。
 - `go test ./...`：通过。
 - `cd web && npm run build`：通过。Vite 仍提示 `WorkbenchCodeEditor` 和主入口 chunk 超过 500 KB，这是体积提醒，不是构建失败。
-- `make build`：通过。已刷新 `internal/web/dist`，并生成 `bin/neudrive`、`bin/neu`。
-- 本地服务验证：首次在普通沙箱启动 `./bin/neudrive server --storage sqlite --sqlite-path /private/tmp/neudrive-rc-20260513.db --listen 127.0.0.1:42701 --local-mode ...` 失败，错误为 `listen tcp 127.0.0.1:42701: bind: operation not permitted`；获得权限后同一服务启动成功。
+- `make build`：通过。已刷新 `internal/web/dist`，并生成 `bin/vola`、`bin/neu`。
+- 本地服务验证：首次在普通沙箱启动 `./bin/vola server --storage sqlite --sqlite-path /private/tmp/vola-rc-20260513.db --listen 127.0.0.1:42701 --local-mode ...` 失败，错误为 `listen tcp 127.0.0.1:42701: bind: operation not permitted`；获得权限后同一服务启动成功。
 - `curl -fsS http://127.0.0.1:42701/api/health`：通过，返回 `storage: sqlite`。
-- 首页静态 HTML 验证：`curl -fsS http://127.0.0.1:42701/` 返回 `Personal data hub for AI agents — neuDrive`，description 为 Agent 个人数据 Hub 表达。
+- 首页静态 HTML 验证：`curl -fsS http://127.0.0.1:42701/` 返回 `Personal data hub for AI agents — Vola`，description 为 Agent 个人数据 Hub 表达。
 - 页面渲染验证：内置浏览器检查两次超时，随后用 Playwright 打开 `/`、`/team`、`/sync-backup`、`/skills`，页面标题和关键内容可见，没有 route error；`/sync-backup` 和 `/skills` 控制台 error 数为 0。
 - `/api/ops/status`：不带 token 的 GET 返回 401；使用本地 owner admin token 调用返回 `status: warning`，原因是临时 SQLite 环境没有配置 GitHub Backup 或 WebDAV / S3-compatible 目标。这符合本地临时验证环境预期，不代表生产状态。
-- 未执行 `docker build -t neudrive:rc .`；本次没有验证 Docker 镜像构建。
+- 未执行 `docker build -t vola:rc .`；本次没有验证 Docker 镜像构建。
 - 仍未验证：Postgres dump 与临时库恢复、真实 GitHub 仓库同步、真实 WebDAV / S3-compatible provider 上传/删除兼容性、生产配置下的 `/api/ops/status`、目标 Agent 的 Skill 真实运行效果。
 
 2026-05-12 验证结果：
@@ -192,10 +192,10 @@ curl -fsS "$PUBLIC_BASE_URL/api/ops/status" \
 - 已合入 `origin/main` 的 `2f255a1 Hide browser extension from user-facing surfaces`，并处理 README、Dashboard、PublicPages 的交集改动。
 - `go test ./...`：通过。
 - `cd web && npm run build`：通过。Vite 提示 `WorkbenchCodeEditor` 和主入口 chunk 超过 500 KB，这是体积提醒，不是构建失败。
-- `make build`：通过。已用最后一次前端构建刷新 `internal/web/dist`，并生成 `bin/neudrive`、`bin/neu`。
-- `docker build -t neudrive:rc .`：通过，最终镜像 sha256 为 `d4af768d960d0ad792c2161ad94fdb0b3650a53da625e4d1812bc06746c476a0`。
+- `make build`：通过。已用最后一次前端构建刷新 `internal/web/dist`，并生成 `bin/vola`、`bin/neu`。
+- `docker build -t vola:rc .`：通过，最终镜像 sha256 为 `d4af768d960d0ad792c2161ad94fdb0b3650a53da625e4d1812bc06746c476a0`。
 - 本地服务验证：用 SQLite 临时库启动，`curl -fsS http://127.0.0.1:42690/api/health` 返回 `storage: sqlite`。
-- 首页静态 HTML 验证：`curl -fsS http://127.0.0.1:42690/` 返回 `Personal data hub for AI agents — neuDrive`，description 已更新为 Agent 个人数据 Hub 表达。
+- 首页静态 HTML 验证：`curl -fsS http://127.0.0.1:42690/` 返回 `Personal data hub for AI agents — Vola`，description 已更新为 Agent 个人数据 Hub 表达。
 - 页面冒烟验证：Playwright 打开 `/`、`/team`、`/sync-backup`、`/skills`，页面可渲染，没有 route error，控制台没有 error。
 - `/api/ops/status`：直接不带 token `curl` 返回 401，符合鉴权预期；真实生产配置下的管理员状态未验证。
 - browser extension 对外展示检查：README、主要 docs、`web/src`、`internal/web` 中未发现公开展示文案残留；执行计划文档中的相关词只用于记录本次合入检查背景。

@@ -8,9 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/vault"
+	"github.com/agi-bar/vola/internal/models"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/vault"
 	"github.com/google/uuid"
 )
 
@@ -42,8 +42,8 @@ func TestSyncActiveMirrorAutoCommitCreatesOneCommitPerDirtySync(t *testing.T) {
 		"identity/profile.json",
 		"connections/connections.json",
 		"vault/scopes.json",
-		"_neudrive/projects.json",
-		"_neudrive/metadata.json",
+		"_vola/projects.json",
+		"_vola/metadata.json",
 	} {
 		if _, err := os.Stat(filepath.Join(mirrorDir, filepath.FromSlash(path))); !os.IsNotExist(err) {
 			t.Fatalf("mirror wrote internal sidecar %s", path)

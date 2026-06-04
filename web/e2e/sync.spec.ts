@@ -10,17 +10,21 @@ import { mockPublicConfig, setupUser } from './helpers'
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 
-function runNeuDrive(args: string[]) {
-  const configured = process.env.NEUDRIVE_CLI
+function runVola(args: string[]) {
+  const configured = process.env.VOLA_CLI || process.env.NEUDRIVE_CLI
   if (configured) {
     execFileSync(configured, args, { stdio: 'inherit' })
+    return
+  }
+  if (fs.existsSync('/tmp/vola')) {
+    execFileSync('/tmp/vola', args, { stdio: 'inherit' })
     return
   }
   if (fs.existsSync('/tmp/neudrive')) {
     execFileSync('/tmp/neudrive', args, { stdio: 'inherit' })
     return
   }
-  execFileSync('go', ['run', './cmd/neudrive', ...args], { cwd: ROOT, stdio: 'inherit' })
+  execFileSync('go', ['run', './cmd/vola', ...args], { cwd: ROOT, stdio: 'inherit' })
 }
 
 async function expectAPISuccess(response: any) {
@@ -160,7 +164,7 @@ test.describe('Bundle Sync', () => {
     await mockPublicConfig(page, {
       git_mirror_execution_mode: 'hosted',
       github_app_enabled: true,
-      github_app_slug: 'neudrive',
+      github_app_slug: 'vola',
       local_mode: false,
     })
     await page.route('**/api/git-mirror', async (route) => {
@@ -181,7 +185,7 @@ test.describe('Bundle Sync', () => {
             auto_push_enabled: true,
             auth_mode: 'github_app_user',
             remote_name: 'origin',
-            remote_url: 'https://github.com/octocat/neudrive-backup.git',
+            remote_url: 'https://github.com/octocat/vola-backup.git',
             remote_branch: 'main',
             last_push_at: '2026-05-07T12:00:00Z',
             github_token_configured: false,
@@ -196,7 +200,7 @@ test.describe('Bundle Sync', () => {
     await page.goto('/sync-backup')
     await expect(page.getByRole('heading', { name: 'Backup destination' })).toBeVisible()
     await expect(page.getByText(/最近更新时间|Last update/)).toBeVisible()
-    await expect(page.getByText('octocat/neudrive-backup')).toHaveCount(0)
+    await expect(page.getByText('octocat/vola-backup')).toHaveCount(0)
     await expect(page.getByRole('button', { name: /立即同步|Sync now/ })).toBeVisible()
     await expect(page.getByText(/Execution mode|Sync state|Attempt count|Auto commit|Auto push|GitHub Token|Local Git credentials/)).toHaveCount(0)
   })
@@ -280,7 +284,7 @@ test.describe('Bundle Sync', () => {
     const archivePath = path.join(os.tmpdir(), `pw-sync-${Date.now()}.ndrvz`)
     const syncToken = await createSyncToken(request, user.token, 'both')
 
-    runNeuDrive(['sync', 'export', '--source', sourceDir, '--format', 'archive', '-o', archivePath])
+    runVola(['sync', 'export', '--source', sourceDir, '--format', 'archive', '-o', archivePath])
 
     const archiveBytes = fs.readFileSync(archivePath)
     const manifestFiles = unzipSync(new Uint8Array(archiveBytes))

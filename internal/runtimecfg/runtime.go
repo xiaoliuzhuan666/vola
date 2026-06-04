@@ -23,11 +23,11 @@ const (
 	DefaultLocalHost      = "127.0.0.1"
 	DefaultPortStart      = 42690
 	DefaultPortEnd        = 42719
-	DefaultDatabaseURL    = "postgres://neudrive:neudrive_dev@localhost:5432/neudrive?sslmode=disable"
+	DefaultDatabaseURL    = "postgres://vola:vola_dev@localhost:5432/vola?sslmode=disable"
 	DefaultStorage        = "sqlite"
-	DefaultGitMirrorPath  = "./neudrive-export/git-mirror"
-	DefaultRemoteOfficial = "https://neudrive.ai"
-	ConfigEnv             = "NEUDRIVE_CONFIG"
+	DefaultGitMirrorPath  = "./vola-export/git-mirror"
+	DefaultRemoteOfficial = "https://vola.ai"
+	ConfigEnv             = "VOLA_CONFIG"
 )
 
 type SyncProfile struct {
@@ -96,13 +96,13 @@ func DefaultConfigPath() string {
 	switch runtime.GOOS {
 	case "windows":
 		if appData := strings.TrimSpace(os.Getenv("APPDATA")); appData != "" {
-			return filepath.Join(appData, "NeuDrive", "config.json")
+			return filepath.Join(appData, "Vola", "config.json")
 		}
 	}
 	if xdg := strings.TrimSpace(os.Getenv("XDG_CONFIG_HOME")); xdg != "" {
-		return filepath.Join(expandUser(xdg), "neudrive", "config.json")
+		return filepath.Join(expandUser(xdg), "vola", "config.json")
 	}
-	return filepath.Join(home, ".config", "neudrive", "config.json")
+	return filepath.Join(home, ".config", "vola", "config.json")
 }
 
 func legacyDarwinConfigPath() string {
@@ -151,32 +151,32 @@ func DefaultLogPath() string {
 	home, _ := os.UserHomeDir()
 	switch runtime.GOOS {
 	case "darwin":
-		return filepath.Join(home, "Library", "Logs", "NeuDrive", "daemon.log")
+		return filepath.Join(home, "Library", "Logs", "Vola", "daemon.log")
 	case "windows":
 		if localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); localAppData != "" {
-			return filepath.Join(localAppData, "NeuDrive", "daemon.log")
+			return filepath.Join(localAppData, "Vola", "daemon.log")
 		}
 	}
 	if xdg := strings.TrimSpace(os.Getenv("XDG_STATE_HOME")); xdg != "" {
-		return filepath.Join(expandUser(xdg), "neudrive", "daemon.log")
+		return filepath.Join(expandUser(xdg), "vola", "daemon.log")
 	}
-	return filepath.Join(home, ".local", "state", "neudrive", "daemon.log")
+	return filepath.Join(home, ".local", "state", "vola", "daemon.log")
 }
 
 func DefaultSQLitePath() string {
 	home, _ := os.UserHomeDir()
 	switch runtime.GOOS {
 	case "darwin":
-		return filepath.Join(home, "Library", "Application Support", "NeuDrive", "local.db")
+		return filepath.Join(home, "Library", "Application Support", "Vola", "local.db")
 	case "windows":
 		if localAppData := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); localAppData != "" {
-			return filepath.Join(localAppData, "NeuDrive", "local.db")
+			return filepath.Join(localAppData, "Vola", "local.db")
 		}
 	}
 	if xdg := strings.TrimSpace(os.Getenv("XDG_DATA_HOME")); xdg != "" {
-		return filepath.Join(expandUser(xdg), "neudrive", "local.db")
+		return filepath.Join(expandUser(xdg), "vola", "local.db")
 	}
-	return filepath.Join(home, ".local", "share", "neudrive", "local.db")
+	return filepath.Join(home, ".local", "share", "vola", "local.db")
 }
 
 func LoadConfig(path string) (string, *CLIConfig, error) {
@@ -459,7 +459,7 @@ func EnsureLocalDaemon(ctx context.Context, executable string, extraEnv map[stri
 	cmd.Env = append(cmd.Env,
 		"CORS_ORIGINS="+apiBase,
 		"PORT="+fmt.Sprintf("%d", port),
-		"NEUDRIVE_LOCAL_MODE=1",
+		"VOLA_LOCAL_MODE=1",
 	)
 	if runtime.GOOS != "windows" {
 		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

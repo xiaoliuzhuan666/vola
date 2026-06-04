@@ -1,8 +1,8 @@
-# neuDrive Agent 个人数据 Hub 迭代计划
+# Vola Agent 个人数据 Hub 迭代计划
 
 ## 背景
 
-客户反馈集中在一个问题：如果 neuDrive 只被理解成 Skill 备份工具，GitHub、WebDAV、坚果云或 skillstash 这类方案会显得更直接。neuDrive 更适合承担 Agent 个人数据 Hub 的角色，统一管理 AI 工具可使用的 profile、memory、projects、conversations、skills、vault 和连接权限。
+客户反馈集中在一个问题：如果 Vola 只被理解成 Skill 备份工具，GitHub、WebDAV、坚果云或 skillstash 这类方案会显得更直接。Vola 更适合承担 Agent 个人数据 Hub 的角色，统一管理 AI 工具可使用的 profile、memory、projects、conversations、skills、vault 和连接权限。
 
 这个计划用于记录后续迭代方向。页面调整保持现有视觉风格，不引入新的设计系统，不改已有布局基调。
 
@@ -41,7 +41,7 @@
 目标：
 
 - 把产品表达从“Skill 备份/同步”调整为“Agent 个人数据 Hub”。
-- 明确 neuDrive 管理的不只是 Skill，也包括 profile、memory、projects、conversations、vault、MCP/API 访问和权限。
+- 明确 Vola 管理的不只是 Skill，也包括 profile、memory、projects、conversations、vault、MCP/API 访问和权限。
 - 在首页、README、onboarding、登录后入口页里保持同一套表达。
 
 交付：
@@ -52,7 +52,7 @@
 
 验收：
 
-- 用户不会把 neuDrive 只理解成 Skill 备份工具。
+- 用户不会把 Vola 只理解成 Skill 备份工具。
 - 页面样式不变，只调整文案和信息表达。
 - 前端构建通过，页面能正常打开。
 
@@ -97,13 +97,13 @@
 
 当前进展（2026-05-09）：
 
-- 已增加 `manifest.neudrive.json`，Skill zip 导入后会在每个 Skill 目录生成资产清单。
+- 已增加 `manifest.vola.json`，Skill zip 导入后会在每个 Skill 目录生成资产清单。
 - 资产清单会记录入口文件、脚本、依赖文件、资源、二进制文件、环境变量和支持平台线索。
 - 上传结果页面已展示完整性检查，能看到脚本数量、依赖文件数量、外部引用数量，以及大文件、二进制、secret 风险提示。
 - `SKILL.md` 等文本引用 `~/.claude/tools/...` 或 `~/.claude/plugins/...` 时，会记录为外部引用；浏览器上传 zip 时会提示当前 zip 未包含。
 - 本地 Claude 迁移扫描会读取可访问且小于 256 KB 的外部 tools/plugins 文件，并保存到 Skill 下的 `external/claude-tools/` 或 `external/claude-plugins/`。
-- Agent 本地导入和 Codex / Claude bundle 导入也会写入 `manifest.neudrive.json`。
-- 浏览器上传 zip 后，如果 `SKILL.md` 引用了未包含的 `~/.claude/tools/...` 或 `~/.claude/plugins/...` 文件，页面可继续选择本地文件上传到 Skill 的 `external/` 目录，并刷新 `manifest.neudrive.json`。
+- Agent 本地导入和 Codex / Claude bundle 导入也会写入 `manifest.vola.json`。
+- 浏览器上传 zip 后，如果 `SKILL.md` 引用了未包含的 `~/.claude/tools/...` 或 `~/.claude/plugins/...` 文件，页面可继续选择本地文件上传到 Skill 的 `external/` 目录，并刷新 `manifest.vola.json`。
 
 ## 阶段 4：多 Agent Skill 管理
 
@@ -133,12 +133,12 @@
 - Agent 分配卡片展示支持状态：Claude Code / Codex 是可自动同步；Cursor / Gemini CLI 是可分配、可导出、暂不自动写入。
 - 新增 `docs/agent-skill-targets.zh-CN.md`，记录四类 Agent 的目录规则、导出包规则和安全边界。
 - 新增 `/api/local/skills/sync/preview`：读取 Claude Code / Codex 本地 Skill 目录，展示新增、更新、本地多出、冲突、可清理项；Cursor / Gemini CLI 展示本地目标探测、目录规则和可导出项。
-- 新增 `/api/local/skills/sync/apply`：按已保存分配表写入 Claude Code / Codex 目标目录，并写入 `.neudrive-managed.json` 标记。
-- 新增 `/api/local/skills/sync/cleanup`：只删除带 `.neudrive-managed.json` 且已取消分配的 Skill 目录，不删除用户自己放在本地的普通 Skill。
+- 新增 `/api/local/skills/sync/apply`：按已保存分配表写入 Claude Code / Codex 目标目录，并写入 `.vola-managed.json` 标记。
+- 新增 `/api/local/skills/sync/cleanup`：只删除带 `.vola-managed.json` 且已取消分配的 Skill 目录，不删除用户自己放在本地的普通 Skill。
 - 新增 `/api/local/skills/sync/export`：按 Agent 生成导出包，包含完整 Skill 目录、scripts、依赖、assets、external Claude tools/plugins 和 manifest。
 - Skills 页新增本地同步操作区，提供“预览同步”“应用到本地”“清理未管理 Skill”三个动作。
 - 页面在 Cursor / Gemini CLI 的本地同步预览中展示不能自动写入的原因，并提供下载导出包按钮。
-- Claude Code / Codex 本地应用遇到同名但没有 `.neudrive-managed.json` 的目录时会显示冲突，不会覆盖用户手工目录。
+- Claude Code / Codex 本地应用遇到同名但没有 `.vola-managed.json` 的目录时会显示冲突，不会覆盖用户手工目录。
 
 仍需观察：
 
@@ -169,12 +169,12 @@
 
 - 新增 `/api/skills/convert/preview`，可预览 Claude Code → Codex、Codex → Claude Code 的转换结果。
 - 新增 `/api/skills/convert/apply`，在 Hub 内生成转换后的 Skill 副本，例如 `/skills/release-helper-codex`。
-- 转换会保留 `SKILL.md`、脚本、依赖、资源、外部引用文件，并重新生成 `manifest.neudrive.json`。
+- 转换会保留 `SKILL.md`、脚本、依赖、资源、外部引用文件，并重新生成 `manifest.vola.json`。
 - Claude 外部工具引用如 `~/.claude/tools/helper.py` 会在转换到 Codex 时改写为 Skill 内相对路径 `external/claude-tools/helper.py`。
 - 转换报告拆分为可自动处理、需要处理、暂不自动转换、提示四类；可自动处理项会说明 `SKILL.md`、文件树、脚本、依赖、assets、已纳入外部引用的处理结果。
 - 转换报告会提示环境变量、脚本运行时、依赖安装、MCP 配置、hooks、Codex plugin 元数据等需要人工确认的项目。
 - Skills 页新增 “Skill 转换” 面板，可选择源 Skill、源平台、目标平台、目标路径，支持预览和生成转换副本。
-- 已补测试验证简单 Claude Code Skill 转为 Codex 后，可以分配给 Codex 并写入 Codex 本地 Skill 目录，目录内包含 `SKILL.md`、`manifest.neudrive.json` 和 `.neudrive-managed.json`。
+- 已补测试验证简单 Claude Code Skill 转为 Codex 后，可以分配给 Codex 并写入 Codex 本地 Skill 目录，目录内包含 `SKILL.md`、`manifest.vola.json` 和 `.vola-managed.json`。
 
 仍需观察：
 
@@ -205,8 +205,8 @@
 
 - 新增管理员接口 `/api/ops/status`，汇总主存储、本地/hosted 模式、Git mirror、GitHub 远端仓库、WebDAV / S3-compatible 目标、最近成功备份和最近错误。
 - GitHub Backup 页面在“数据位置与恢复”区域显示生产状态摘要，包括 Git 最近记录、外部目标数量和最近外部上传。
-- `deploy/k8s/app.yaml` 增加 `neudrive-git-mirrors` PVC，并挂载到 `/data/git-mirrors`。
-- `deploy/prod/deploy.sh` 会把 `GIT_MIRROR_HOSTED_ROOT` 写入 `neudrive-config`，未配置时默认 `/data/git-mirrors`。
+- `deploy/k8s/app.yaml` 增加 `vola-git-mirrors` PVC，并挂载到 `/data/git-mirrors`。
+- `deploy/prod/deploy.sh` 会把 `GIT_MIRROR_HOSTED_ROOT` 写入 `vola-config`，未配置时默认 `/data/git-mirrors`。
 - 新增 `docs/deployment-reliability.zh-CN.md`，记录数据分层、Postgres 备份、外部备份、状态接口、告警建议和恢复演练清单。
 
 ## 阶段 7：备份自动化与恢复入口
@@ -221,11 +221,11 @@
 交付：
 
 - 备份目标增加 `auto_backup_enabled`、`auto_backup_interval_hours`、`last_auto_backup_at`。
-- 备份目标增加 `retention_keep_last`、`retention_keep_days`，只按 neuDrive 生成的备份对象执行远端清理，不处理第三方对象。
+- 备份目标增加 `retention_keep_last`、`retention_keep_days`，只按 Vola 生成的备份对象执行远端清理，不处理第三方对象。
 - 新增备份运行历史，记录手动/自动触发、目标、对象名、大小、耗时、成功或失败信息。
 - Scheduler 增加外部备份自动任务，按目标间隔调用现有导出 ZIP 上传能力。
 - GitHub Backup 页面在外部备份目标里增加自动备份开关和间隔设置。
-- 新增 `/api/backup/restore/preview`，支持上传 neuDrive 导出 zip 并返回识别分类、文件数量、字节数和风险提示。
+- 新增 `/api/backup/restore/preview`，支持上传 Vola 导出 zip 并返回识别分类、文件数量、字节数和风险提示。
 - 新增 `/api/backup/restore/apply`，支持预览后按“跳过已有文件”或“覆盖已有文件”写回 Hub 文件树。
 - 页面新增恢复预览和应用区，展示 Skills、Memory、Projects、Vault 等分类结果以及恢复结果。
 
@@ -234,15 +234,15 @@
 - 新建 WebDAV / S3-compatible 目标时可以启用自动备份并设置间隔。
 - 后台任务只处理到期且启用的目标，失败会记录到备份目标状态。
 - 手动和自动备份都会写入运行历史，失败也能在历史和 `/api/ops/status` 中看到。
-- 保留策略不会清理最近成功备份，也不会处理非 `neudrive-export-*.zip` 对象。
-- 用户上传导出 ZIP 后，页面能识别是否为 neuDrive 备份包，并看到包含哪些数据。
+- 保留策略不会清理最近成功备份，也不会处理非 `vola-export-*.zip` 对象。
+- 用户上传导出 ZIP 后，页面能识别是否为 Vola 备份包，并看到包含哪些数据。
 - 当前阶段不会自动覆盖生产数据；应用恢复必须由用户点击触发，并选择跳过或覆盖策略。
 
 当前进展（2026-05-10）：
 
 - 已增加备份目标自动计划字段和 Postgres 迁移 `022_backup_automation.sql`，SQLite 启动时也会补齐字段。
 - 已增加 Scheduler 的 `RunExternalBackups` 任务，默认每小时检查一次到期的外部备份目标。
-- 已增加恢复预览 API 和页面入口，可读取 neuDrive 导出 zip 的 Skills、Memory、Projects、Vault、Roles、Inbox 等分类。
+- 已增加恢复预览 API 和页面入口，可读取 Vola 导出 zip 的 Skills、Memory、Projects、Vault、Roles、Inbox 等分类。
 - 已增加 Postgres 迁移 `023_backup_runs_and_retention.sql`，记录备份运行历史和保留策略字段；SQLite 启动时也会补齐表和字段。
 - 已增加 `/api/backup/runs`，可查询手动和自动备份运行历史。
 - 已增加恢复应用 API 和页面入口，支持跳过已有文件、覆盖已有文件，并拒绝包含路径穿越的 ZIP；页面会展示恢复结果。
@@ -252,14 +252,14 @@
 
 验证结果（2026-05-10）：
 
-- `env GOPROXY=https://goproxy.cn,direct GOCACHE=/private/tmp/neudrive-go-cache /usr/local/bin/go test ./...` 通过。
+- `env GOPROXY=https://goproxy.cn,direct GOCACHE=/private/tmp/vola-go-cache /usr/local/bin/go test ./...` 通过。
 - `npm run build`（`web/`）通过；Vite 仍提示部分 chunk 超过 500 KB，这是体积提示，不是构建失败。
 - `git diff --check` 通过。
 - 未启动 dev server 做浏览器点击验证；本次以 API 测试和前端构建验证为准。
 
 多 Agent Skill 验证结果（2026-05-11）：
 
-- `env GOPROXY=https://goproxy.cn,direct GOCACHE=/private/tmp/neudrive-go-cache /usr/local/bin/go test ./...` 通过。
+- `env GOPROXY=https://goproxy.cn,direct GOCACHE=/private/tmp/vola-go-cache /usr/local/bin/go test ./...` 通过。
 - `npm run build`（`web/`）通过；Vite 仍提示部分 chunk 超过 500 KB，这是体积提示，不是构建失败。
 - `git diff --check` 通过。
 - 已新增/更新测试覆盖 manifest 生成、Claude external tools/plugins 纳入、Claude/Codex 转换报告、分配表保存、Cursor/Gemini CLI 导出包预览、本地应用、未标记目录冲突保护、cleanup 标记规则和转换后 Codex 本地同步。

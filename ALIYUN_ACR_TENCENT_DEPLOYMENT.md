@@ -1,10 +1,10 @@
-# neuDrive Codeup + ACR + Tencent pull-only deployment
+# Vola Codeup + ACR + Tencent pull-only deployment
 
 Last updated: 2026-05-19
 
 ## Goal
 
-Move neuDrive image builds away from the Tencent Cloud host that also runs family-growth.
+Move Vola image builds away from the Tencent Cloud host that also runs family-growth.
 
 Target flow:
 
@@ -17,16 +17,16 @@ Codeup repository
 
 ## Repository changes
 
-- `deploy/aliyun/flow-build-acr.sh`: builds and pushes the neuDrive image to ACR.
+- `deploy/aliyun/flow-build-acr.sh`: builds and pushes the Vola image to ACR.
 - `deploy/aliyun/README.md`: Flow variables and build step notes.
-- `deploy/tencent/docker-compose.yml`: uses `NEUDRIVE_IMAGE`; no server-side Docker build.
+- `deploy/tencent/docker-compose.yml`: uses `VOLA_IMAGE`; no server-side Docker build.
 - `deploy/tencent/pull-and-deploy.sh`: pull-only deployment script for Tencent Cloud.
 - `deploy/tencent/README.md`: server layout, env file, deploy and rollback notes.
-- `neudrive.env.example`: adds `NEUDRIVE_IMAGE` and `NEUDRIVE_HOST_PORT`.
+- `vola.env.example`: adds `VOLA_IMAGE` and `VOLA_HOST_PORT`.
 
 ## Upstream sync check
 
-Checked upstream `agi-bar/neuDrive.git` on 2026-05-19.
+Checked upstream `agi-bar/Vola.git` on 2026-05-19.
 
 Local branch:
 
@@ -59,20 +59,20 @@ cd web && npm run build
 git diff --check -- internal/api/errors.go internal/api/git_mirror.go internal/localgitsync/github_app.go internal/api/sqlite_shared_test.go internal/localgitsync/github_app_test.go web/src/pages/GitMirrorPage.tsx
 ```
 
-Note: the Docker image build does not depend on the local `internal/web/dist` directory. The root `Dockerfile` runs `npm ci`, builds `web/dist`, copies that output into `internal/web/dist`, and then builds the Linux `neudrive` binary. Run `make build` separately only when publishing local binaries or committing refreshed embedded web assets.
+Note: the Docker image build does not depend on the local `internal/web/dist` directory. The root `Dockerfile` runs `npm ci`, builds `web/dist`, copies that output into `internal/web/dist`, and then builds the Linux `vola` binary. Run `make build` separately only when publishing local binaries or committing refreshed embedded web assets.
 
 ## Codeup repository
 
 Status: repository created and pushed.
 
 ```text
-Codeup web URL: https://codeup.aliyun.com/69ead0c5fa2a62bc8595a145/sxhx/neudrive
-Git HTTPS URL: https://codeup.aliyun.com/69ead0c5fa2a62bc8595a145/sxhx/neudrive.git
+Codeup web URL: https://codeup.aliyun.com/69ead0c5fa2a62bc8595a145/sxhx/vola
+Git HTTPS URL: https://codeup.aliyun.com/69ead0c5fa2a62bc8595a145/sxhx/vola.git
 Local remote: codeup
 Visibility: private
 Default branch: main
 Pushed commit: 805ff50d1c4d4c16c313aec9c3c34c29f59f9913
-Commit message: Prepare neuDrive deployment pipeline
+Commit message: Prepare Vola deployment pipeline
 ```
 
 Verified:
@@ -89,7 +89,7 @@ Status: ACR Personal Edition instance, namespace, and private image repository a
 ```text
 ACR_REGISTRY=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com
 ACR_NAMESPACE=sxhx
-ACR_REPOSITORY=neudrive
+ACR_REPOSITORY=vola
 ACR_REPOSITORY_TYPE=private
 ACR_REPOSITORY_SOURCE=local repository
 IMAGE_TAG=<commit-sha-or-release-tag>
@@ -116,35 +116,35 @@ Created ACR repository:
 
 ```text
 Public registry host: crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com
-Public image path: crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com/sxhx/neudrive:<tag>
-VPC image path: crpi-ie94et80ojbqnl7z-vpc.cn-shanghai.personal.cr.aliyuncs.com/sxhx/neudrive:<tag>
+Public image path: crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com/sxhx/vola:<tag>
+VPC image path: crpi-ie94et80ojbqnl7z-vpc.cn-shanghai.personal.cr.aliyuncs.com/sxhx/vola:<tag>
 ```
 
 Use the public image path from Tencent Cloud. The VPC image path is for Alibaba Cloud VPC access.
 
 ## Tencent server values
 
-Status: server directory and pull-only compose files are in place; no neuDrive container has been started.
+Status: server directory and pull-only compose files are in place; no Vola container has been started.
 
 ```text
-APP_DIR=/opt/neudrive
-COMPOSE_PROJECT=neudrive
-NEUDRIVE_HOST_PORT=18080
+APP_DIR=/opt/vola
+COMPOSE_PROJECT=vola
+VOLA_HOST_PORT=18080
 HEALTHCHECK_URL=http://127.0.0.1:18080/api/health
 ```
 
 The server env file should live at:
 
 ```text
-/opt/neudrive/config/neudrive.env
+/opt/vola/config/vola.env
 ```
 
 It must include:
 
 ```text
-NEUDRIVE_IMAGE=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com/sxhx/neudrive:<image-tag>
-POSTGRES_DB=neudrive
-POSTGRES_USER=neudrive
+VOLA_IMAGE=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com/sxhx/vola:<image-tag>
+POSTGRES_DB=vola
+POSTGRES_USER=vola
 POSTGRES_PASSWORD=<server secret>
 JWT_SECRET=<server secret>
 VAULT_MASTER_KEY=<server secret>
@@ -155,7 +155,7 @@ CORS_ORIGINS=http://127.0.0.1:18080
 Current remote layout:
 
 ```text
-/opt/neudrive/
+/opt/vola/
   config/                 # created, mode 700
   deploy/tencent/
     docker-compose.yml
@@ -165,7 +165,7 @@ Current remote layout:
 The production env file has not been written:
 
 ```text
-/opt/neudrive/config/neudrive.env
+/opt/vola/config/vola.env
 ```
 
 After the first ACR image is available, log in to ACR on the Tencent host with a pull credential:
@@ -174,10 +174,10 @@ After the first ACR image is available, log in to ACR on the Tencent host with a
 docker login crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com
 ```
 
-Then create `/opt/neudrive/config/neudrive.env` and deploy:
+Then create `/opt/vola/config/vola.env` and deploy:
 
 ```bash
-cd /opt/neudrive
+cd /opt/vola
 bash deploy/tencent/pull-and-deploy.sh
 ```
 
@@ -188,7 +188,7 @@ Local checks completed:
 ```text
 bash -n deploy/aliyun/flow-build-acr.sh
 bash -n deploy/tencent/pull-and-deploy.sh
-NEUDRIVE_IMAGE=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com/sxhx/neudrive:test docker compose -f deploy/tencent/docker-compose.yml --env-file neudrive.env.example config
+VOLA_IMAGE=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com/sxhx/vola:test docker compose -f deploy/tencent/docker-compose.yml --env-file vola.env.example config
 git diff --check
 ```
 
@@ -196,8 +196,8 @@ Remote checks:
 
 ```text
 ssh family-growth-tencent hostname
-ssh family-growth-tencent 'ls -ld /opt/neudrive /opt/neudrive/config /opt/neudrive/deploy/tencent'
-ssh family-growth-tencent 'docker compose -p neudrive --env-file /tmp/neudrive.compose-check.env -f /opt/neudrive/deploy/tencent/docker-compose.yml config'
+ssh family-growth-tencent 'ls -ld /opt/vola /opt/vola/config /opt/vola/deploy/tencent'
+ssh family-growth-tencent 'docker compose -p vola --env-file /tmp/vola.compose-check.env -f /opt/vola/deploy/tencent/docker-compose.yml config'
 ```
 
 Latest remote result:
@@ -205,7 +205,7 @@ Latest remote result:
 ```text
 host: VM-0-13-opencloudos
 compose config: ok with temporary non-production placeholder env
-running neuDrive containers: none
+running Vola containers: none
 ```
 
 Not validated yet:
@@ -213,13 +213,13 @@ Not validated yet:
 - ACR image push from Flow.
 - Tencent host `docker pull` from ACR.
 - Tencent host `docker login` with the ACR Registry password.
-- `/opt/neudrive/config/neudrive.env` with real production secrets.
-- neuDrive runtime health check on `http://127.0.0.1:18080/api/health`.
+- `/opt/vola/config/vola.env` with real production secrets.
+- Vola runtime health check on `http://127.0.0.1:18080/api/health`.
 
 ## Guardrails
 
 - Do not run `docker build` or `docker compose up --build` on the shared Tencent host.
 - Do not use the root `docker-compose.yml` on the shared Tencent host.
 - Do not reuse family-growth ports: `3005`, `8100`.
-- Do not attach neuDrive to `growth.sunningfun.cn` or shared `/api/` routes.
+- Do not attach Vola to `growth.sunningfun.cn` or shared `/api/` routes.
 - Keep ACR credentials, database passwords, JWT secrets, COS secrets, and vault keys outside Git.

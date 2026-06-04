@@ -1,6 +1,6 @@
 English | [简体中文](reference.zh-CN.md)
 
-# neuDrive Reference
+# Vola Reference
 
 This document holds the longer reference material that was removed from the README so the top-level entry stays short.
 
@@ -12,10 +12,10 @@ This document holds the longer reference material that was removed from the READ
 JavaScript example:
 
 ```ts
-import { NeuDrive } from '@neudrive/sdk'
+import { Vola } from '@vola/sdk'
 
-const hub = new NeuDrive({
-  baseURL: 'https://www.neudrive.ai',
+const hub = new Vola({
+  baseURL: 'https://www.vola.ai',
   token: 'ndt_xxxxx',
 })
 
@@ -26,9 +26,9 @@ await hub.sendMessage('worker:research@hub', 'Research Q2 policy', '...')
 Python example:
 
 ```python
-from neudrive import NeuDrive
+from vola import Vola
 
-with NeuDrive("https://www.neudrive.ai", token="ndt_xxxxx") as hub:
+with Vola("https://www.vola.ai", token="ndt_xxxxx") as hub:
     profile = hub.get_profile("preferences")
     hub.send_message("worker:research@hub", "Research Q2 policy", "...")
 ```
@@ -37,7 +37,7 @@ with NeuDrive("https://www.neudrive.ai", token="ndt_xxxxx") as hub:
 
 ### 1. Unified Identity
 
-One ID travels across agent platforms. neuDrive supports email/password sign-in, GitHub OAuth, and OAuth 2.0 provider flows for third-party apps.
+One ID travels across agent platforms. Vola supports email/password sign-in, GitHub OAuth, and OAuth 2.0 provider flows for third-party apps.
 
 ### 2. Context Roaming
 
@@ -68,9 +68,9 @@ Devices can be registered as skills so the hub can translate agent intent into c
 ### Docker Quick Start
 
 ```bash
-cp neudrive.env.example neudrive.env
-# Edit neudrive.env with your GitHub OAuth and secret settings
-docker compose --env-file neudrive.env up
+cp vola.env.example vola.env
+# Edit vola.env with your GitHub OAuth and secret settings
+docker compose --env-file vola.env up
 ```
 
 The service starts on `http://localhost:8080`.
@@ -78,11 +78,11 @@ The service starts on `http://localhost:8080`.
 ### Local Development
 
 ```bash
-cp neudrive.env.example neudrive.env
-set -a; source neudrive.env; set +a
+cp vola.env.example vola.env
+set -a; source vola.env; set +a
 
 # Backend
-go run ./cmd/neudrive server --listen :8080
+go run ./cmd/vola server --listen :8080
 
 # Frontend (in another terminal)
 cd web && npm install && npm run dev

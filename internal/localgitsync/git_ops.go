@@ -8,11 +8,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
-const remoteConflictPushBlockedMessage = "Remote has commits that are not in this neuDrive mirror. Review the remote changes, then confirm overwrite to push with force-with-lease."
+const remoteConflictPushBlockedMessage = "Remote has commits that are not in this Vola mirror. Review the remote changes, then confirm overwrite to push with force-with-lease."
 
 func (s *Service) finalizeMirrorRepo(ctx context.Context, userID uuid.UUID, mirror *models.LocalGitMirror) (repoSyncResult, error) {
 	if mirror == nil {
@@ -195,7 +195,7 @@ func gitCommitAll(ctx context.Context, rootPath string, now time.Time) (string, 
 		"GIT_COMMITTER_NAME":  commitAuthorName,
 		"GIT_COMMITTER_EMAIL": commitAuthorEmail,
 	}
-	if _, err := runGitCommand(ctx, rootPath, env, "commit", "-m", fmt.Sprintf("neudrive mirror sync: %s", now.Format(time.RFC3339))); err != nil {
+	if _, err := runGitCommand(ctx, rootPath, env, "commit", "-m", fmt.Sprintf("vola mirror sync: %s", now.Format(time.RFC3339))); err != nil {
 		return "", err
 	}
 	return runGitCommand(ctx, rootPath, nil, "rev-parse", "HEAD")
@@ -228,8 +228,8 @@ func gitPush(ctx context.Context, rootPath, remoteName, remoteBranch string) err
 func gitPushWithToken(ctx context.Context, rootPath, remoteName, remoteBranch, token string) error {
 	args := append(gitCredentialHelperArgs(), "push", remoteName, "HEAD:"+remoteBranch)
 	_, err := runGitCommand(ctx, rootPath, map[string]string{
-		"NEUDRIVE_GITHUB_TOKEN": token,
-		"GIT_TERMINAL_PROMPT":   "0",
+		"VOLA_GITHUB_TOKEN":   token,
+		"GIT_TERMINAL_PROMPT": "0",
 	}, args...)
 	return err
 }
@@ -244,8 +244,8 @@ func gitPushForceWithLease(ctx context.Context, rootPath, remoteName, remoteBran
 func gitPushForceWithLeaseWithToken(ctx context.Context, rootPath, remoteName, remoteBranch, expectedRemoteHead, token string) error {
 	args := append(gitCredentialHelperArgs(), "push", "--force-with-lease=refs/heads/"+remoteBranch+":"+expectedRemoteHead, remoteName, "HEAD:"+remoteBranch)
 	_, err := runGitCommand(ctx, rootPath, map[string]string{
-		"NEUDRIVE_GITHUB_TOKEN": token,
-		"GIT_TERMINAL_PROMPT":   "0",
+		"VOLA_GITHUB_TOKEN":   token,
+		"GIT_TERMINAL_PROMPT": "0",
 	}, args...)
 	return err
 }
@@ -284,8 +284,8 @@ func gitFetchBranch(ctx context.Context, rootPath, remoteName, remoteBranch stri
 func gitFetchBranchWithToken(ctx context.Context, rootPath, remoteName, remoteBranch, token string) error {
 	args := append(gitCredentialHelperArgs(), "fetch", "--prune", remoteName, remoteBranch)
 	_, err := runGitCommand(ctx, rootPath, map[string]string{
-		"NEUDRIVE_GITHUB_TOKEN": token,
-		"GIT_TERMINAL_PROMPT":   "0",
+		"VOLA_GITHUB_TOKEN":   token,
+		"GIT_TERMINAL_PROMPT": "0",
 	}, args...)
 	return err
 }
@@ -317,7 +317,7 @@ func remoteTrackingRef(remoteName, remoteBranch string) string {
 func gitCredentialHelperArgs() []string {
 	return []string{
 		"-c", "credential.helper=",
-		"-c", "credential.helper=!f() { echo username=x-access-token; echo password=$NEUDRIVE_GITHUB_TOKEN; }; f",
+		"-c", "credential.helper=!f() { echo username=x-access-token; echo password=$VOLA_GITHUB_TOKEN; }; f",
 	}
 }
 

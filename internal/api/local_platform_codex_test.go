@@ -8,10 +8,10 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/platforms"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/platforms"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
 )
 
 func TestSQLiteSharedServerLocalPlatformPreviewCodex(t *testing.T) {
@@ -84,7 +84,7 @@ func TestSQLiteSharedServerLocalPlatformImportCodex(t *testing.T) {
 
 	for _, target := range []string{
 		hubpath.ProfilePath("codex-agent"),
-		"/projects/neudrive/context.md",
+		"/projects/vola/context.md",
 		"/skills/sample/SKILL.md",
 		"/skills/codex-bundled-builtin/SKILL.md",
 		codexConversationPath(sqlitestorage.ClaudeConversation{Name: "Plan the import migration.", SessionID: "session-001", StartedAt: "2026-04-16T10:00:00Z"}),
@@ -117,21 +117,21 @@ func createCodexDashboardFixture(t *testing.T) string {
 		`model_reasoning_effort = "high"`,
 		`approval_policy = "never"`,
 		``,
-		`[projects."/Users/demo/workspace/neudrive"]`,
+		`[projects."/Users/demo/workspace/vola"]`,
 		`trust_level = "trusted"`,
 		``,
-		`[mcp_servers.neudrive-local]`,
+		`[mcp_servers.vola-local]`,
 		`command = "/usr/local/bin/neu"`,
-		`args = ["mcp", "stdio", "--token-env", "NEUDRIVE_TOKEN"]`,
+		`args = ["mcp", "stdio", "--token-env", "VOLA_TOKEN"]`,
 		``,
-		`[mcp_servers.neudrive-local.env]`,
-		`NEUDRIVE_TOKEN = "ndt_test_secret"`,
+		`[mcp_servers.vola-local.env]`,
+		`VOLA_TOKEN = "ndt_test_secret"`,
 		`JWT_SECRET = "jwt_test_secret"`,
 	}, "\n")+"\n")
 	writeClaudeDashboardFixtureFile(t, filepath.Join(home, ".codex", "auth.json"), "{\n  \"auth_mode\": \"chatgpt\",\n  \"tokens\": {\n    \"access_token\": \"secret-access\",\n    \"refresh_token\": \"secret-refresh\"\n  },\n  \"last_refresh\": \"2026-04-16T10:00:00Z\"\n}\n")
 	writeClaudeDashboardFixtureFile(t, filepath.Join(home, ".codex", "session_index.jsonl"), `{"id":"session-001","thread_name":"Explore project overview","updated_at":"2026-04-16T10:05:00Z"}`+"\n")
 	writeClaudeDashboardFixtureFile(t, filepath.Join(home, ".codex", "sessions", "2026", "04", "16", "session-001.jsonl"), strings.Join([]string{
-		`{"timestamp":"2026-04-16T10:00:00Z","type":"session_meta","payload":{"id":"session-001","timestamp":"2026-04-16T10:00:00Z","cwd":"/Users/demo/workspace/neudrive","originator":"Codex Desktop","cli_version":"0.118.0","source":"desktop","model_provider":"openai"}}`,
+		`{"timestamp":"2026-04-16T10:00:00Z","type":"session_meta","payload":{"id":"session-001","timestamp":"2026-04-16T10:00:00Z","cwd":"/Users/demo/workspace/vola","originator":"Codex Desktop","cli_version":"0.118.0","source":"desktop","model_provider":"openai"}}`,
 		`{"timestamp":"2026-04-16T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Plan the import migration."}]}}`,
 		`{"timestamp":"2026-04-16T10:00:02Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Reviewing migration structure"}]}}`,
 		`{"timestamp":"2026-04-16T10:00:03Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"rg --files\"}","call_id":"call-1"}}`,

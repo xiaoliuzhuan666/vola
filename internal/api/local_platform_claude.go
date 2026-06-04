@@ -10,10 +10,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/skillsarchive"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
 	"github.com/google/uuid"
 )
 
@@ -510,7 +510,7 @@ func buildNormalizedConversationFromClaudeConversation(convo sqlitestorage.Claud
 		})
 	}
 	return sqlitestorage.NormalizedConversation{
-		Version:              "neudrive.conversation/v1",
+		Version:              "vola.conversation/v1",
 		SourcePlatform:       platform,
 		SourceConversationID: strings.TrimSpace(convo.SessionID),
 		Title:                title,

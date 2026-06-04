@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { api, type DashboardStats, type FileNode } from '../api'
 import { useI18n, type AppLocale } from '../i18n'
 import { dataFileEditorRoute, formatDateTime, sourceLabel } from '../pages/data/DataShared'
+import CustomSelect from './CustomSelect'
 
 interface DashboardFileBrowserProps {
   stats: DashboardStats
   initialSnapshotEntries?: FileNode[]
+  localMode?: boolean
   onDataChange?: () => void
 }
 
@@ -118,7 +120,7 @@ async function writeClipboardText(text: string) {
   document.body.removeChild(textarea)
 }
 
-export default function DashboardFileBrowser({ stats, initialSnapshotEntries = [], onDataChange }: DashboardFileBrowserProps) {
+export default function DashboardFileBrowser({ stats, initialSnapshotEntries = [], localMode = false, onDataChange }: DashboardFileBrowserProps) {
   const { locale, tx } = useI18n()
   const location = useLocation()
   const navigate = useNavigate()
@@ -288,7 +290,7 @@ export default function DashboardFileBrowser({ stats, initialSnapshotEntries = [
   }
 
   const copyPrompt = async (entry: FileNode) => {
-    const prompt = `Use this neuDrive item as context: ${entry.path}`
+    const prompt = `Use this Vola item as context: ${entry.path}`
     await writeClipboardText(prompt)
     setCopiedPath(entry.path)
     window.setTimeout(() => setCopiedPath(''), 1500)
@@ -341,9 +343,15 @@ export default function DashboardFileBrowser({ stats, initialSnapshotEntries = [
             </div>
           </div>
           <div className="dashboard-file-actions-bar">
-            <button className="btn btn-outline" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
-              {uploading ? tx('上传中...', 'Uploading...') : tx('上传文件', 'Upload file')}
-            </button>
+            {localMode ? (
+              <Link className="btn btn-primary" to="/imports/local-apps">
+                {tx('扫描本地 App Data', 'Scan local app data')}
+              </Link>
+            ) : (
+              <button className="btn btn-outline" disabled={uploading} onClick={() => fileInputRef.current?.click()}>
+                {uploading ? tx('上传中...', 'Uploading...') : tx('上传文件', 'Upload file')}
+              </button>
+            )}
             <button className="btn btn-outline" onClick={() => { void api.exportZip().catch((err: any) => setError(err?.message || tx('导出失败', 'Export failed'))) }}>
               {tx('导出全部', 'Export all')}
             </button>
@@ -362,16 +370,24 @@ export default function DashboardFileBrowser({ stats, initialSnapshotEntries = [
             value={query}
             onChange={(event) => writeParams({ q: event.target.value }, true)}
           />
-          <select value={typeFilter} onChange={(event) => writeParams({ type: event.target.value }, true)}>
-            {typeOptions.map((option) => (
-              <option key={option} value={option}>{option === 'all' ? tx('类型：全部', 'Type: All') : typeLabel(option, locale)}</option>
-            ))}
-          </select>
-          <select value={sourceFilter} onChange={(event) => writeParams({ source: event.target.value }, true)}>
-            {sourceOptions.map((option) => (
-              <option key={option} value={option}>{option === 'all' ? tx('来源：全部', 'Source: All') : sourceLabel(option, locale)}</option>
-            ))}
-          </select>
+          <CustomSelect
+            value={typeFilter}
+            onChange={(val) => writeParams({ type: val }, true)}
+            options={typeOptions.map((option) => ({
+              value: option,
+              label: option === 'all' ? tx('类型：全部', 'Type: All') : typeLabel(option, locale)
+            }))}
+            ariaLabel={tx('类型筛选', 'Type filter')}
+          />
+          <CustomSelect
+            value={sourceFilter}
+            onChange={(val) => writeParams({ source: val }, true)}
+            options={sourceOptions.map((option) => ({
+              value: option,
+              label: option === 'all' ? tx('来源：全部', 'Source: All') : sourceLabel(option, locale)
+            }))}
+            ariaLabel={tx('来源筛选', 'Source filter')}
+          />
         </div>
 
         {error && <div className="alert alert-warn">{error}</div>}

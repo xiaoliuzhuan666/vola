@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 )
 
 const (
@@ -21,14 +21,14 @@ const (
 	SyncStateError           = "error"
 	DefaultRemoteName        = "origin"
 	DefaultRemoteBranch      = "main"
-	DefaultBackupRepoName    = "neudrive-backup"
+	DefaultBackupRepoName    = "vola-backup"
 
 	gitMirrorGitHubTokenScope           = "auth.github.git_mirror"
 	gitMirrorGitHubAppRefreshTokenScope = "auth.github.git_mirror.app_user_refresh_token"
 	defaultGitHubAPIBaseURL             = "https://api.github.com"
 	defaultGitHubBaseURL                = "https://github.com"
-	commitAuthorName                    = "NeuDrive Mirror"
-	commitAuthorEmail                   = "neudrive-mirror@local"
+	commitAuthorName                    = "Vola Mirror"
+	commitAuthorEmail                   = "vola-mirror@local"
 )
 
 type Option func(*Service)

@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
-	"github.com/agi-bar/neudrive/internal/vault"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
+	"github.com/agi-bar/vola/internal/vault"
 	"github.com/google/uuid"
 )
 
@@ -89,7 +89,7 @@ func prepareSkillsUploadAllowedDomain(baseURL string) string {
 	if err == nil && parsed.Host != "" {
 		return parsed.Hostname()
 	}
-	return "the neuDrive host"
+	return "the Vola host"
 }
 
 func prepareSkillsUploadConnectivityHelp(baseURL string) string {
@@ -112,7 +112,7 @@ func isHiddenMCPPath(rawPath string) bool {
 	return false
 }
 
-// MCPServer handles MCP protocol for neuDrive
+// MCPServer handles MCP protocol for Vola
 type MCPServer struct {
 	UserID     uuid.UUID
 	TrustLevel int
@@ -133,6 +133,7 @@ type MCPServer struct {
 	Token        *services.TokenService
 	Team         *services.TeamService
 	LocalGitSync *localgitsync.Service
+	Gateway      *MCPGateway
 }
 
 type dataScope struct {
@@ -238,21 +239,35 @@ func (s *MCPServer) HandleJSONRPC(req JSONRPCRequest) JSONRPCResponse {
 				"resources": map[string]interface{}{"listChanged": false},
 			},
 			"serverInfo": map[string]interface{}{
-				"name":         "neudrive",
+				"name":         "vola",
 				"version":      "1.0.0",
-				"instructions": fmt.Sprintf("Start by reading neudrive://skills/neudrive/SKILL.md or calling read_skill with name=neudrive. For import, export, restore, migration, connector work, or any skills migration, read neudrive://skills/portability/<platform>/SKILL.md first or call read_skill with name=portability/<platform> before choosing import_skill, import_skills_archive, or prepare_skills_upload. If no platform-specific manual exists, read neudrive://skills/portability/general/SKILL.md or call read_skill with name=portability/general. Use import_skill only for one complete text/code skill directory; do not use it for all-skills requests, workspace zips, multi-skill batches, or SKILL.md-only shortcuts. For Claude Web skills zips, stat the zip first: if it is over %s (%d bytes) or size is unknown, do not read or base64 it into MCP args, do not cat base64(zip), and do not emit long archive strings into the conversation; call prepare_skills_upload instead. After prepare_skills_upload, POST the returned connectivity_probe_url first. If it returns 200, use curl_example to upload directly from the sandbox. If the POST fails in Claude Web, ask the user to add the neuDrive domain to Settings -> Capabilities -> Code execution and file creation -> Additional allowed domains, then retry. If the user has already added it and the probe still fails in the current Claude Web conversation, explain that Claude Web may require a new conversation before the setting takes effect; ask the user to start a new conversation and retry, or fall back to browser_upload_url or manual curl. Use import_skills_archive only for archives already known to be small enough for one tool call. Reserve write_file for single-file patching. Use list_skills to discover available manuals, and use read_file on /skills/... if your client prefers virtual file paths. Current public agent surface focuses on profile, memory, projects, skills, tree, and sync.", claudeWebInlineArchiveMaxZipLabel, claudeWebInlineArchiveMaxZipBytes),
+				"instructions": fmt.Sprintf("Start by reading vola://skills/vola/SKILL.md or calling read_skill with name=vola. For import, export, restore, migration, connector work, or any skills migration, read vola://skills/portability/<platform>/SKILL.md first or call read_skill with name=portability/<platform> before choosing import_skill, import_skills_archive, or prepare_skills_upload. If no platform-specific manual exists, read vola://skills/portability/general/SKILL.md or call read_skill with name=portability/general. Use import_skill only for one complete text/code skill directory; do not use it for all-skills requests, workspace zips, multi-skill batches, or SKILL.md-only shortcuts. For Claude Web skills zips, stat the zip first: if it is over %s (%d bytes) or size is unknown, do not read or base64 it into MCP args, do not cat base64(zip), and do not emit long archive strings into the conversation; call prepare_skills_upload instead. After prepare_skills_upload, POST the returned connectivity_probe_url first. If it returns 200, use curl_example to upload directly from the sandbox. If the POST fails in Claude Web, ask the user to add the Vola domain to Settings -> Capabilities -> Code execution and file creation -> Additional allowed domains, then retry. If the user has already added it and the probe still fails in the current Claude Web conversation, explain that Claude Web may require a new conversation before the setting takes effect; ask the user to start a new conversation and retry, or fall back to browser_upload_url or manual curl. Use import_skills_archive only for archives already known to be small enough for one tool call. Reserve write_file for single-file patching. Use list_skills to discover available manuals, and use read_file on /skills/... if your client prefers virtual file paths. Current public agent surface focuses on profile, memory, projects, skills, tree, and sync.", claudeWebInlineArchiveMaxZipLabel, claudeWebInlineArchiveMaxZipBytes),
 			},
 		}
 	case "notifications/initialized":
 		// No response needed for notifications
 		resp.Result = map[string]interface{}{}
 	case "tools/list":
-		resp.Result = map[string]interface{}{"tools": s.getTools()}
+		tools := s.getTools()
+		if s.Gateway != nil {
+			tools = s.Gateway.MergeTools(tools)
+		}
+		resp.Result = map[string]interface{}{"tools": tools}
 	case "tools/call":
 		var params ToolCallParams
 		if err := json.Unmarshal(req.Params, &params); err != nil {
 			resp.Error = &RPCError{Code: -32602, Message: "invalid params"}
 			return resp
+		}
+		if s.Gateway != nil {
+			if serverID, origName, ok := s.Gateway.IsExternalTool(params.Name); ok {
+				result, isErr := s.Gateway.CallExternalTool(serverID, origName, params.Arguments)
+				resp.Result = map[string]interface{}{
+					"content": []ContentBlock{{Type: "text", Text: result}},
+					"isError": isErr,
+				}
+				return resp
+			}
 		}
 		result, isErr := s.callTool(params)
 		resp.Result = map[string]interface{}{
@@ -443,7 +458,7 @@ func (s *MCPServer) getTools() []MCPTool {
 		},
 		{
 			Name:        "prepare_skills_upload",
-			Description: fmt.Sprintf("为 skills zip 上传准备 token、直传探测 URL、浏览器链接和 curl 命令。Claude Web 的 all skills、workspace zip、或任何大于 %s / 大小未知的 skills archive，都应优先考虑此工具而不是 import_skill。调用后先 POST connectivity_probe_url；若返回 200，就直接用 curl_example 从 sandbox 上传。若 Claude Web 探测失败，提示用户在 Settings -> Capabilities -> Code execution and file creation -> Additional allowed domains 添加 neuDrive 域名，然后重试。若用户已经添加但当前这个 Claude Web 对话里仍未生效，应提示用户新开一个对话再试，或者回退到 browser_upload_url / 手动 curl", claudeWebInlineArchiveMaxZipLabel),
+			Description: fmt.Sprintf("为 skills zip 上传准备 token、直传探测 URL、浏览器链接和 curl 命令。Claude Web 的 all skills、workspace zip、或任何大于 %s / 大小未知的 skills archive，都应优先考虑此工具而不是 import_skill。调用后先 POST connectivity_probe_url；若返回 200，就直接用 curl_example 从 sandbox 上传。若 Claude Web 探测失败，提示用户在 Settings -> Capabilities -> Code execution and file creation -> Additional allowed domains 添加 Vola 域名，然后重试。若用户已经添加但当前这个 Claude Web 对话里仍未生效，应提示用户新开一个对话再试，或者回退到 browser_upload_url / 手动 curl", claudeWebInlineArchiveMaxZipLabel),
 			InputSchema: jsonSchema(map[string]interface{}{
 				"purpose":     prop("string", "用途说明"),
 				"platform":    prop("string", "来源平台 (默认 claude-web)"),
@@ -1059,7 +1074,7 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 			"warning":                      prepareSkillsUploadWarning(),
 			"connectivity_failure_help":    prepareSkillsUploadConnectivityHelp(s.BaseURL),
 			"connectivity_probe_curl":      fmt.Sprintf(`curl -f -sS -o /dev/null -w "%%{http_code}" -X POST "%s"`, probeURL),
-			"curl_example":                 fmt.Sprintf(`curl -f -X POST -H "Authorization: Bearer %s" -F "platform=%s" -F "file=@/mnt/user-data/outputs/neudrive-skills.zip" "%s"`, resp.Token, platform, uploadURL),
+			"curl_example":                 fmt.Sprintf(`curl -f -X POST -H "Authorization: Bearer %s" -F "platform=%s" -F "file=@/mnt/user-data/outputs/vola-skills.zip" "%s"`, resp.Token, platform, uploadURL),
 		}, "", "  ")
 		return string(payload), false
 
@@ -1102,7 +1117,7 @@ func (s *MCPServer) getResources() []MCPResource {
 	for _, e := range entries {
 		if !e.IsDirectory {
 			resources = append(resources, MCPResource{
-				URI:      fmt.Sprintf("neudrive://%s", strings.TrimPrefix(e.Path, "/")),
+				URI:      fmt.Sprintf("vola://%s", strings.TrimPrefix(e.Path, "/")),
 				Name:     e.Path,
 				MimeType: e.ContentType,
 			})
@@ -1116,47 +1131,47 @@ func (s *MCPServer) getResources() []MCPResource {
 func wellKnownResources() []MCPResource {
 	return []MCPResource{
 		{
-			URI:         "neudrive://skills/neudrive/SKILL.md",
-			Name:        "/skills/neudrive/SKILL.md",
-			Description: "neuDrive umbrella skill entrypoint",
+			URI:         "vola://skills/vola/SKILL.md",
+			Name:        "/skills/vola/SKILL.md",
+			Description: "Vola umbrella skill entrypoint",
 			MimeType:    "text/markdown",
 		},
 		{
-			URI:         "neudrive://skills/portability/general/SKILL.md",
+			URI:         "vola://skills/portability/general/SKILL.md",
 			Name:        "/skills/portability/general/SKILL.md",
 			Description: "General portability manual",
 			MimeType:    "text/markdown",
 		},
 		{
-			URI:         "neudrive://skills/portability/claude/SKILL.md",
+			URI:         "vola://skills/portability/claude/SKILL.md",
 			Name:        "/skills/portability/claude/SKILL.md",
 			Description: "Claude portability manual",
 			MimeType:    "text/markdown",
 		},
 		{
-			URI:         "neudrive://skills/portability/chatgpt/SKILL.md",
+			URI:         "vola://skills/portability/chatgpt/SKILL.md",
 			Name:        "/skills/portability/chatgpt/SKILL.md",
 			Description: "ChatGPT portability manual",
 			MimeType:    "text/markdown",
 		},
 		{
-			URI:         "neudrive://skills/portability/codex/SKILL.md",
+			URI:         "vola://skills/portability/codex/SKILL.md",
 			Name:        "/skills/portability/codex/SKILL.md",
 			Description: "Codex portability manual",
 			MimeType:    "text/markdown",
 		},
 		{
-			URI:      "neudrive://identity/profile.json",
+			URI:      "vola://identity/profile.json",
 			Name:     "用户身份信息",
 			MimeType: "application/json",
 		},
 		{
-			URI:      "neudrive://memory/SKILL.md",
+			URI:      "vola://memory/SKILL.md",
 			Name:     "记忆系统说明",
 			MimeType: "text/markdown",
 		},
 		{
-			URI:      "neudrive://vault/SKILL.md",
+			URI:      "vola://vault/SKILL.md",
 			Name:     "保险柜说明",
 			MimeType: "text/markdown",
 		},
@@ -1167,7 +1182,7 @@ func (s *MCPServer) readResource(uri string) (string, error) {
 	if s.FileTree == nil {
 		return "", fmt.Errorf("file tree service not configured")
 	}
-	path := strings.TrimPrefix(uri, "neudrive://")
+	path := strings.TrimPrefix(uri, "vola://")
 	if !strings.HasPrefix(path, "/") {
 		path = "/" + path
 	}

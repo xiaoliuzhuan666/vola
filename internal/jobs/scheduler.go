@@ -6,9 +6,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/backups"
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/backups"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/services"
 )
 
 // JobConfig controls whether a job is enabled and how often it runs.
@@ -19,13 +19,13 @@ type JobConfig struct {
 
 // SchedulerConfig holds the configuration for all background jobs.
 type SchedulerConfig struct {
-	CleanExpiredScratch    JobConfig
-	CleanExpiredTokens     JobConfig
-	CleanExpiredSync       JobConfig
-	ArchiveExpiredMessages JobConfig
-	GenerateDailyScratch   JobConfig
-	RunQueuedGitMirrors    JobConfig
-	RunExternalBackups     JobConfig
+	CleanExpiredScratch        JobConfig
+	CleanExpiredTokens         JobConfig
+	CleanExpiredSync           JobConfig
+	ArchiveExpiredMessages     JobConfig
+	GenerateDailySkillLearning JobConfig
+	RunQueuedGitMirrors        JobConfig
+	RunExternalBackups         JobConfig
 }
 
 // DefaultSchedulerConfig returns the default configuration for all jobs.
@@ -47,7 +47,7 @@ func DefaultSchedulerConfig() SchedulerConfig {
 			Enabled:  true,
 			Interval: 1 * time.Hour,
 		},
-		GenerateDailyScratch: JobConfig{
+		GenerateDailySkillLearning: JobConfig{
 			Enabled:  true,
 			Interval: 24 * time.Hour,
 		},
@@ -64,45 +64,51 @@ func DefaultSchedulerConfig() SchedulerConfig {
 
 // Scheduler manages periodic background jobs.
 type Scheduler struct {
-	memory    *services.MemoryService
-	token     *services.TokenService
-	inbox     *services.InboxService
-	sync      *services.SyncService
-	gitMirror *localgitsync.Service
-	backup    *backups.Service
-	logger    *slog.Logger
-	config    SchedulerConfig
-	stop      chan struct{}
-	wg        sync.WaitGroup
+	memory        *services.MemoryService
+	token         *services.TokenService
+	user          *services.UserService
+	inbox         *services.InboxService
+	sync          *services.SyncService
+	skillLearning *services.SkillLearningService
+	gitMirror     *localgitsync.Service
+	backup        *backups.Service
+	logger        *slog.Logger
+	config        SchedulerConfig
+	stop          chan struct{}
+	wg            sync.WaitGroup
 }
 
 // NewScheduler creates a new Scheduler with default configuration.
-func NewScheduler(memory *services.MemoryService, token *services.TokenService, inbox *services.InboxService, syncSvc *services.SyncService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, logger *slog.Logger) *Scheduler {
+func NewScheduler(memory *services.MemoryService, token *services.TokenService, userSvc *services.UserService, inbox *services.InboxService, syncSvc *services.SyncService, skillLearningSvc *services.SkillLearningService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
-		memory:    memory,
-		token:     token,
-		inbox:     inbox,
-		sync:      syncSvc,
-		gitMirror: gitMirrorSvc,
-		backup:    backupSvc,
-		logger:    logger,
-		config:    DefaultSchedulerConfig(),
-		stop:      make(chan struct{}),
+		memory:        memory,
+		token:         token,
+		user:          userSvc,
+		inbox:         inbox,
+		sync:          syncSvc,
+		skillLearning: skillLearningSvc,
+		gitMirror:     gitMirrorSvc,
+		backup:        backupSvc,
+		logger:        logger,
+		config:        DefaultSchedulerConfig(),
+		stop:          make(chan struct{}),
 	}
 }
 
 // NewSchedulerWithConfig creates a new Scheduler with the given configuration.
-func NewSchedulerWithConfig(memory *services.MemoryService, token *services.TokenService, inbox *services.InboxService, syncSvc *services.SyncService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, logger *slog.Logger, config SchedulerConfig) *Scheduler {
+func NewSchedulerWithConfig(memory *services.MemoryService, token *services.TokenService, userSvc *services.UserService, inbox *services.InboxService, syncSvc *services.SyncService, skillLearningSvc *services.SkillLearningService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, logger *slog.Logger, config SchedulerConfig) *Scheduler {
 	return &Scheduler{
-		memory:    memory,
-		token:     token,
-		inbox:     inbox,
-		sync:      syncSvc,
-		gitMirror: gitMirrorSvc,
-		backup:    backupSvc,
-		logger:    logger,
-		config:    config,
-		stop:      make(chan struct{}),
+		memory:        memory,
+		token:         token,
+		user:          userSvc,
+		inbox:         inbox,
+		sync:          syncSvc,
+		skillLearning: skillLearningSvc,
+		gitMirror:     gitMirrorSvc,
+		backup:        backupSvc,
+		logger:        logger,
+		config:        config,
+		stop:          make(chan struct{}),
 	}
 }
 
@@ -122,8 +128,8 @@ func (s *Scheduler) Start(ctx context.Context) {
 	if s.config.ArchiveExpiredMessages.Enabled && s.inbox != nil {
 		s.startJob(ctx, "ArchiveExpiredMessages", s.config.ArchiveExpiredMessages.Interval, s.archiveExpiredMessages)
 	}
-	if s.config.GenerateDailyScratch.Enabled && s.memory != nil {
-		s.startJob(ctx, "GenerateDailyScratch", s.config.GenerateDailyScratch.Interval, s.generateDailyScratch)
+	if s.config.GenerateDailySkillLearning.Enabled && s.skillLearning != nil {
+		s.startJob(ctx, "GenerateDailySkillLearning", s.config.GenerateDailySkillLearning.Interval, s.generateDailySkillLearning)
 	}
 	if s.config.RunQueuedGitMirrors.Enabled && s.gitMirror != nil {
 		s.startJob(ctx, "RunQueuedGitMirrors", s.config.RunQueuedGitMirrors.Interval, s.runQueuedGitMirrors)
@@ -248,19 +254,31 @@ func (s *Scheduler) archiveExpiredMessages(ctx context.Context) {
 	s.logger.Info("job completed", "job", name, "affected", count, "duration", duration.String())
 }
 
-func (s *Scheduler) generateDailyScratch(ctx context.Context) {
-	name := "GenerateDailyScratch"
+func (s *Scheduler) generateDailySkillLearning(ctx context.Context) {
+	name := "GenerateDailySkillLearning"
 	start := time.Now()
 	s.logger.Info("job started", "job", name)
 
-	count, err := s.memory.GenerateDailyScratchPlaceholders(ctx)
-	duration := time.Since(start)
-
-	if err != nil {
-		s.logger.Error("job failed", "job", name, "error", err, "duration", duration.String())
+	if s.skillLearning == nil {
+		s.logger.Info("job skipped", "job", name, "reason", "skill learning service not configured")
 		return
 	}
-
+	if s.user == nil {
+		s.logger.Info("job skipped", "job", name, "reason", "user service not configured")
+		return
+	}
+	accounts, err := s.user.ListAccounts(ctx, 0)
+	if err != nil {
+		s.logger.Error("job failed", "job", name, "error", err, "duration", time.Since(start).String())
+		return
+	}
+	var count int64
+	for _, account := range accounts {
+		if _, _, err := s.skillLearning.WriteDailyNote(ctx, account.ID, 4); err == nil {
+			count++
+		}
+	}
+	duration := time.Since(start)
 	s.logger.Info("job completed", "job", name, "affected", count, "duration", duration.String())
 }
 

@@ -23,7 +23,7 @@ export async function mockPublicConfig(page: Page, overrides: Record<string, any
   })
 }
 
-const devSlugCandidates = (process.env.NEUDRIVE_TEST_DEV_SLUGS || 'demo,de,admin')
+const devSlugCandidates = (process.env.VOLA_TEST_DEV_SLUGS || 'demo,de,admin')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean)

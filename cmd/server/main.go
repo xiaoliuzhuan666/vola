@@ -7,7 +7,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/agi-bar/neudrive/internal/app/serverapp"
+	"github.com/agi-bar/vola/internal/app/serverapp"
 )
 
 func main() {

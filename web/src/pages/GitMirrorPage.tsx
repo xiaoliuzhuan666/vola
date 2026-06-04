@@ -16,6 +16,7 @@ import {
 } from '../api'
 import { useI18n } from '../i18n'
 import { formatDateTime, localizeGitHubAccessMessage } from './data/DataShared'
+import CustomSelect from '../components/CustomSelect'
 
 type AuthMode = UpdateGitMirrorRequest['auth_mode']
 type AuthHelp = {
@@ -158,6 +159,7 @@ export default function GitMirrorPage() {
   const [opsStatus, setOpsStatus] = useState<OpsStatus | null>(null)
   const [syncRetryUntil, setSyncRetryUntil] = useState(0)
   const [nowTick, setNowTick] = useState(Date.now())
+  const [isDragging, setIsDragging] = useState(false)
 
   const loadPage = async () => {
     setBusy(true)
@@ -233,8 +235,8 @@ export default function GitMirrorPage() {
     ? {
         title: tx('本机 Git 凭证', 'Local Git credentials'),
         intro: tx(
-          '仅本机模式适用。neuDrive 会复用这台机器已有的 Git SSH key 或 credential helper，适合你已经在本机配置好 GitHub 推送权限的情况。',
-          'Available in local mode only. neuDrive reuses this machine’s Git SSH key or credential helper, which is best when GitHub push access is already configured locally.',
+          '仅本机模式适用。Vola 会复用这台机器已有的 Git SSH key 或 credential helper，适合你已经在本机配置好 GitHub 推送权限的情况。',
+          'Available in local mode only. Vola reuses this machine’s Git SSH key or credential helper, which is best when GitHub push access is already configured locally.',
         ),
       }
     : authMode === 'github_token'
@@ -245,27 +247,27 @@ export default function GitMirrorPage() {
             'Use this when you want to create the backup repository yourself and keep the token scoped to that single repository.',
           ),
           steps: [
-            tx('先在 GitHub 新建一个私有仓库，例如 neudrive-backup。', 'Create a private GitHub repository first, for example neudrive-backup.'),
+            tx('先在 GitHub 新建一个私有仓库，例如 vola-backup。', 'Create a private GitHub repository first, for example vola-backup.'),
             tx('进入 GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens，创建新 token。', 'Go to GitHub Settings → Developer settings → Personal access tokens → Fine-grained tokens, then generate a new token.'),
             tx('Repository access 只选择这个备份仓库。', 'For Repository access, select only this backup repository.'),
             tx('Repository permissions 里给 Contents 读写权限；Metadata 保持默认只读。', 'For Repository permissions, set Contents to Read and write; keep Metadata at the default read-only access.'),
             tx('回到这里填写仓库 URL 和 token，先测试 token，通过后保存。', 'Come back here, enter the repository URL and token, test the token, then save after it passes.'),
           ],
           footer: tx(
-            'Token 只显示一次，neuDrive 会加密保存，不会在页面回显原值。',
-            'GitHub only shows the token once. neuDrive stores it encrypted and will not show the raw value again.',
+            'Token 只显示一次，Vola 会加密保存，不会在页面回显原值。',
+            'GitHub only shows the token once. Vola stores it encrypted and will not show the raw value again.',
           ),
         }
       : {
           title: tx('GitHub App 授权', 'GitHub App authorization'),
           intro: tx(
-            '推荐的一键方式。连接 GitHub 后，neuDrive 会自动创建或复用你的私有 neudrive-backup 仓库，不需要你手动保存 token。',
-            'Recommended for the easiest setup. After you connect GitHub, neuDrive creates or reuses your private neudrive-backup repository without asking you to manage a token.',
+            '推荐的一键方式。连接 GitHub 后，Vola 会自动创建或复用你的私有 vola-backup 仓库，不需要你手动保存 token。',
+            'Recommended for the easiest setup. After you connect GitHub, Vola creates or reuses your private vola-backup repository without asking you to manage a token.',
           ),
           steps: [
-            tx('点击连接 GitHub，在 GitHub 授权页批准 neuDrive App。', 'Click Connect GitHub and approve the neuDrive App on GitHub.'),
-            tx('回到 neuDrive 后点击创建私有备份仓库。', 'Back in neuDrive, click Create private backup repo.'),
-            tx('之后点击立即同步，后台会把 neuDrive 数据推送到这个仓库。', 'Then click Sync now; the worker pushes your neuDrive data to that repository.'),
+            tx('点击连接 GitHub，在 GitHub 授权页批准 Vola App。', 'Click Connect GitHub and approve the Vola App on GitHub.'),
+            tx('回到 Vola 后点击创建私有备份仓库。', 'Back in Vola, click Create private backup repo.'),
+            tx('之后点击立即同步，后台会把 Vola 数据推送到这个仓库。', 'Then click Sync now; the worker pushes your Vola data to that repository.'),
           ],
           footer: tx(
             '如果 GitHub 提示批准新权限，批准后再回到这里重试。',
@@ -287,8 +289,8 @@ export default function GitMirrorPage() {
   const syncAvailable = destinationConfigured && selectedAuthCanSync
   const tokenModeNeedsTokenBeforeSave = authMode === 'github_token' && !mirror?.github_token_configured && !tokenInput.trim()
   const remotePlaceholder = authMode === 'local_credentials'
-    ? 'git@github.com:owner/neudrive-backup.git'
-    : 'https://github.com/owner/neudrive-backup.git'
+    ? 'git@github.com:owner/vola-backup.git'
+    : 'https://github.com/owner/vola-backup.git'
   const storageLabel = publicConfig?.storage === 'postgres'
     ? tx('Postgres 数据库', 'Postgres database')
     : publicConfig?.storage === 'sqlite'
@@ -763,7 +765,7 @@ export default function GitMirrorPage() {
         <h3 className="card-title">{tx('数据位置与恢复', 'Data location and recovery')}</h3>
       </div>
       <p className="data-record-secondary">
-        {tx('neuDrive 会先把 Hub 数据写入主存储，再按配置写入 Git mirror，并推送到远端仓库作为离开当前机器或服务器的备份。', 'neuDrive writes Hub data to primary storage first, then mirrors it into Git and pushes to a remote repository as the off-machine or off-server backup.')}
+        {tx('Vola 会先把 Hub 数据写入主存储，再按配置写入 Git mirror，并推送到远端仓库作为离开当前机器或服务器的备份。', 'Vola writes Hub data to primary storage first, then mirrors it into Git and pushes to a remote repository as the off-machine or off-server backup.')}
       </p>
       <div className="data-sync-status-grid">
         <div className="data-sync-status-card">
@@ -820,7 +822,7 @@ export default function GitMirrorPage() {
         </div>
       )}
       <p className="data-record-secondary">
-        {tx('GitHub 保存版本历史；WebDAV、S3-compatible、OSS、R2 会上传 neuDrive 导出 zip，适合做离开服务器的备份包。', 'GitHub keeps version history; WebDAV, S3-compatible, OSS, and R2 upload a neuDrive export zip as an off-server backup archive.')}
+        {tx('GitHub 保存版本历史；WebDAV、S3-compatible、OSS、R2 会上传 Vola 导出 zip，适合做离开服务器的备份包。', 'GitHub keeps version history; WebDAV, S3-compatible, OSS, and R2 upload a Vola export zip as an off-server backup archive.')}
       </p>
     </div>
   )
@@ -845,10 +847,10 @@ export default function GitMirrorPage() {
 
   const renderRemoteConflict = () => mirror?.remote_conflict && (
     <div className="alert alert-warn" style={{ marginTop: 16 }}>
-      {tx('远端仓库有 neuDrive 之外的新提交。普通同步已停止，确认后可以用 neuDrive 覆盖远端。', 'The remote repository has commits outside neuDrive. Normal sync is blocked; confirm overwrite to replace the remote with neuDrive.')}
+      {tx('远端仓库有 Vola 之外的新提交。普通同步已停止，确认后可以用 Vola 覆盖远端。', 'The remote repository has commits outside Vola. Normal sync is blocked; confirm overwrite to replace the remote with Vola.')}
       <div className="data-sync-actions data-sync-actions-compact" style={{ marginTop: 12 }}>
         <button className="btn btn-primary" type="button" disabled={working || retrySeconds > 0} onClick={() => void handleSync(true)}>
-          {tx('用 neuDrive 覆盖远端', 'Overwrite remote with neuDrive')}
+          {tx('用 Vola 覆盖远端', 'Overwrite remote with Vola')}
         </button>
       </div>
     </div>
@@ -858,7 +860,7 @@ export default function GitMirrorPage() {
     <div className="data-sync-token-box" style={{ marginTop: 16 }}>
       <div className="data-record-title">{tx('GitHub App 授权', 'GitHub App authorization')}</div>
       <div className="data-sync-field-note">
-        {tx('授权后 neuDrive 会创建或复用你的私有 neudrive-backup 仓库。', 'After authorization, neuDrive creates or reuses your private neudrive-backup repository.')}
+        {tx('授权后 Vola 会创建或复用你的私有 vola-backup 仓库。', 'After authorization, Vola creates or reuses your private vola-backup repository.')}
       </div>
       {!githubAppConfigured && (
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
@@ -922,12 +924,10 @@ export default function GitMirrorPage() {
         <div className="form-group git-mirror-auth-mode-field">
           <label htmlFor="git-mirror-auth-mode">{tx('认证方式', 'Auth mode')}</label>
           <div className="git-mirror-auth-control-row">
-            <select
-              id="git-mirror-auth-mode"
-              className="git-mirror-auth-select"
+            <CustomSelect
               value={authMode}
-              onChange={(event) => {
-                const next = event.target.value as AuthMode
+              onChange={(val) => {
+                const next = val as AuthMode
                 setAuthMode(next)
                 setError('')
                 setMessage('')
@@ -940,13 +940,13 @@ export default function GitMirrorPage() {
                 setUrlEditing(next !== 'github_app_user' && !remoteURL.trim())
                 setTokenEditing(next === 'github_token' && !mirror?.github_token_configured)
               }}
-            >
-              {isLocalExecution && (
-                <option value="local_credentials">{tx('本机 Git 凭证', 'Local Git credentials')}</option>
-              )}
-              <option value="github_token">{tx('GitHub Token', 'GitHub token')}</option>
-              <option value="github_app_user">{tx('GitHub App 授权', 'GitHub App authorization')}</option>
-            </select>
+              options={[
+                ...(isLocalExecution ? [{ value: 'local_credentials', label: tx('本机 Git 凭证', 'Local Git credentials') }] : []),
+                { value: 'github_token', label: tx('GitHub Token', 'GitHub token') },
+                { value: 'github_app_user', label: tx('GitHub App 授权', 'GitHub App authorization') },
+              ]}
+              ariaLabel={tx('认证方式', 'Auth mode')}
+            />
             <div className="git-mirror-auth-help">
               <button
                 className="git-mirror-help-button"
@@ -1108,7 +1108,7 @@ export default function GitMirrorPage() {
         <h3 className="card-title">{tx('外部备份目标', 'External backup targets')}</h3>
       </div>
       <p className="data-record-secondary">
-        {tx('这里会把 neuDrive 导出 zip 上传到 WebDAV 或 S3-compatible 存储。GitHub 适合版本历史；这些目标适合做离开服务器的备份包。', 'This uploads a neuDrive export zip to WebDAV or S3-compatible storage. GitHub is for version history; these targets are for off-server backup archives.')}
+        {tx('这里会把 Vola 导出 zip 上传到 WebDAV 或 S3-compatible 存储。GitHub 适合版本历史；这些目标适合做离开服务器的备份包。', 'This uploads a Vola export zip to WebDAV or S3-compatible storage. GitHub is for version history; these targets are for off-server backup archives.')}
       </p>
       {latestFailedBackupRun && (
         <div className="alert alert-warn" style={{ marginTop: 12 }}>
@@ -1173,14 +1173,15 @@ export default function GitMirrorPage() {
         <div className="data-sync-settings-grid" style={{ marginTop: 12 }}>
           <div className="form-group">
             <label htmlFor="backup-target-kind">{tx('目标类型', 'Target type')}</label>
-            <select
-              id="backup-target-kind"
+            <CustomSelect
               value={backupDraft.kind}
-              onChange={(event) => handleBackupKindChange(event.target.value as BackupTargetKind)}
-            >
-              <option value="webdav">WebDAV</option>
-              <option value="s3">S3-compatible / OSS / R2</option>
-            </select>
+              onChange={(val) => handleBackupKindChange(val as BackupTargetKind)}
+              options={[
+                { value: 'webdav', label: 'WebDAV' },
+                { value: 's3', label: 'S3-compatible / OSS / R2' },
+              ]}
+              ariaLabel={tx('目标类型', 'Target type')}
+            />
           </div>
           <div className="form-group">
             <label htmlFor="backup-target-name">{tx('显示名称', 'Display name')}</label>
@@ -1197,7 +1198,7 @@ export default function GitMirrorPage() {
             <div className="data-sync-toggle-copy">
               <div className="data-sync-toggle-title">{tx('自动备份', 'Auto backup')}</div>
               <div className="data-sync-field-note">
-                {tx('后台会按间隔上传新的 neuDrive 导出 zip。', 'The scheduler uploads a new neuDrive export zip at the chosen interval.')}
+                {tx('后台会按间隔上传新的 Vola 导出 zip。', 'The scheduler uploads a new Vola export zip at the chosen interval.')}
               </div>
             </div>
             <input
@@ -1232,7 +1233,7 @@ export default function GitMirrorPage() {
               onChange={(event) => updateBackupDraft({ retention_keep_last: Number(event.target.value || 0) })}
             />
             <div className="data-sync-field-note">
-              {tx('0 表示不按份数自动清理。只会处理 neuDrive 自己生成的备份包。', '0 disables count-based cleanup. Only neuDrive-generated archives are eligible.')}
+              {tx('0 表示不按份数自动清理。只会处理 Vola 自己生成的备份包。', '0 disables count-based cleanup. Only Vola-generated archives are eligible.')}
             </div>
           </div>
           <div className="form-group">
@@ -1259,7 +1260,7 @@ export default function GitMirrorPage() {
                 id="backup-webdav-url"
                 value={backupDraft.webdav_url || ''}
                 onChange={(event) => updateBackupDraft({ webdav_url: event.target.value })}
-                placeholder="https://dav.example.com/backup/neudrive"
+                placeholder="https://dav.example.com/backup/vola"
               />
             </div>
             <div className="form-group">
@@ -1300,7 +1301,7 @@ export default function GitMirrorPage() {
                 id="backup-s3-bucket"
                 value={backupDraft.s3_bucket || ''}
                 onChange={(event) => updateBackupDraft({ s3_bucket: event.target.value })}
-                placeholder="neudrive-backup"
+                placeholder="vola-backup"
               />
             </div>
             <div className="form-group">
@@ -1318,7 +1319,7 @@ export default function GitMirrorPage() {
                 id="backup-s3-prefix"
                 value={backupDraft.s3_prefix || ''}
                 onChange={(event) => updateBackupDraft({ s3_prefix: event.target.value })}
-                placeholder="neudrive"
+                placeholder="vola"
               />
             </div>
             <div className="form-group">
@@ -1395,19 +1396,51 @@ export default function GitMirrorPage() {
       <div className="data-sync-token-box" style={{ marginTop: 16 }}>
         <div className="data-record-title">{tx('恢复预览', 'Restore preview')}</div>
         <div className="data-sync-settings-grid" style={{ marginTop: 12 }}>
-          <div className="form-group">
-            <label htmlFor="backup-restore-file">{tx('备份 zip', 'Backup zip')}</label>
-            <input
-              id="backup-restore-file"
-              type="file"
-              accept=".zip,application/zip,application/x-zip-compressed"
-              onChange={(event) => {
-                setRestoreFile(event.target.files?.[0] || null)
-                setRestorePreview(null)
-                setRestoreApplyResult(null)
-                setRestoreError('')
+          <div className="form-group data-sync-settings-span-wide">
+            <label>{tx('备份 zip', 'Backup zip')}</label>
+            <div
+              className={`skills-upload-dropzone${isDragging ? ' is-dragging' : ''}`}
+              onClick={() => document.getElementById('backup-restore-file')?.click()}
+              onDragOver={(event) => {
+                event.preventDefault()
+                setIsDragging(true)
               }}
-            />
+              onDragLeave={(event) => {
+                event.preventDefault()
+                setIsDragging(false)
+              }}
+              onDrop={(event) => {
+                event.preventDefault()
+                setIsDragging(false)
+                const file = event.dataTransfer.files?.[0] || null
+                if (file) {
+                  setRestoreFile(file)
+                  setRestorePreview(null)
+                  setRestoreApplyResult(null)
+                  setRestoreError('')
+                }
+              }}
+              style={{ padding: '24px', textAlign: 'center', cursor: 'pointer', marginTop: '6px' }}
+            >
+              <input
+                id="backup-restore-file"
+                type="file"
+                accept=".zip,application/zip,application/x-zip-compressed"
+                style={{ display: 'none' }}
+                onChange={(event) => {
+                  setRestoreFile(event.target.files?.[0] || null)
+                  setRestorePreview(null)
+                  setRestoreApplyResult(null)
+                  setRestoreError('')
+                }}
+              />
+              <div style={{ fontWeight: 600, fontSize: '14px', marginBottom: '4px', color: 'var(--color-text)' }}>
+                {restoreFile ? restoreFile.name : tx('拖拽 zip 备份包到这里，或点击选择文件', 'Drag backup zip here, or click to choose')}
+              </div>
+              <div style={{ fontSize: '12px', color: 'var(--color-text-secondary)' }}>
+                {restoreFile ? tx('已选择。请在下方点击“预览备份包”读取内容。', 'Selected. Click "Preview backup" below to read.') : tx('支持 Vola 导出的 zip 归档文件', 'Supports zip archives exported by Vola')}
+              </div>
+            </div>
           </div>
           <div className="form-group">
             <label>{tx('识别结果', 'Preview result')}</label>
@@ -1417,10 +1450,15 @@ export default function GitMirrorPage() {
           </div>
           <div className="form-group">
             <label htmlFor="backup-restore-mode">{tx('应用策略', 'Apply mode')}</label>
-            <select id="backup-restore-mode" value={restoreMode} onChange={(event) => setRestoreMode(event.target.value as 'skip' | 'overwrite')}>
-              <option value="skip">{tx('跳过已有文件', 'Skip existing files')}</option>
-              <option value="overwrite">{tx('覆盖已有文件', 'Overwrite existing files')}</option>
-            </select>
+            <CustomSelect
+              value={restoreMode}
+              onChange={(val) => setRestoreMode(val as 'skip' | 'overwrite')}
+              options={[
+                { value: 'skip', label: tx('跳过已有文件', 'Skip existing files') },
+                { value: 'overwrite', label: tx('覆盖已有文件', 'Overwrite existing files') },
+              ]}
+              ariaLabel={tx('应用策略', 'Apply mode')}
+            />
           </div>
         </div>
         {restoreError && <div className="alert alert-warn" style={{ marginTop: 12 }}>{restoreError}</div>}
@@ -1429,7 +1467,7 @@ export default function GitMirrorPage() {
             <div className={restorePreview.recognized ? 'alert alert-ok' : 'alert alert-warn'} style={{ marginTop: 12 }}>
               {restorePreview.recognized
                 ? tx(`已识别 ${restorePreview.total_files} 个文件，解压后约 ${formatBytes(restorePreview.total_bytes, locale)}。`, `Recognized ${restorePreview.total_files} files, about ${formatBytes(restorePreview.total_bytes, locale)} after unzip.`)
-                : tx('这个文件未被识别为 neuDrive 备份包。', 'This file was not recognized as a neuDrive backup archive.')}
+                : tx('这个文件未被识别为 Vola 备份包。', 'This file was not recognized as a Vola backup archive.')}
             </div>
             {restorePreview.categories.length > 0 && (
               <div className="data-sync-status-grid" style={{ marginTop: 12 }}>
@@ -1483,7 +1521,7 @@ export default function GitMirrorPage() {
           <h3 className="card-title">{tx('GitHub 备份目标', 'GitHub backup destination')}</h3>
         </div>
         <p className="data-record-secondary">
-          {tx('选择一个 GitHub 仓库作为 neuDrive 的备份位置，授权后可以一键同步并保留可恢复的版本记录。', 'Choose a GitHub repository as your neuDrive backup destination, then sync on demand with recoverable version history.')}
+          {tx('选择一个 GitHub 仓库作为 Vola 的备份位置，授权后可以一键同步并保留可恢复的版本记录。', 'Choose a GitHub repository as your Vola backup destination, then sync on demand with recoverable version history.')}
         </p>
 
         {renderStatus()}

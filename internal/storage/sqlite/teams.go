@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/google/uuid"
 )
 

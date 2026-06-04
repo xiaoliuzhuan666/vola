@@ -1,12 +1,12 @@
 # Tencent Cloud pull-only deployment
 
-This deployment mode expects the neuDrive image to be built in Codeup/Flow and pushed to Alibaba Cloud ACR. The Tencent Cloud host only pulls and restarts containers.
+This deployment mode expects the Vola image to be built in Codeup/Flow and pushed to Alibaba Cloud ACR. The Tencent Cloud host only pulls and restarts containers.
 
 ## Server layout
 
 ```text
-/opt/neudrive/
-  config/neudrive.env
+/opt/vola/
+  config/vola.env
   deploy/tencent/docker-compose.yml
   deploy/tencent/pull-and-deploy.sh
 ```
@@ -14,7 +14,7 @@ This deployment mode expects the neuDrive image to be built in Codeup/Flow and p
 The app is bound to loopback only:
 
 ```text
-127.0.0.1:18080 -> neudrive-server:8080
+127.0.0.1:18080 -> vola-server:8080
 ```
 
 Do not reuse the existing family-growth ports or paths:
@@ -28,13 +28,13 @@ growth.sunningfun.cn
 
 ## Required env
 
-Set these in `/opt/neudrive/config/neudrive.env`:
+Set these in `/opt/vola/config/vola.env`:
 
 ```text
-NEUDRIVE_IMAGE=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com/sxhx/neudrive:<image-tag>
-NEUDRIVE_HOST_PORT=18080
-POSTGRES_DB=neudrive
-POSTGRES_USER=neudrive
+VOLA_IMAGE=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com/sxhx/vola:<image-tag>
+VOLA_HOST_PORT=18080
+POSTGRES_DB=vola
+POSTGRES_USER=vola
 POSTGRES_PASSWORD=<server secret>
 JWT_SECRET=<server secret>
 VAULT_MASTER_KEY=<server secret>
@@ -51,7 +51,7 @@ docker login crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com
 ## Deploy
 
 ```bash
-cd /opt/neudrive
+cd /opt/vola
 bash deploy/tencent/pull-and-deploy.sh
 ```
 
@@ -65,7 +65,7 @@ curl http://127.0.0.1:18080/api/health
 
 ## Rollback
 
-Change `NEUDRIVE_IMAGE` in `config/neudrive.env` to a previous tag, then run:
+Change `VOLA_IMAGE` in `config/vola.env` to a previous tag, then run:
 
 ```bash
 bash deploy/tencent/pull-and-deploy.sh

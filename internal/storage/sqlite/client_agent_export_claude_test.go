@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/skillsarchive"
 	"github.com/google/uuid"
 )
 
@@ -110,7 +110,7 @@ func TestImportAgentExportClaudeConversationWritesCanonicalArchive(t *testing.T)
 		t.Fatalf("Read conversation sidecar: %v", err)
 	}
 	for _, want := range []string{
-		`"version": "neudrive.conversation/v1"`,
+		`"version": "vola.conversation/v1"`,
 		`"import_strategy": "claude-code-local-scan"`,
 		`"source_conversation_id": "sess-123"`,
 		`"transcript_path": "` + transcriptPath + `"`,
@@ -263,7 +263,7 @@ func TestImportAgentExportSkillBundlesWritePortableManifest(t *testing.T) {
 		t.Fatalf("Bundles = %d, want 1", result.Bundles)
 	}
 
-	claudeManifest := readSkillManifestForTest(t, store, user.ID, "/skills/release-helper/manifest.neudrive.json")
+	claudeManifest := readSkillManifestForTest(t, store, user.ID, "/skills/release-helper/manifest.vola.json")
 	if claudeManifest.SourcePlatform != "claude-code" {
 		t.Fatalf("claude manifest platform = %q", claudeManifest.SourcePlatform)
 	}
@@ -310,7 +310,7 @@ func TestImportAgentExportSkillBundlesWritePortableManifest(t *testing.T) {
 	if codexResult.Bundles != 1 {
 		t.Fatalf("Codex Bundles = %d, want 1", codexResult.Bundles)
 	}
-	codexManifest := readSkillManifestForTest(t, store, user.ID, "/skills/codex-audit/manifest.neudrive.json")
+	codexManifest := readSkillManifestForTest(t, store, user.ID, "/skills/codex-audit/manifest.vola.json")
 	if codexManifest.SourcePlatform != "codex" {
 		t.Fatalf("codex manifest platform = %q", codexManifest.SourcePlatform)
 	}

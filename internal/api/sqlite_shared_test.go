@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -18,15 +19,15 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/auth"
-	"github.com/agi-bar/neudrive/internal/backups"
-	"github.com/agi-bar/neudrive/internal/config"
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/services"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/vault"
+	"github.com/agi-bar/vola/internal/auth"
+	"github.com/agi-bar/vola/internal/backups"
+	"github.com/agi-bar/vola/internal/config"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/services"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/vault"
 	"github.com/google/uuid"
 )
 
@@ -97,6 +98,9 @@ func newTestHTTPServerWithConfig(t *testing.T, cfg *config.Config, gitOpts ...lo
 	teamSvc := services.NewTeamServiceWithRepo(sqlitestorage.NewTeamRepo(store))
 	connSvc := services.NewConnectionServiceWithRepo(sqlitestorage.NewConnectionRepo(store))
 	vaultSvc := services.NewVaultServiceWithRepo(sqlitestorage.NewVaultRepo(store), v)
+	modelProviderSvc := services.NewModelProviderService(fileTreeSvc, vaultSvc)
+	growthProposalSvc := services.NewGrowthProposalService(fileTreeSvc)
+	skillLearningSvc := services.NewSkillLearningServiceWithDeps(fileTreeSvc, modelProviderSvc, growthProposalSvc)
 	roleSvc := services.NewRoleServiceWithRepo(sqlitestorage.NewRoleRepo(store), fileTreeSvc)
 	inboxSvc := services.NewInboxServiceWithRepo(sqlitestorage.NewInboxRepo(store), fileTreeSvc)
 	projectSvc := services.NewProjectServiceWithRepo(sqlitestorage.NewProjectRepo(store), roleSvc, fileTreeSvc)
@@ -114,31 +118,34 @@ func newTestHTTPServerWithConfig(t *testing.T, cfg *config.Config, gitOpts ...lo
 	oauthSvc := services.NewOAuthServiceWithRepo(sqlitestorage.NewOAuthRepo(store), cfg.JWTSecret)
 
 	s := NewServerWithDeps(ServerDeps{
-		Storage:            "sqlite",
-		Config:             cfg,
-		LocalOwnerID:       user.ID,
-		UserService:        userSvc,
-		TeamService:        teamSvc,
-		AuthService:        authSvc,
-		ConnectionService:  connSvc,
-		FileTreeService:    fileTreeSvc,
-		VaultService:       vaultSvc,
-		MemoryService:      memorySvc,
-		ProjectService:     projectSvc,
-		RoleService:        roleSvc,
-		InboxService:       inboxSvc,
-		DashboardService:   dashboardSvc,
-		TokenService:       tokenSvc,
-		ImportService:      importSvc,
-		ExportService:      exportSvc,
-		SyncService:        syncSvc,
-		OAuthService:       oauthSvc,
-		LocalGitSync:       localGitSyncSvc,
-		BackupService:      backupSvc,
-		Vault:              v,
-		JWTSecret:          cfg.JWTSecret,
-		GitHubClientID:     cfg.GithubClientID,
-		GitHubClientSecret: cfg.GithubClientSecret,
+		Storage:               "sqlite",
+		Config:                cfg,
+		LocalOwnerID:          user.ID,
+		UserService:           userSvc,
+		TeamService:           teamSvc,
+		AuthService:           authSvc,
+		ConnectionService:     connSvc,
+		FileTreeService:       fileTreeSvc,
+		VaultService:          vaultSvc,
+		MemoryService:         memorySvc,
+		ProjectService:        projectSvc,
+		SkillLearningService:  skillLearningSvc,
+		ModelProviderService:  modelProviderSvc,
+		GrowthProposalService: growthProposalSvc,
+		RoleService:           roleSvc,
+		InboxService:          inboxSvc,
+		DashboardService:      dashboardSvc,
+		TokenService:          tokenSvc,
+		ImportService:         importSvc,
+		ExportService:         exportSvc,
+		SyncService:           syncSvc,
+		OAuthService:          oauthSvc,
+		LocalGitSync:          localGitSyncSvc,
+		BackupService:         backupSvc,
+		Vault:                 v,
+		JWTSecret:             cfg.JWTSecret,
+		GitHubClientID:        cfg.GithubClientID,
+		GitHubClientSecret:    cfg.GithubClientSecret,
 	})
 	ts := httptest.NewServer(s.Router)
 	t.Cleanup(ts.Close)
@@ -174,6 +181,9 @@ func newHostedTestHTTPServerWithConfig(t *testing.T, cfg *config.Config, gitOpts
 	teamSvc := services.NewTeamServiceWithRepo(sqlitestorage.NewTeamRepo(store))
 	connSvc := services.NewConnectionServiceWithRepo(sqlitestorage.NewConnectionRepo(store))
 	vaultSvc := services.NewVaultServiceWithRepo(sqlitestorage.NewVaultRepo(store), v)
+	modelProviderSvc := services.NewModelProviderService(fileTreeSvc, vaultSvc)
+	growthProposalSvc := services.NewGrowthProposalService(fileTreeSvc)
+	skillLearningSvc := services.NewSkillLearningServiceWithDeps(fileTreeSvc, modelProviderSvc, growthProposalSvc)
 	roleSvc := services.NewRoleServiceWithRepo(sqlitestorage.NewRoleRepo(store), fileTreeSvc)
 	inboxSvc := services.NewInboxServiceWithRepo(sqlitestorage.NewInboxRepo(store), fileTreeSvc)
 	projectSvc := services.NewProjectServiceWithRepo(sqlitestorage.NewProjectRepo(store), roleSvc, fileTreeSvc)
@@ -208,6 +218,9 @@ func newHostedTestHTTPServerWithConfig(t *testing.T, cfg *config.Config, gitOpts
 		VaultService:          vaultSvc,
 		MemoryService:         memorySvc,
 		ProjectService:        projectSvc,
+		SkillLearningService:  skillLearningSvc,
+		ModelProviderService:  modelProviderSvc,
+		GrowthProposalService: growthProposalSvc,
 		RoleService:           roleSvc,
 		InboxService:          inboxSvc,
 		DashboardService:      dashboardSvc,
@@ -605,7 +618,7 @@ func TestSQLiteBackupTargetsPersistAutomationSchedule(t *testing.T) {
 		"kind": "webdav",
 		"name": "Nightly WebDAV",
 		"enabled": true,
-		"webdav_url": "https://dav.example.com/neudrive",
+		"webdav_url": "https://dav.example.com/vola",
 		"webdav_username": "demo@example.com",
 		"auto_backup_enabled": true,
 		"auto_backup_interval_hours": 6
@@ -654,7 +667,7 @@ func TestSQLiteBackupRestorePreviewReadsNeuDriveZip(t *testing.T) {
 		t.Fatalf("Close zip writer: %v", err)
 	}
 
-	status, preview := doMultipartForm(t, http.MethodPost, ts.URL+"/api/backup/restore/preview", adminToken, "file", "neudrive-export.zip", payload.Bytes(), nil)
+	status, preview := doMultipartForm(t, http.MethodPost, ts.URL+"/api/backup/restore/preview", adminToken, "file", "vola-export.zip", payload.Bytes(), nil)
 	if status != http.StatusOK || !preview.OK {
 		t.Fatalf("POST /api/backup/restore/preview failed: status=%d body=%+v", status, preview)
 	}
@@ -692,7 +705,7 @@ func TestSQLiteBackupRestoreApplySupportsSkipOverwriteAndRejectsUnsafePaths(t *t
 		t.Fatalf("Close zip writer: %v", err)
 	}
 
-	status, applied := doMultipartForm(t, http.MethodPost, ts.URL+"/api/backup/restore/apply", adminToken, "file", "neudrive-export.zip", payload.Bytes(), map[string]string{"mode": "skip"})
+	status, applied := doMultipartForm(t, http.MethodPost, ts.URL+"/api/backup/restore/apply", adminToken, "file", "vola-export.zip", payload.Bytes(), map[string]string{"mode": "skip"})
 	if status != http.StatusOK || !applied.OK {
 		t.Fatalf("POST /api/backup/restore/apply failed: status=%d body=%+v", status, applied)
 	}
@@ -702,7 +715,7 @@ func TestSQLiteBackupRestoreApplySupportsSkipOverwriteAndRejectsUnsafePaths(t *t
 		}
 	}
 
-	status, skipped := doMultipartForm(t, http.MethodPost, ts.URL+"/api/backup/restore/apply", adminToken, "file", "neudrive-export.zip", payload.Bytes(), map[string]string{"mode": "skip"})
+	status, skipped := doMultipartForm(t, http.MethodPost, ts.URL+"/api/backup/restore/apply", adminToken, "file", "vola-export.zip", payload.Bytes(), map[string]string{"mode": "skip"})
 	if status != http.StatusOK || !skipped.OK {
 		t.Fatalf("restore apply skip failed: status=%d body=%+v", status, skipped)
 	}
@@ -710,7 +723,7 @@ func TestSQLiteBackupRestoreApplySupportsSkipOverwriteAndRejectsUnsafePaths(t *t
 		t.Fatalf("expected skip result: %s", string(skipped.Data))
 	}
 
-	status, overwritten := doMultipartForm(t, http.MethodPost, ts.URL+"/api/backup/restore/apply", adminToken, "file", "neudrive-export.zip", payload.Bytes(), map[string]string{"mode": "overwrite"})
+	status, overwritten := doMultipartForm(t, http.MethodPost, ts.URL+"/api/backup/restore/apply", adminToken, "file", "vola-export.zip", payload.Bytes(), map[string]string{"mode": "overwrite"})
 	if status != http.StatusOK || !overwritten.OK {
 		t.Fatalf("restore apply overwrite failed: status=%d body=%+v", status, overwritten)
 	}
@@ -918,14 +931,14 @@ func TestHostedGitMirrorDefaultBackupRepoCreatesAndReuses(t *testing.T) {
 		PublicBaseURL:         "http://127.0.0.1:0",
 		GitHubAppClientID:     "client-id",
 		GitHubAppClientSecret: "client-secret",
-		GitHubAppSlug:         "neudrive",
+		GitHubAppSlug:         "vola",
 	}
 	ts, _, adminToken := newHostedTestHTTPServerWithConfig(
 		t,
 		cfg,
 		localgitsync.WithGitHubAPIBaseURL(gh.URL),
 		localgitsync.WithGitHubBaseURL(gh.URL),
-		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "vola"),
 		localgitsync.WithHTTPClient(gh.Client()),
 	)
 	connectGitHubAppUserForTest(t, ts.URL, adminToken)
@@ -935,8 +948,8 @@ func TestHostedGitMirrorDefaultBackupRepoCreatesAndReuses(t *testing.T) {
 		t.Fatalf("default backup repo create failed: status=%d body=%+v", status, created)
 	}
 	for _, expected := range []string{
-		`"repo_name":"neudrive-backup"`,
-		`"remote_url":"https://github.com/octocat/neudrive-backup.git"`,
+		`"repo_name":"vola-backup"`,
+		`"remote_url":"https://github.com/octocat/vola-backup.git"`,
 		`"auth_mode":"github_app_user"`,
 		`"auto_push_enabled":true`,
 		`"remote_name":"origin"`,
@@ -975,14 +988,14 @@ func TestHostedGitMirrorDefaultBackupRepoDisconnectsStaleGitHubAppConnection(t *
 		PublicBaseURL:         "http://127.0.0.1:0",
 		GitHubAppClientID:     "client-id",
 		GitHubAppClientSecret: "client-secret",
-		GitHubAppSlug:         "neudrive",
+		GitHubAppSlug:         "vola",
 	}
 	ts, _, adminToken := newHostedTestHTTPServerWithConfig(
 		t,
 		cfg,
 		localgitsync.WithGitHubAPIBaseURL(gh.URL),
 		localgitsync.WithGitHubBaseURL(gh.URL),
-		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "vola"),
 		localgitsync.WithHTTPClient(gh.Client()),
 	)
 	connectGitHubAppUserForTest(t, ts.URL, adminToken)
@@ -1024,12 +1037,12 @@ func TestHostedGitMirrorDefaultBackupRepoRequiresGitHubAppConnection(t *testing.
 		PublicBaseURL:         "http://127.0.0.1:0",
 		GitHubAppClientID:     "client-id",
 		GitHubAppClientSecret: "client-secret",
-		GitHubAppSlug:         "neudrive",
+		GitHubAppSlug:         "vola",
 	}
 	ts, _, adminToken := newHostedTestHTTPServerWithConfig(
 		t,
 		cfg,
-		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+		localgitsync.WithGitHubAppConfig("client-id", "client-secret", "vola"),
 	)
 
 	status, failed := doJSON(t, http.MethodPost, ts.URL+"/api/git-mirror/github-app/default-backup-repo", adminToken, []byte(`{}`))
@@ -1214,6 +1227,58 @@ func TestSQLiteSharedServerRegisterLoginRefresh(t *testing.T) {
 	}
 	if refreshed.AccessToken == "" || refreshed.RefreshToken == "" {
 		t.Fatalf("expected auth tokens in refresh response: %+v", refreshed)
+	}
+}
+
+func TestHostedSharedServerRegisterLoginRefresh(t *testing.T) {
+	cfg := &config.Config{
+		JWTSecret:           testJWTSecret,
+		VaultMasterKey:      strings.Repeat("0", 64),
+		CORSOrigins:         []string{"http://localhost:3000"},
+		RateLimit:           100,
+		MaxBodySize:         10 * 1024 * 1024,
+		PublicBaseURL:       "http://127.0.0.1:0",
+		GitMirrorHostedRoot: filepath.Join(t.TempDir(), "hosted-root"),
+	}
+	ts, _, _ := newHostedTestHTTPServerWithConfig(t, cfg)
+
+	registerBody := []byte(`{"email":"hosted-new@example.com","password":"hostedpass22","display_name":"Hosted User","slug":"hosted-new-user"}`)
+	registerReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/register", bytes.NewReader(registerBody))
+	registerReq.Header.Set("Content-Type", "application/json")
+	registerResp, err := http.DefaultClient.Do(registerReq)
+	if err != nil {
+		t.Fatalf("POST hosted /api/auth/register: %v", err)
+	}
+	defer registerResp.Body.Close()
+	if registerResp.StatusCode != http.StatusCreated {
+		body, _ := io.ReadAll(registerResp.Body)
+		t.Fatalf("hosted register status = %d body=%s", registerResp.StatusCode, string(body))
+	}
+	var registered models.AuthResponse
+	if err := json.NewDecoder(registerResp.Body).Decode(&registered); err != nil {
+		t.Fatalf("decode hosted register: %v", err)
+	}
+	if registered.AccessToken == "" || registered.RefreshToken == "" {
+		t.Fatalf("expected hosted auth tokens in register response: %+v", registered)
+	}
+
+	loginReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/login", bytes.NewReader([]byte(`{"email":"hosted-new@example.com","password":"hostedpass22"}`)))
+	loginReq.Header.Set("Content-Type", "application/json")
+	loginResp, err := http.DefaultClient.Do(loginReq)
+	if err != nil {
+		t.Fatalf("POST hosted /api/auth/login: %v", err)
+	}
+	defer loginResp.Body.Close()
+	if loginResp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(loginResp.Body)
+		t.Fatalf("hosted login status = %d body=%s", loginResp.StatusCode, string(body))
+	}
+	var loggedIn models.AuthResponse
+	if err := json.NewDecoder(loginResp.Body).Decode(&loggedIn); err != nil {
+		t.Fatalf("decode hosted login: %v", err)
+	}
+	if loggedIn.AccessToken == "" || loggedIn.RefreshToken == "" {
+		t.Fatalf("expected hosted auth tokens in login response: %+v", loggedIn)
 	}
 }
 
@@ -1678,7 +1743,7 @@ func TestSQLiteSharedServerProjectsAndSkillsEndpoints(t *testing.T) {
 	if status != http.StatusOK || !skills.OK {
 		t.Fatalf("GET /api/tree/skills/ failed: status=%d body=%+v", status, skills)
 	}
-	for _, expected := range []string{`"/skills/demo/"`, `"kind":"skill_bundle"`, `"/skills/neudrive/"`} {
+	for _, expected := range []string{`"/skills/demo/"`, `"kind":"skill_bundle"`, `"/skills/vola/"`} {
 		if !bytes.Contains(skills.Data, []byte(expected)) {
 			t.Fatalf("expected %q in skills payload: %s", expected, string(skills.Data))
 		}
@@ -1743,7 +1808,7 @@ func TestSQLiteSharedServerImportSkillsZip(t *testing.T) {
 		t.Fatalf("Close zip writer: %v", err)
 	}
 
-	status, env := doMultipartForm(t, http.MethodPost, ts.URL+"/agent/import/skills", skillsToken.Token, "file", "neudrive-skills.zip", zipBuf.Bytes(), map[string]string{
+	status, env := doMultipartForm(t, http.MethodPost, ts.URL+"/agent/import/skills", skillsToken.Token, "file", "vola-skills.zip", zipBuf.Bytes(), map[string]string{
 		"platform": "claude-web",
 	})
 	if status != http.StatusOK || !env.OK {
@@ -1780,9 +1845,9 @@ func TestSQLiteSharedServerImportSkillsZip(t *testing.T) {
 	if binaryEntry.Metadata["capture_mode"] != "archive" || binaryEntry.Metadata["source_platform"] != "claude-web" {
 		t.Fatalf("unexpected logo metadata: %+v", binaryEntry.Metadata)
 	}
-	manifestEntry, err := store.Read(ctx, userID, "/skills/claude-web-skill/manifest.neudrive.json", models.TrustLevelWork)
+	manifestEntry, err := store.Read(ctx, userID, "/skills/claude-web-skill/manifest.vola.json", models.TrustLevelWork)
 	if err != nil {
-		t.Fatalf("Read manifest.neudrive.json: %v", err)
+		t.Fatalf("Read manifest.vola.json: %v", err)
 	}
 	if !strings.Contains(manifestEntry.Content, `"script"`) || !strings.Contains(manifestEntry.Content, `"dependency"`) || !strings.Contains(manifestEntry.Content, `"binary"`) {
 		t.Fatalf("unexpected manifest content: %s", manifestEntry.Content)
@@ -1812,9 +1877,9 @@ func TestSQLiteSharedServerImportSkillsZip(t *testing.T) {
 	if !strings.Contains(externalEntry.Content, "external helper") {
 		t.Fatalf("unexpected external helper content: %q", externalEntry.Content)
 	}
-	manifestEntry, err = store.Read(ctx, userID, "/skills/claude-web-skill/manifest.neudrive.json", models.TrustLevelWork)
+	manifestEntry, err = store.Read(ctx, userID, "/skills/claude-web-skill/manifest.vola.json", models.TrustLevelWork)
 	if err != nil {
-		t.Fatalf("Read refreshed manifest.neudrive.json: %v", err)
+		t.Fatalf("Read refreshed manifest.vola.json: %v", err)
 	}
 	if !strings.Contains(manifestEntry.Content, `"external/claude-tools/helper.py"`) || !strings.Contains(manifestEntry.Content, `"included": true`) {
 		t.Fatalf("expected included external reference in refreshed manifest: %s", manifestEntry.Content)
@@ -1952,6 +2017,187 @@ func TestSQLiteSharedServerSkillAssignments(t *testing.T) {
 	}
 }
 
+func TestSQLiteSharedServerSkillsLearningSummary(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	userID, err := store.FirstUserID(ctx)
+	if err != nil {
+		t.Fatalf("FirstUserID: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/ready/SKILL.md", "---\ndescription: Ready skill\nwhen_to_use: Use for releases\n---\n# Ready\n", "text/markdown", models.FileTreeWriteOptions{
+		Metadata: map[string]interface{}{
+			"description": "Ready skill",
+			"when_to_use": "Use for releases",
+		},
+	}); err != nil {
+		t.Fatalf("Write ready skill: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/ready/manifest.vola.json", `{
+		"version":"vola.skill-manifest/v1",
+		"summary":{"scripts":1,"dependency_files":1,"external_references":0}
+	}`+"\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write ready manifest: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/draft/SKILL.md", "# Draft\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write draft skill: %v", err)
+	}
+
+	assignBody := []byte(`{"assignments":[{"agent_id":"claude-code","skill_paths":["/skills/ready"]}]}`)
+	status, env := doJSON(t, http.MethodPut, ts.URL+"/api/skills/assignments", adminToken, assignBody)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("save skill assignments failed: status=%d body=%+v", status, env)
+	}
+
+	status, env = doJSON(t, http.MethodGet, ts.URL+"/api/skills/learning-summary", adminToken, nil)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("learning summary failed: status=%d body=%+v", status, env)
+	}
+	for _, expected := range []string{
+		`"version":"vola.skill-learning-summary/v1"`,
+		`"skills":2`,
+		`"needs_summary":1`,
+		`"needs_validation":1`,
+		`"rich_assets":1`,
+		`"assigned":1`,
+		`"name":"ready"`,
+		`"name":"draft"`,
+		`"status":"needs_summary"`,
+		`"assigned_agents":["Claude Code"]`,
+	} {
+		if !bytes.Contains(env.Data, []byte(expected)) {
+			t.Fatalf("expected %q in learning summary: %s", expected, string(env.Data))
+		}
+	}
+
+	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/skills/learning-runs", adminToken, nil)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("learning run create failed: status=%d body=%+v", status, env)
+	}
+	for _, expected := range []string{
+		`"status":"completed"`,
+		`"/memory/learning/runs/`,
+		`"report_path"`,
+		`"skill_map_path"`,
+	} {
+		if !bytes.Contains(env.Data, []byte(expected)) {
+			t.Fatalf("expected %q in learning run response: %s", expected, string(env.Data))
+		}
+	}
+
+	status, env = doJSON(t, http.MethodGet, ts.URL+"/api/growth-proposals?status=pending_review", adminToken, nil)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("growth proposals list failed: status=%d body=%+v", status, env)
+	}
+	var proposalsResp struct {
+		Proposals []services.GrowthProposal `json:"proposals"`
+	}
+	if err := json.Unmarshal(env.Data, &proposalsResp); err != nil {
+		t.Fatalf("decode proposals: %v", err)
+	}
+	if len(proposalsResp.Proposals) == 0 {
+		t.Fatalf("expected pending growth proposal: %s", string(env.Data))
+	}
+	proposalID := ""
+	for _, proposal := range proposalsResp.Proposals {
+		if proposal.Risk == "low" && proposal.Type == "improve_skill" {
+			proposalID = proposal.ID
+			break
+		}
+	}
+	if proposalID == "" {
+		t.Fatalf("expected low-risk improve_skill proposal: %+v", proposalsResp.Proposals)
+	}
+
+	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/growth-proposals/"+url.PathEscape(proposalID)+"/accept", adminToken, nil)
+	if status != http.StatusOK || !env.OK || !bytes.Contains(env.Data, []byte(`"status":"accepted"`)) {
+		t.Fatalf("growth proposal accept failed: status=%d body=%+v", status, env)
+	}
+	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/growth-proposals/"+url.PathEscape(proposalID)+"/apply", adminToken, nil)
+	if status != http.StatusOK || !env.OK || !bytes.Contains(env.Data, []byte(`"status":"applied"`)) {
+		t.Fatalf("growth proposal apply failed: status=%d body=%+v", status, env)
+	}
+	readyEntry, err := store.Read(ctx, userID, "/skills/ready/SKILL.md", models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read ready skill after proposal apply: %v", err)
+	}
+	if !strings.Contains(readyEntry.Content, "## Verification") {
+		t.Fatalf("expected verification section after proposal apply:\n%s", readyEntry.Content)
+	}
+
+	status, env = doJSON(t, http.MethodGet, ts.URL+"/api/skills/learning-recommend?q="+url.QueryEscape("repeatable quantum coffee roasting workflow"), adminToken, nil)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("learning recommend candidate failed: status=%d body=%+v", status, env)
+	}
+	if !bytes.Contains(env.Data, []byte(`"candidate_proposal"`)) || !bytes.Contains(env.Data, []byte(`"type":"new_skill"`)) {
+		t.Fatalf("expected new_skill candidate proposal: %s", string(env.Data))
+	}
+
+	status, env = doJSON(t, http.MethodGet, ts.URL+"/api/skills/learning-summary", adminToken, nil)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("learning summary after run failed: status=%d body=%+v", status, env)
+	}
+	if !bytes.Contains(env.Data, []byte(`"latest_run"`)) || !bytes.Contains(env.Data, []byte(`"status":"completed"`)) {
+		t.Fatalf("expected latest_run in learning summary: %s", string(env.Data))
+	}
+}
+
+func TestSQLiteSharedServerModelProvidersStoresAPIKeyInVault(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	userID, err := store.FirstUserID(ctx)
+	if err != nil {
+		t.Fatalf("FirstUserID: %v", err)
+	}
+
+	body := []byte(`{
+		"default_summary_provider_id":"openai-main",
+		"default_proposal_provider_id":"openai-main",
+		"providers":[{
+			"id":"openai-main",
+			"type":"openai-compatible",
+			"name":"OpenAI Compatible",
+			"base_url":"https://api.example.test/v1",
+			"api_key":"secret-value",
+			"models":{"summary":"summary-model","proposal":"proposal-model"},
+			"enabled":true
+		}]
+	}`)
+	status, env := doJSON(t, http.MethodPut, ts.URL+"/api/model-providers", adminToken, body)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("save model providers failed: status=%d body=%+v", status, env)
+	}
+	if bytes.Contains(env.Data, []byte("secret-value")) {
+		t.Fatalf("model provider response leaked api key: %s", string(env.Data))
+	}
+	for _, expected := range []string{
+		`"version":"vola.model-providers/v1"`,
+		`"storage_path":"/settings/model-providers.json"`,
+		`"id":"openai-main"`,
+		`"api_key_ref":"vault://model.openai-main"`,
+		`"summary":"summary-model"`,
+	} {
+		if !bytes.Contains(env.Data, []byte(expected)) {
+			t.Fatalf("expected %q in model providers response: %s", expected, string(env.Data))
+		}
+	}
+
+	configEntry, err := store.Read(ctx, userID, services.ModelProvidersPath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read model providers file: %v", err)
+	}
+	if strings.Contains(configEntry.Content, "secret-value") {
+		t.Fatalf("model providers config leaked api key: %s", configEntry.Content)
+	}
+
+	status, env = doJSON(t, http.MethodGet, ts.URL+"/api/vault/scopes", adminToken, nil)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("vault scopes failed: status=%d body=%+v", status, env)
+	}
+	if !bytes.Contains(env.Data, []byte(`"scope":"model.openai-main"`)) {
+		t.Fatalf("expected model provider key scope in vault scopes: %s", string(env.Data))
+	}
+}
+
 func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 	ts, store, adminToken, _, _ := newTestHTTPServer(t)
 	ctx := context.Background()
@@ -1971,7 +2217,7 @@ func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 	if _, err := store.WriteEntry(ctx, userID, "/skills/demo/external/claude-plugins/release/plugin.json", `{"name":"release"}`+"\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
 		t.Fatalf("Write demo plugin: %v", err)
 	}
-	if _, err := store.WriteEntry(ctx, userID, "/skills/demo/manifest.neudrive.json", `{"version":"neudrive.skill-manifest/v1","skill_name":"demo"}`+"\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
+	if _, err := store.WriteEntry(ctx, userID, "/skills/demo/manifest.vola.json", `{"version":"vola.skill-manifest/v1","skill_name":"demo"}`+"\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
 		t.Fatalf("Write demo manifest: %v", err)
 	}
 	if _, err := store.WriteBinaryEntry(ctx, userID, "/skills/demo/assets/logo.png", []byte{0x89, 'P', 'N', 'G', 0x00}, "image/png", models.FileTreeWriteOptions{
@@ -1983,13 +2229,13 @@ func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 		t.Fatalf("Write demo logo: %v", err)
 	}
 
-	assignBody := []byte(`{"assignments":[{"agent_id":"cursor","skill_paths":["/skills/demo"]},{"agent_id":"gemini-cli","skill_paths":["/skills/demo"]}]}`)
+	assignBody := []byte(`{"assignments":[{"agent_id":"gemini-cli","skill_paths":["/skills/demo"]}]}`)
 	status, env := doJSON(t, http.MethodPut, ts.URL+"/api/skills/assignments", adminToken, assignBody)
 	if status != http.StatusOK || !env.OK {
 		t.Fatalf("save skill assignments failed: status=%d body=%+v", status, env)
 	}
 
-	previewBody := []byte(`{"agent_ids":["cursor","gemini-cli"]}`)
+	previewBody := []byte(`{"agent_ids":["gemini-cli"]}`)
 	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/local/skills/sync/preview", adminToken, previewBody)
 	if status != http.StatusOK || !env.OK {
 		t.Fatalf("preview export-only local skill sync failed: status=%d body=%+v", status, env)
@@ -1998,8 +2244,8 @@ func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 	if err := json.Unmarshal(env.Data, &preview); err != nil {
 		t.Fatalf("decode preview: %v", err)
 	}
-	if len(preview.Agents) != 2 {
-		t.Fatalf("expected two agents: %s", string(env.Data))
+	if len(preview.Agents) != 1 {
+		t.Fatalf("expected one agent: %s", string(env.Data))
 	}
 	for _, agent := range preview.Agents {
 		if agent.SupportStatus != "export_only" || agent.Supported || !agent.ExportSupported || !agent.ExportAvailable {
@@ -2010,7 +2256,7 @@ func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 		}
 	}
 
-	status, raw, contentType := doRaw(t, http.MethodPost, ts.URL+"/api/local/skills/sync/export", adminToken, []byte(`{"agent_id":"cursor"}`))
+	status, raw, contentType := doRaw(t, http.MethodPost, ts.URL+"/api/local/skills/sync/export", adminToken, []byte(`{"agent_id":"gemini-cli"}`))
 	if status != http.StatusOK {
 		t.Fatalf("export package status=%d body=%s", status, string(raw))
 	}
@@ -2032,7 +2278,7 @@ func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 		"skills/demo/requirements.txt",
 		"skills/demo/assets/logo.png",
 		"skills/demo/external/claude-plugins/release/plugin.json",
-		"skills/demo/manifest.neudrive.json",
+		"skills/demo/manifest.vola.json",
 	} {
 		if !names[expected] {
 			t.Fatalf("expected %s in export package, names=%v", expected, names)
@@ -2144,6 +2390,152 @@ func TestSQLiteSharedServerLocalSkillSyncPreviewApplyCleanup(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(manualDir, "SKILL.md")); err != nil {
 		t.Fatalf("manual skill should remain: %v", err)
+	}
+}
+
+func TestSQLiteSharedServerLocalSkillSyncPreviewIncludesVerificationRisk(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	userID, err := store.FirstUserID(ctx)
+	if err != nil {
+		t.Fatalf("FirstUserID: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/risky/SKILL.md", "---\ndescription: Risky skill\nwhen_to_use: Use for risky workflows\n---\n# Risky\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write risky skill: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/risky/manifest.vola.json", `{"version":"vola.skill-manifest/v1","summary":{"scripts":1}}`+"\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write risky manifest: %v", err)
+	}
+	status, env := doJSON(t, http.MethodPut, ts.URL+"/api/skills/assignments", adminToken, []byte(`{"assignments":[{"agent_id":"claude-code","skill_paths":["/skills/risky"]}]}`))
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("save skill assignments failed: status=%d body=%+v", status, env)
+	}
+
+	targetRoot := filepath.Join(t.TempDir(), "claude-skills")
+	syncReq, err := json.Marshal(map[string]interface{}{
+		"agent_ids": []string{"claude-code"},
+		"target_roots": map[string]string{
+			"claude-code": targetRoot,
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal sync request: %v", err)
+	}
+	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/local/skills/sync/preview", adminToken, syncReq)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("preview local skill sync failed: status=%d body=%+v", status, env)
+	}
+	var preview localSkillSyncResponse
+	if err := json.Unmarshal(env.Data, &preview); err != nil {
+		t.Fatalf("decode preview: %v", err)
+	}
+	if len(preview.Agents) != 1 || preview.Agents[0].Summary.SyncRisk != 1 {
+		t.Fatalf("expected one sync risk: %s", string(env.Data))
+	}
+	var sawVerification bool
+	for _, change := range preview.Agents[0].Changes {
+		if change.SkillPath == "/skills/risky" && change.VerificationRequired && change.VerificationStatus == "manual_required" && strings.Contains(change.VerificationMessage, "脚本清单") {
+			sawVerification = true
+			break
+		}
+	}
+	if !sawVerification {
+		t.Fatalf("expected verification flag in sync changes: %s", string(env.Data))
+	}
+}
+
+func TestSQLiteSharedServerLocalSkillSyncQualityGateBlocksAndRequiresAck(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	userID, err := store.FirstUserID(ctx)
+	if err != nil {
+		t.Fatalf("FirstUserID: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/blocked/SKILL.md", "---\ndescription: Blocked skill\nwhen_to_use: Use for blocked workflows\n---\n# Blocked\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write blocked skill: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/blocked/package.json", "{invalid json\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write blocked package: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/blocked/manifest.vola.json", `{
+		"version":"vola.skill-manifest/v1",
+		"entry_file":"SKILL.md",
+		"files":[
+			{"path":"SKILL.md","kind":"entry","included":true},
+			{"path":"package.json","kind":"dependency","included":true}
+		],
+		"summary":{"dependency_files":1}
+	}`+"\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write blocked manifest: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/manual/SKILL.md", "---\ndescription: Manual skill\nwhen_to_use: Use for manual workflows\n---\n# Manual\n\n## Verification\n\nReview plugin before syncing.\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write manual skill: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/manual/external/claude-plugins/release/plugin.json", `{"name":"release"}`+"\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write manual plugin: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/skills/manual/manifest.vola.json", `{
+		"version":"vola.skill-manifest/v1",
+		"entry_file":"SKILL.md",
+		"files":[
+			{"path":"SKILL.md","kind":"entry","included":true},
+			{"path":"external/claude-plugins/release/plugin.json","kind":"config","included":true}
+		],
+		"summary":{}
+	}`+"\n", "application/json", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Write manual manifest: %v", err)
+	}
+
+	status, env := doJSON(t, http.MethodPut, ts.URL+"/api/skills/assignments", adminToken, []byte(`{"assignments":[{"agent_id":"claude-code","skill_paths":["/skills/blocked","/skills/manual"]}]}`))
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("save skill assignments failed: status=%d body=%+v", status, env)
+	}
+	targetRoot := filepath.Join(t.TempDir(), "claude-skills")
+	req := []byte(fmt.Sprintf(`{"agent_ids":["claude-code"],"target_roots":{"claude-code":%q}}`, targetRoot))
+	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/local/skills/sync/apply", adminToken, req)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("apply local skill sync failed: status=%d body=%+v", status, env)
+	}
+	var blocked localSkillSyncResponse
+	if err := json.Unmarshal(env.Data, &blocked); err != nil {
+		t.Fatalf("decode blocked apply: %v", err)
+	}
+	if !blocked.Blocked || blocked.Agents[0].Summary.Blocked == 0 || blocked.Agents[0].Summary.Written != 0 {
+		t.Fatalf("expected blocked sync without writes: %s", string(env.Data))
+	}
+	if _, err := os.Stat(filepath.Join(targetRoot, "blocked", "SKILL.md")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("blocked skill should not be written, err=%v", err)
+	}
+
+	status, env = doJSON(t, http.MethodPut, ts.URL+"/api/skills/assignments", adminToken, []byte(`{"assignments":[{"agent_id":"claude-code","skill_paths":["/skills/manual"]}]}`))
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("save manual-only assignments failed: status=%d body=%+v", status, env)
+	}
+	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/local/skills/sync/apply", adminToken, req)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("apply manual local skill sync failed: status=%d body=%+v", status, env)
+	}
+	var manualNoAck localSkillSyncResponse
+	if err := json.Unmarshal(env.Data, &manualNoAck); err != nil {
+		t.Fatalf("decode manual no ack apply: %v", err)
+	}
+	if !manualNoAck.Blocked || manualNoAck.Agents[0].Summary.Manual == 0 || manualNoAck.Agents[0].Summary.Written != 0 {
+		t.Fatalf("expected manual review to block without ack: %s", string(env.Data))
+	}
+	ackReq := []byte(fmt.Sprintf(`{"agent_ids":["claude-code"],"target_roots":{"claude-code":%q},"ack_quality_review":true}`, targetRoot))
+	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/local/skills/sync/apply", adminToken, ackReq)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("apply manual ack local skill sync failed: status=%d body=%+v", status, env)
+	}
+	var manualAck localSkillSyncResponse
+	if err := json.Unmarshal(env.Data, &manualAck); err != nil {
+		t.Fatalf("decode manual ack apply: %v", err)
+	}
+	if manualAck.Blocked || manualAck.Agents[0].Summary.Manual == 0 || manualAck.Agents[0].Summary.Written == 0 {
+		t.Fatalf("expected manual review ack to write files: %s", string(env.Data))
+	}
+	if _, err := os.Stat(filepath.Join(targetRoot, "manual", "SKILL.md")); err != nil {
+		t.Fatalf("manual skill should be written after ack: %v", err)
 	}
 }
 
@@ -2273,7 +2665,7 @@ func TestSQLiteSharedServerSkillConversionPreviewApply(t *testing.T) {
 	if strings.Contains(converted.Content, "~/.claude/tools/helper.py") {
 		t.Fatalf("claude external path should be rewritten: %s", converted.Content)
 	}
-	if _, err := store.Read(ctx, userID, "/skills/claude-release-codex/manifest.neudrive.json", models.TrustLevelWork); err != nil {
+	if _, err := store.Read(ctx, userID, "/skills/claude-release-codex/manifest.vola.json", models.TrustLevelWork); err != nil {
 		t.Fatalf("Read converted manifest: %v", err)
 	}
 	for _, expectedPath := range []string{
@@ -2307,7 +2699,7 @@ func TestSQLiteSharedServerSkillConversionPreviewApply(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(codexRoot, "claude-release-codex", "SKILL.md")); err != nil {
 		t.Fatalf("expected converted SKILL.md in codex dir: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(codexRoot, "claude-release-codex", "manifest.neudrive.json")); err != nil {
+	if _, err := os.Stat(filepath.Join(codexRoot, "claude-release-codex", "manifest.vola.json")); err != nil {
 		t.Fatalf("expected converted manifest in codex dir: %v", err)
 	}
 	if _, err := os.Stat(filepath.Join(codexRoot, "claude-release-codex", "external", "claude-plugins", "release", "plugin.json")); err != nil {
@@ -2970,7 +3362,7 @@ func newFakeGitHubAppOAuthServer(t *testing.T, state *fakeGitHubAppOAuthState) *
 			})
 		case r.Method == http.MethodGet && r.URL.Path == "/user":
 			_ = json.NewEncoder(w).Encode(map[string]any{"login": login})
-		case r.Method == http.MethodGet && r.URL.Path == "/repos/"+login+"/neudrive-backup":
+		case r.Method == http.MethodGet && r.URL.Path == "/repos/"+login+"/vola-backup":
 			state.mu.Lock()
 			exists := state.repoExists
 			permissions := state.permissionFlags()
@@ -2981,10 +3373,10 @@ func newFakeGitHubAppOAuthServer(t *testing.T, state *fakeGitHubAppOAuthState) *
 				return
 			}
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"name":           "neudrive-backup",
-				"full_name":      login + "/neudrive-backup",
+				"name":           "vola-backup",
+				"full_name":      login + "/vola-backup",
 				"default_branch": "main",
-				"clone_url":      "https://github.com/" + login + "/neudrive-backup.git",
+				"clone_url":      "https://github.com/" + login + "/vola-backup.git",
 				"permissions":    permissions,
 				"owner": map[string]any{
 					"login": login,
@@ -3005,7 +3397,7 @@ func newFakeGitHubAppOAuthServer(t *testing.T, state *fakeGitHubAppOAuthState) *
 				Private bool   `json:"private"`
 			}
 			_ = json.NewDecoder(r.Body).Decode(&body)
-			if body.Name != "neudrive-backup" || !body.Private {
+			if body.Name != "vola-backup" || !body.Private {
 				w.WriteHeader(http.StatusBadRequest)
 				_, _ = w.Write([]byte(`{"message":"unexpected repo create request"}`))
 				return
@@ -3017,10 +3409,10 @@ func newFakeGitHubAppOAuthServer(t *testing.T, state *fakeGitHubAppOAuthState) *
 			state.mu.Unlock()
 			w.WriteHeader(http.StatusCreated)
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"name":           "neudrive-backup",
-				"full_name":      login + "/neudrive-backup",
+				"name":           "vola-backup",
+				"full_name":      login + "/vola-backup",
 				"default_branch": "main",
-				"clone_url":      "https://github.com/" + login + "/neudrive-backup.git",
+				"clone_url":      "https://github.com/" + login + "/vola-backup.git",
 				"permissions":    permissions,
 				"owner": map[string]any{
 					"login": login,

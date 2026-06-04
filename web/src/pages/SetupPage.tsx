@@ -60,8 +60,8 @@ const EMPTY_MODE_STATE: Record<ModeKey, boolean> = {
   advanced: false,
 }
 
-export const TOKEN_ENV_NAME = 'NEUDRIVE_TOKEN'
-export const TOKEN_PLACEHOLDER = '<YOUR_NEUDRIVE_TOKEN>'
+export const TOKEN_ENV_NAME = 'VOLA_TOKEN'
+export const TOKEN_PLACEHOLDER = '<YOUR_VOLA_TOKEN>'
 
 export interface SetupOutletContext {
   tokens: ScopedTokenResponse[]
@@ -267,14 +267,14 @@ export default function SetupPage() {
   const isSecureOrigin = baseUrl.startsWith('https://')
   const cloudModeNeedsPublicUrl = !isSecureOrigin || isLocalOrigin
 
-  const claudeCloudCommand = `claude mcp add -s user --transport http neudrive \\
+  const claudeCloudCommand = `claude mcp add -s user --transport http vola \\
   ${baseUrl}/mcp`
-  const codexCloudCommand = `codex mcp add neudrive --url ${baseUrl}/mcp`
-  const geminiCloudCommand = `gemini mcp add --transport http neudrive ${baseUrl}/mcp`
-  const cursorAgentLoginCommand = 'cursor-agent mcp login neudrive'
+  const codexCloudCommand = `codex mcp add vola --url ${baseUrl}/mcp`
+  const geminiCloudCommand = `gemini mcp add --transport http vola ${baseUrl}/mcp`
+  const cursorAgentLoginCommand = 'cursor-agent mcp login vola'
   const cursorAgentStatusCommand = 'cursor-agent mcp list'
-  const codexLoginCommand = 'codex mcp login neudrive'
-  const geminiAuthCommand = '/mcp auth neudrive'
+  const codexLoginCommand = 'codex mcp login vola'
+  const geminiAuthCommand = '/mcp auth vola'
   const codexStatusCommand = 'codex mcp list'
   const localSessionToken = modeTokens.local?.token ?? ''
   const advancedSessionToken = modeTokens.advanced?.token ?? ''
@@ -282,9 +282,9 @@ export default function SetupPage() {
   const advancedTokenText = modeTokens.advanced?.token ?? TOKEN_PLACEHOLDER
   const localEnvCommand = `export ${TOKEN_ENV_NAME}=${localTokenText}`
   const advancedEnvCommand = `export ${TOKEN_ENV_NAME}=${advancedTokenText}`
-  const localClaudeCommand = `claude mcp add -s user neudrive -- neudrive-mcp --token-env ${TOKEN_ENV_NAME}`
-  const localCodexCommand = `codex mcp add neudrive -- neudrive-mcp --token-env ${TOKEN_ENV_NAME}`
-  const advancedCodexCommand = `codex mcp add neudrive --url ${baseUrl}/mcp --bearer-token-env-var ${TOKEN_ENV_NAME}`
+  const localClaudeCommand = `claude mcp add -s user vola -- vola mcp stdio --token-env ${TOKEN_ENV_NAME}`
+  const localCodexCommand = `codex mcp add vola -- vola mcp stdio --token-env ${TOKEN_ENV_NAME}`
+  const advancedCodexCommand = `codex mcp add vola --url ${baseUrl}/mcp --bearer-token-env-var ${TOKEN_ENV_NAME}`
 
   const buildModeTokenRequest = (mode: ModeKey): CreateTokenRequest => {
     const defaults = MODE_DEFAULTS[mode]
@@ -336,16 +336,16 @@ export default function SetupPage() {
 
   const localConfig = JSON.stringify({
     mcpServers: {
-      neudrive: {
-        command: 'neudrive-mcp',
-        args: ['--token-env', TOKEN_ENV_NAME],
+      vola: {
+        command: 'vola',
+        args: ['mcp', 'stdio', '--token-env', TOKEN_ENV_NAME],
       },
     },
   }, null, 2)
 
   const advancedConfig = JSON.stringify({
     mcpServers: {
-      neudrive: {
+      vola: {
         type: 'http',
         url: `${baseUrl}/mcp`,
         headers: {

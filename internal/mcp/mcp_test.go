@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/google/uuid"
 )
 
@@ -143,14 +143,14 @@ func TestInitialize(t *testing.T) {
 	if !ok {
 		t.Fatal("expected serverInfo map")
 	}
-	if serverInfo["name"] != "neudrive" {
-		t.Errorf("expected server name=neudrive, got %v", serverInfo["name"])
+	if serverInfo["name"] != "vola" {
+		t.Errorf("expected server name=vola, got %v", serverInfo["name"])
 	}
 	instructions, _ := serverInfo["instructions"].(string)
-	if !strings.Contains(instructions, "neudrive://skills/neudrive/SKILL.md") {
-		t.Fatalf("expected neudrive resource hint in serverInfo, got %q", instructions)
+	if !strings.Contains(instructions, "vola://skills/vola/SKILL.md") {
+		t.Fatalf("expected vola resource hint in serverInfo, got %q", instructions)
 	}
-	if !strings.Contains(instructions, "neudrive://skills/portability/<platform>/SKILL.md") {
+	if !strings.Contains(instructions, "vola://skills/portability/<platform>/SKILL.md") {
 		t.Fatalf("expected portability instructions in serverInfo, got %q", instructions)
 	}
 	if !strings.Contains(instructions, "list_skills") {
@@ -207,8 +207,8 @@ func TestListSkillsIncludesSystemPortabilityManuals(t *testing.T) {
 	if !strings.Contains(text, "portability/general") {
 		t.Fatalf("expected portability/general in list_skills output, got %s", text)
 	}
-	if !strings.Contains(text, "\"name\": \"neudrive\"") {
-		t.Fatalf("expected neudrive system skill in list_skills output, got %s", text)
+	if !strings.Contains(text, "\"name\": \"vola\"") {
+		t.Fatalf("expected vola system skill in list_skills output, got %s", text)
 	}
 	if !strings.Contains(text, "\"read_only\": true") {
 		t.Fatalf("expected read_only flag in list_skills output, got %s", text)
@@ -546,11 +546,11 @@ func TestResourcesListIncludesSystemSkillManuals(t *testing.T) {
 	}
 
 	for _, uri := range []string{
-		"neudrive://skills/neudrive/SKILL.md",
-		"neudrive://skills/portability/general/SKILL.md",
-		"neudrive://skills/portability/claude/SKILL.md",
-		"neudrive://skills/portability/chatgpt/SKILL.md",
-		"neudrive://skills/portability/codex/SKILL.md",
+		"vola://skills/vola/SKILL.md",
+		"vola://skills/portability/general/SKILL.md",
+		"vola://skills/portability/claude/SKILL.md",
+		"vola://skills/portability/chatgpt/SKILL.md",
+		"vola://skills/portability/codex/SKILL.md",
 	} {
 		if !resourceURIs[uri] {
 			t.Fatalf("expected resource %q in resources/list", uri)
@@ -569,7 +569,7 @@ func TestResourcesReadSystemSkillManual(t *testing.T) {
 		JSONRPC: "2.0",
 		ID:      9,
 		Method:  "resources/read",
-		Params:  json.RawMessage(`{"uri":"neudrive://skills/portability/claude/SKILL.md"}`),
+		Params:  json.RawMessage(`{"uri":"vola://skills/portability/claude/SKILL.md"}`),
 	}
 
 	resp := s.HandleJSONRPC(req)

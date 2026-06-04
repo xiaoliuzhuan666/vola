@@ -13,7 +13,7 @@ import (
 // browser extension/SDK and ChatGPT GPT Actions.
 //
 // Run with:
-//   NEUDRIVE_TEST_URL=http://localhost:8080 go test ./internal/api/ -run TestAgent_FullLifecycle -v -count=1
+//   VOLA_TEST_URL=http://localhost:8080 go test ./internal/api/ -run TestAgent_FullLifecycle -v -count=1
 //
 // Requires: docker compose up (server + database running)
 // ---------------------------------------------------------------------------

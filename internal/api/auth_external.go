@@ -9,7 +9,7 @@ import (
 	"path"
 	"strings"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -109,13 +109,13 @@ func isUnsafeAuthRedirectPath(raw string) bool {
 		return true
 	}
 	cleanPath := path.Clean(strings.TrimSpace(target.Path))
-	if cleanPath == "/login" {
+	if cleanPath == "/login" || cleanPath == "/signup" {
 		return true
 	}
 	if strings.HasPrefix(cleanPath, "/assets/") {
 		return true
 	}
-	if cleanPath == "/favicon.ico" || strings.HasPrefix(cleanPath, "/favicon-") || cleanPath == "/apple-touch-icon.png" {
+	if cleanPath == "/favicon.ico" || cleanPath == "/favicon.svg" || strings.HasPrefix(cleanPath, "/favicon-") || cleanPath == "/apple-touch-icon.png" || cleanPath == "/vola-mark.svg" || cleanPath == "/vola-social.svg" || cleanPath == "/vola-app-icon.png" {
 		return true
 	}
 	if cleanPath == "/logo-mark.png" || cleanPath == "/logo-social.png" {

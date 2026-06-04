@@ -1,4 +1,4 @@
-import { type BundleContext, type FileNode, type SkillSummary } from '../../api'
+import { type BundleContext, type FileNode, type SkillSummary, type SkillLearningItem } from '../../api'
 import { getLocaleTag, type AppLocale } from '../../i18n'
 
 const ORDINARY_FILE_EXCLUDED_PREFIXES = [
@@ -76,7 +76,7 @@ const SOURCE_PRIORITY = [
   'system',
   'import',
   'agent',
-  'neudrive',
+  'vola',
   'roles',
   'unknown',
 ] as const
@@ -223,8 +223,8 @@ export function sourceLabel(source: string | undefined, locale: AppLocale = 'en'
       return text(locale, '导入', 'Import')
     case 'agent':
       return 'Agent'
-    case 'neudrive':
-      return 'neuDrive'
+    case 'vola':
+      return 'Vola'
     case 'roles':
       return 'Roles'
     case 'unknown':
@@ -457,6 +457,11 @@ export type FileTileModel = {
   source?: string
   footerStart?: string
   footerEnd?: string
+  learningStatus?: string
+  learningScore?: number
+  qualityStatus?: string
+  qualityFindings?: Array<{ title: string; message: string }>
+  assignedAgents?: string[]
 }
 
 export type FileTileVariant =
@@ -700,18 +705,31 @@ export function buildFileTileModel({
   }
 }
 
-export function buildSkillBundleTileModel(skill: SkillSummary, locale: AppLocale = 'en'): FileTileModel {
+export function buildSkillBundleTileModel(
+  skill: SkillSummary,
+  locale: AppLocale = 'en',
+  learningItem?: SkillLearningItem | null,
+): FileTileModel {
   const bundlePath = normalizeHubPath(skill.bundle_path || skillBundlePathFromSkillPath(skill.path))
+  const findings = learningItem?.quality_findings?.map((f) => ({
+    title: f.title,
+    message: f.message,
+  })) || []
   return {
     node: {
       path: bundlePath,
       name: skill.name,
       is_dir: true,
     },
-    source: skillSource(skill),
+    source: learningItem?.source || skillSource(skill),
     description: skillSummaryDescription(skill) || text(locale, '这个 bundle 还没有写描述。', 'This bundle does not have a description yet.'),
     footerStart: text(locale, '技能', 'Skills'),
     footerEnd: skill.read_only ? text(locale, '只读', 'Read-only') : text(locale, '可编辑', 'Editable'),
+    learningStatus: learningItem?.status,
+    learningScore: learningItem?.score,
+    qualityStatus: learningItem?.quality_status,
+    qualityFindings: findings,
+    assignedAgents: learningItem?.assigned_agents,
   }
 }
 

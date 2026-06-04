@@ -9,9 +9,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/agi-bar/neudrive/internal/auth"
-	"github.com/agi-bar/neudrive/internal/mcp"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/auth"
+	"github.com/agi-bar/vola/internal/mcp"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -149,6 +149,7 @@ func (s *Server) handleMCPPost(w http.ResponseWriter, r *http.Request) {
 		Token:       s.TokenService,
 		Team:        s.TeamService,
 		Source:      source,
+		Gateway:     s.MCPGateway,
 	}
 
 	resp := mcpServer.HandleJSONRPC(req)

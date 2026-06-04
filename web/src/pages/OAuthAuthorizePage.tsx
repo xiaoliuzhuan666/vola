@@ -140,7 +140,7 @@ export default function OAuthAuthorizePage() {
           <div className="oauth-card-header">
             <LanguageToggle />
           </div>
-          <h1 className="oauth-title">neuDrive</h1>
+          <h1 className="oauth-title">Vola</h1>
           <div className="oauth-error">{error}</div>
         </div>
       </div>
@@ -153,7 +153,7 @@ export default function OAuthAuthorizePage() {
         <div className="oauth-card-header">
           <LanguageToggle />
         </div>
-        <h1 className="oauth-title">neuDrive</h1>
+        <h1 className="oauth-title">Vola</h1>
         <p className="oauth-subtitle">{tx('有应用正在请求访问你的账号', 'An application is requesting access to your account')}</p>
 
         {appInfo && (
@@ -167,7 +167,7 @@ export default function OAuthAuthorizePage() {
             </div>
             <div>
               <div className="oauth-app-name">{appInfo.app_name}</div>
-              <div className="oauth-app-sub">{tx('想要访问你的 neuDrive 账号', 'wants to access your neuDrive account')}</div>
+              <div className="oauth-app-sub">{tx('想要访问你的 Vola 账号', 'wants to access your Vola account')}</div>
             </div>
           </div>
         )}

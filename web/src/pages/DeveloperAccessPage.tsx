@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { api, type ScopedTokenResponse } from '../api'
 import { useI18n } from '../i18n'
 import { formatDateTime } from './data/DataShared'
+import CustomSelect from '../components/CustomSelect'
 
 type TokenPurpose = 'cli' | 'api' | 'custom'
 type TokenFilter = 'active' | 'all' | 'revoked'
@@ -230,21 +231,31 @@ export default function DeveloperAccessPage() {
               </label>
               <label>
                 {tx('信任等级', 'Trust level')}
-                <select value={accessChoice} onChange={(event) => updateAccessChoice(event.target.value as AccessChoice)}>
-                  <option value="readonly">{tx('只读', 'Read-only')}</option>
-                  <option value="readwrite">{tx('读+写', 'Read + write')}</option>
-                  <option value="custom">{tx('自定义', 'Custom')}</option>
-                </select>
+                <CustomSelect
+                  value={accessChoice}
+                  onChange={(val) => updateAccessChoice(val as AccessChoice)}
+                  options={[
+                    { value: 'readonly', label: tx('只读', 'Read-only') },
+                    { value: 'readwrite', label: tx('读+写', 'Read + write') },
+                    { value: 'custom', label: tx('自定义', 'Custom') },
+                  ]}
+                  ariaLabel={tx('信任等级', 'Trust level')}
+                />
               </label>
               <label>
                 {tx('有效期', 'Expires')}
-                <select value={days} onChange={(event) => setDays(Number(event.target.value))}>
-                  <option value={7}>7 days</option>
-                  <option value={30}>30 days</option>
-                  <option value={90}>90 days</option>
-                  <option value={365}>365 days</option>
-                  <option value={0}>{tx('永不过期', 'Never')}</option>
-                </select>
+                <CustomSelect
+                  value={String(days)}
+                  onChange={(val) => setDays(Number(val))}
+                  options={[
+                    { value: '7', label: '7 days' },
+                    { value: '30', label: '30 days' },
+                    { value: '90', label: '90 days' },
+                    { value: '365', label: '365 days' },
+                    { value: '0', label: tx('永不过期', 'Never') },
+                  ]}
+                  ariaLabel={tx('有效期', 'Expires')}
+                />
               </label>
             </div>
 
@@ -286,7 +297,7 @@ export default function DeveloperAccessPage() {
               <button className="btn btn-primary" onClick={() => { void handleCopy(newToken, 'token') }}>
                 {tokenCopied === 'token' ? tx('已复制 ✓', 'Copied ✓') : tx('复制 token', 'Copy token')}
               </button>
-              <button className="btn btn-outline" onClick={() => { void handleCopy(`export NEUDRIVE_TOKEN=${newToken}`, 'env') }}>
+              <button className="btn btn-outline" onClick={() => { void handleCopy(`export VOLA_TOKEN=${newToken}`, 'env') }}>
                 {tokenCopied === 'env' ? tx('已复制 ✓', 'Copied ✓') : tx('复制环境变量', 'Copy env var')}
               </button>
             </div>

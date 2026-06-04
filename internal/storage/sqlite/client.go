@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/skillsarchive"
 	"github.com/google/uuid"
 )
 
@@ -147,7 +147,7 @@ func (c *Client) ImportPlatformSources(ctx context.Context, platform string, sou
 
 func (c *Client) ExportPlatformSnapshot(ctx context.Context, platform, outputRoot string) (*ExportResult, error) {
 	if outputRoot == "" {
-		outputRoot = filepath.Join(".", "neudrive-export", platform)
+		outputRoot = filepath.Join(".", "vola-export", platform)
 	}
 	result := &ExportResult{Platform: platform, OutputRoot: outputRoot}
 	snapshot, err := c.store.Snapshot(ctx, c.userID, filepath.ToSlash(filepath.Join("/platforms", platform)), models.TrustLevelFull)
@@ -217,7 +217,7 @@ func looksBinary(path string, data []byte) bool {
 }
 
 func isManagedNeuDriveDir(pathValue string) bool {
-	_, err := os.Stat(filepath.Join(pathValue, ".neudrive-managed.json"))
+	_, err := os.Stat(filepath.Join(pathValue, ".vola-managed.json"))
 	return err == nil
 }
 

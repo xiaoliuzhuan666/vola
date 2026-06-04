@@ -17,10 +17,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/api"
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/platforms"
+	"github.com/agi-bar/vola/internal/api"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/platforms"
 )
 
 type hubCommandOptions struct {
@@ -372,7 +372,7 @@ func runHubLog(args []string) int {
 	}
 
 	req := map[string]any{
-		"source":  "neudrive-cli",
+		"source":  "vola-cli",
 		"action":  *action,
 		"summary": content,
 	}
@@ -823,9 +823,9 @@ func runHubStats(args []string) int {
 
 func bindHubCommandFlags(fs *flag.FlagSet, includeLiteral bool) *hubCommandOptions {
 	opts := &hubCommandOptions{}
-	fs.BoolVar(&opts.Local, "local", false, "force the local neuDrive target")
+	fs.BoolVar(&opts.Local, "local", false, "force the local Vola target")
 	fs.StringVar(&opts.Profile, "profile", "", "explicit hosted profile name")
-	fs.StringVar(&opts.APIBase, "api-base", "", "explicit neuDrive API base")
+	fs.StringVar(&opts.APIBase, "api-base", "", "explicit Vola API base")
 	fs.StringVar(&opts.Token, "token", "", "explicit scoped token")
 	fs.BoolVar(&opts.JSON, "json", false, "output JSON")
 	fs.StringVar(&opts.Output, "output", "", "write final output to a local file")
@@ -967,14 +967,14 @@ func hubWrite(ctx context.Context, target *hubTarget, rawPath, content string) (
 		req := map[string]any{
 			"category": resolved.Name,
 			"content":  content,
-			"source":   "neudrive-cli",
+			"source":   "vola-cli",
 		}
 		var profile hubProfileResponse
 		syncInfo, err := localAPIJSONWithSync(ctx, http.MethodPut, target.APIBase, target.Token, "/agent/memory/profile", req, &profile)
 		return fmt.Sprintf("Updated profile/%s.", resolved.Name), profile, syncInfo, err
 	case "memory":
 		if strings.TrimSpace(resolved.Rest) == "" {
-			req := map[string]any{"content": content, "source": "neudrive-cli"}
+			req := map[string]any{"content": content, "source": "vola-cli"}
 			var resp api.ImportResponse
 			syncInfo, err := localAPIJSONWithSync(ctx, http.MethodPost, target.APIBase, target.Token, "/agent/memory/scratch", req, &resp)
 			return "Saved memory note.", resp, syncInfo, err
@@ -1356,7 +1356,7 @@ func loadTextTree(root string) (map[string]string, error) {
 			return err
 		}
 		if looksBinary(data) {
-			return fmt.Errorf("%s looks binary; use neudrive token create --kind skills-upload for archive-heavy imports", current)
+			return fmt.Errorf("%s looks binary; use vola token create --kind skills-upload for archive-heavy imports", current)
 		}
 		rel, err := filepath.Rel(root, current)
 		if err != nil {
@@ -1450,7 +1450,7 @@ func importMemoryContent(ctx context.Context, target *hubTarget, src, content st
 	}
 	req := map[string]any{
 		"content": content,
-		"source":  "neudrive-cli",
+		"source":  "vola-cli",
 		"title":   title,
 	}
 	syncInfo, err := localAPIJSONWithSync(ctx, http.MethodPost, target.APIBase, target.Token, "/agent/memory/scratch", req, &resp)

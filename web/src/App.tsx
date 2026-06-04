@@ -1,14 +1,11 @@
 import { Component, Suspense, lazy, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, BILLING_REDIRECT_EVENT, type BillingRedirectDetail, type BillingStatus, type PublicConfig } from './api'
+import { api, isTauri, type PublicConfig } from './api'
 import LanguageToggle from './components/LanguageToggle'
-import GitHubRepoLink from './components/GitHubRepoLink'
 import { useI18n } from './i18n'
 
 const LoginPage = lazy(() => import('./pages/LoginPage'))
 const DashboardPage = lazy(() => import('./pages/DashboardPage'))
-const BillingPage = lazy(() => import('./pages/BillingPage'))
-const BillingSuccessPage = lazy(() => import('./pages/BillingSuccessPage'))
 const ConnectionsPage = lazy(() => import('./pages/ConnectionsPage'))
 const InfoPage = lazy(() => import('./pages/InfoPage'))
 const ProjectsPage = lazy(() => import('./pages/ProjectsPage'))
@@ -23,6 +20,7 @@ const DataFileEditorPage = lazy(() => import('./pages/data/DataFileEditorPage'))
 const DataSkillsPage = lazy(() => import('./pages/data/DataSkillsPage'))
 const DataMemoryPage = lazy(() => import('./pages/data/DataMemoryPage'))
 const DataConversationsPage = lazy(() => import('./pages/data/DataConversationsPage'))
+const GrowthProposalsPage = lazy(() => import('./pages/GrowthProposalsPage'))
 const ClaudeImportPage = lazy(() => import('./pages/ClaudeImportPage'))
 const SystemSettingsPage = lazy(() => import('./pages/SystemSettingsPage'))
 const TeamLibraryPage = lazy(() => import('./pages/TeamLibraryPage'))
@@ -30,12 +28,12 @@ const SyncLoginPage = lazy(() => import('./pages/SyncLoginPage'))
 const SkillsImportPage = lazy(() => import('./pages/SkillsImportPage'))
 const GitMirrorPage = lazy(() => import('./pages/GitMirrorPage'))
 const ClaudeMigrationPage = lazy(() => import('./pages/ClaudeMigrationPage'))
-const PlanGatePage = lazy(() => import('./pages/PlanGatePage'))
 const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 const DeveloperAccessPage = lazy(() => import('./pages/DeveloperAccessPage'))
 const CommandLineToolsPage = lazy(() => import('./pages/CommandLineToolsPage'))
+const McpHubPage = lazy(() => import('./pages/McpHubPage'))
+const LocalWelcomePage = lazy(() => import('./pages/LocalWelcomePage'))
 const MarketingHomePage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.MarketingHomePage })))
-const PricingPage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.PricingPage })))
 const IntegrationsPage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.IntegrationsPage })))
 const IntegrationDetailPage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.IntegrationDetailPage })))
 const DocsLandingPage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.DocsLandingPage })))
@@ -44,7 +42,124 @@ const SignupPage = lazy(() => import('./pages/PublicPages').then((module) => ({ 
 const PrivacyPage = lazy(() => import('./pages/PublicPages').then(({ LegalPage }) => ({ default: () => <LegalPage kind="privacy" /> })))
 const TermsPage = lazy(() => import('./pages/PublicPages').then(({ LegalPage }) => ({ default: () => <LegalPage kind="terms" /> })))
 
-const STALE_CHUNK_RELOAD_KEY = 'neudrive.staleChunkReloadAt'
+const PRODUCT_NAME = 'Vola'
+const STALE_CHUNK_RELOAD_KEY = 'vola.staleChunkReloadAt'
+
+type NavIconName =
+  | 'home'
+  | 'team'
+  | 'developer'
+  | 'import'
+  | 'mcp'
+  | 'backup'
+  | 'cli'
+  | 'growth'
+  | 'settings'
+
+const navIconPaths: Record<NavIconName, ReactNode> = {
+  home: (
+    <>
+      <path d="M6.2 8.6c0-1.36 2.6-2.46 5.8-2.46s5.8 1.1 5.8 2.46-2.6 2.46-5.8 2.46-5.8-1.1-5.8-2.46Z" />
+      <path d="M6.2 8.6v5.3c0 1.36 2.6 2.46 5.8 2.46s5.8-1.1 5.8-2.46V8.6" />
+      <path d="M8.4 13.8c1.02.5 2.25.75 3.6.75s2.58-.25 3.6-.75" />
+    </>
+  ),
+  team: (
+    <>
+      <path d="M8.3 7.3h7.4a2 2 0 0 1 2 2v6.1a2 2 0 0 1-2 2H8.3a2 2 0 0 1-2-2V9.3a2 2 0 0 1 2-2Z" />
+      <path d="M9.2 10.4h5.6" />
+      <path d="M9.2 13h4.1" />
+      <path d="M17.7 10.1 20 8.7v7.3l-2.3-1.4" />
+    </>
+  ),
+  developer: (
+    <>
+      <path d="M6.1 7h11.8a1.9 1.9 0 0 1 1.9 1.9v7.6a1.9 1.9 0 0 1-1.9 1.9H6.1a1.9 1.9 0 0 1-1.9-1.9V8.9A1.9 1.9 0 0 1 6.1 7Z" />
+      <path d="m8.1 10.2 2.1 1.8-2.1 1.8" />
+      <path d="M12.3 13.8h3.6" />
+    </>
+  ),
+  import: (
+    <>
+      <path d="M12 5.2v7.7" />
+      <path d="m8.8 10 3.2 3.1 3.2-3.1" />
+      <path d="M5.6 15h12.8" />
+      <path d="M7.2 6.8h9.6" />
+      <path d="M6.2 15v2.1c0 1 .7 1.7 1.8 1.7h8c1.1 0 1.8-.7 1.8-1.7V15" />
+    </>
+  ),
+  mcp: (
+    <>
+      <path d="M12 7.1v4.7" />
+      <path d="m8 14.4 4-2.6 4 2.6" />
+      <circle cx="12" cy="5.8" r="2" />
+      <circle cx="6.7" cy="15.5" r="2" />
+      <circle cx="17.3" cy="15.5" r="2" />
+      <path d="M8.7 15.5h6.6" />
+    </>
+  ),
+  backup: (
+    <>
+      <path d="M7.1 9.2A5.5 5.5 0 0 1 17.8 12h.4a3.05 3.05 0 0 1-.2 6.1H7.4a3.85 3.85 0 0 1-.3-7.7" />
+      <path d="m9.4 14.1 2.6-2.5 2.6 2.5" />
+      <path d="M12 11.7v5.3" />
+    </>
+  ),
+  cli: (
+    <>
+      <rect x="4.8" y="6.5" width="14.4" height="11.4" rx="2.3" />
+      <path d="m8.1 10.1 2.2 1.9-2.2 1.9" />
+      <path d="M12.5 14h3.4" />
+      <path d="M4.8 9h14.4" />
+    </>
+  ),
+  growth: (
+    <>
+      <path d="M5.8 16.7c4.2-.6 7.2-3.3 8-7.4" />
+      <path d="M14 9h4.2v4.2" />
+      <path d="M6.3 8.5 7 6.4l.7 2.1 2.1.7-2.1.7L7 12l-.7-2.1-2.1-.7 2.1-.7Z" />
+      <path d="M16.7 16.5 17.2 15l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5Z" />
+    </>
+  ),
+  settings: (
+    <>
+      <path d="M6.4 8.1h11.2" />
+      <path d="M6.4 15.9h11.2" />
+      <path d="M6.4 12h11.2" />
+      <circle cx="9" cy="8.1" r="1.7" />
+      <circle cx="15.2" cy="12" r="1.7" />
+      <circle cx="11.4" cy="15.9" r="1.7" />
+    </>
+  ),
+}
+
+function NavIcon({ name }: { name: NavIconName }) {
+  return (
+    <span className={`nav-icon nav-icon-${name}`} aria-hidden="true">
+      <svg viewBox="0 0 24 24" focusable="false">
+        {navIconPaths[name]}
+      </svg>
+    </span>
+  )
+}
+
+function isLocalOwnerUser(user: any, localMode: boolean) {
+  if (!localMode || !user) return false
+  return (user.slug === 'local' || user.display_name === 'Local Owner') && !user.email
+}
+
+function userDisplayName(user: any, localMode: boolean, tx: (zh: string, en: string) => string) {
+  if (!user && localMode) return tx('本地用户', 'Local User')
+  if (isLocalOwnerUser(user, localMode)) return tx('本地用户', 'Local User')
+  return String(user?.display_name || user?.name || user?.email || user?.slug || tx('用户', 'User'))
+}
+
+function userDisplayHint(user: any, localMode: boolean, tx: (zh: string, en: string) => string) {
+  if (!user && localMode) return tx('本地单机模式', 'Local-only mode')
+  if (isLocalOwnerUser(user, localMode)) return tx('本地单机模式', 'Local-only mode')
+  if (user?.email) return String(user.email)
+  return localMode ? tx('云端账户', 'Cloud account') : tx('账户菜单', 'Account menu')
+}
 
 function isChunkLoadError(error: unknown) {
   const message = error instanceof Error ? error.message : String(error || '')
@@ -119,8 +234,8 @@ function LegacyDataFilesRedirect() {
 
 function App() {
   const [user, setUser] = useState<any>(null)
+  const [connectionCount, setConnectionCount] = useState<number | null>(null)
   const [publicConfig, setPublicConfig] = useState<PublicConfig>({})
-  const [shellBilling, setShellBilling] = useState<BillingStatus | null>(null)
   const [loading, setLoading] = useState(true)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
   const { tx } = useI18n()
@@ -128,7 +243,11 @@ function App() {
   const location = useLocation()
   const systemSettingsEnabled = !!publicConfig?.system_settings_enabled
   const localMode = !!publicConfig?.local_mode
-  const billingEnabled = !!publicConfig?.billing_enabled
+  const currentUser = user || null
+  const currentUserName = userDisplayName(currentUser, localMode, tx)
+  const currentUserHint = userDisplayHint(currentUser, localMode, tx)
+  const currentUserInitial = currentUserName.slice(0, 1).toUpperCase()
+  const cloudUserVisible = !!currentUser && !isLocalOwnerUser(currentUser, localMode)
   const importsHomePath = localMode ? '/imports/local-apps' : '/imports/claude-export'
 
   const checkAuth = useCallback(async () => {
@@ -151,18 +270,32 @@ function App() {
       else localStorage.removeItem('refresh_token')
       clearAuthParamsFromURL()
     }
-    if (localToken) {
+    if (!authToken && localToken && !localStorage.getItem('token')) {
       localStorage.setItem('token', localToken)
       localStorage.removeItem('refresh_token')
+      clearAuthParamsFromURL()
+    } else if (localToken) {
       clearAuthParamsFromURL()
     }
 
     let cfg: PublicConfig = {}
-    try {
-      cfg = await api.getPublicConfig()
-      setPublicConfig(cfg || {})
-    } catch {
-      setPublicConfig({})
+    let retries = 0
+    const maxRetries = 20 // Up to 10 seconds total wait time
+    while (true) {
+      try {
+        cfg = await api.getPublicConfig()
+        setPublicConfig(cfg || {})
+        break
+      } catch (err) {
+        console.error("Failed to fetch public config:", err)
+        if (isTauri && retries < maxRetries) {
+          retries++
+          await new Promise((resolve) => setTimeout(resolve, 500))
+          continue
+        }
+        setPublicConfig({})
+        break
+      }
     }
 
     const bootstrapLocalOwner = async (): Promise<string | null> => {
@@ -178,7 +311,18 @@ function App() {
       }
     }
 
+    const loadUser = async () => {
+      const me = await api.getMe()
+      setUser(me)
+      return me
+    }
+
     let token = localStorage.getItem('token')
+    if (!token && localToken) {
+      localStorage.setItem('token', localToken)
+      localStorage.removeItem('refresh_token')
+      token = localToken
+    }
     if (!token) token = await bootstrapLocalOwner() || ''
     if (!token) {
       setUser(null)
@@ -187,18 +331,24 @@ function App() {
     }
 
     try {
-      setUser(await api.getMe())
+      await loadUser()
     } catch {
       localStorage.removeItem('token')
       localStorage.removeItem('refresh_token')
-      const fallbackToken = await bootstrapLocalOwner()
-      if (!fallbackToken) {
+      let nextToken = ''
+      if (localToken && localToken !== token) {
+        localStorage.setItem('token', localToken)
+        nextToken = localToken
+      } else {
+        nextToken = await bootstrapLocalOwner() || ''
+      }
+      if (!nextToken) {
         setUser(null)
         setLoading(false)
         return
       }
       try {
-        setUser(await api.getMe())
+        await loadUser()
       } catch {
         localStorage.removeItem('token')
         localStorage.removeItem('refresh_token')
@@ -226,56 +376,22 @@ function App() {
 
   useEffect(() => {
     if (!user) return
-    let cancelled = false
-    const loadShellState = async () => {
-      if (!billingEnabled) {
-        setShellBilling(null)
-        return
-      }
-      try {
-        const billing = await api.getBillingStatus()
-        if (!cancelled) setShellBilling(billing)
-      } catch {
-        // Billing status is optional shell chrome; the billing page will surface detailed errors.
-      }
-    }
-    void loadShellState()
-    return () => {
-      cancelled = true
-    }
-  }, [billingEnabled, user])
-
-  useEffect(() => {
-    if (!user) return
-    const isSignupReturn = localStorage.getItem('neudrive.postSignupIntent') === '1'
+    const isSignupReturn = localStorage.getItem('vola.postSignupIntent') === '1'
     if (!isSignupReturn) return
-    if (location.pathname.startsWith('/plan') || location.pathname.startsWith('/onboarding') || location.pathname.startsWith('/billing')) return
-    navigate(billingEnabled ? '/plan' : '/onboarding', { replace: true })
-  }, [billingEnabled, location.pathname, navigate, user])
+    if (location.pathname.startsWith('/onboarding')) return
+    navigate('/onboarding', { replace: true })
+  }, [location.pathname, navigate, user])
 
   useEffect(() => {
-    const onBillingRedirect = (event: Event) => {
-      if (!billingEnabled) return
-      const detail = (event as CustomEvent<BillingRedirectDetail>).detail
-      const params = new URLSearchParams()
-      if (detail?.code) params.set('reason', detail.code)
-      params.set('ts', String(Date.now()))
-      navigate(`/settings/billing?${params.toString()}`)
-    }
-    window.addEventListener(BILLING_REDIRECT_EVENT, onBillingRedirect as EventListener)
-    return () => window.removeEventListener(BILLING_REDIRECT_EVENT, onBillingRedirect as EventListener)
-  }, [billingEnabled, navigate])
-
-  useEffect(() => {
-    if (!user) return
+    if (!currentUser) return
     const path = location.pathname
     const pageTitle =
       path === '/' ? 'Home' :
-      path.startsWith('/plan') ? 'Choose Plan' :
+      path.startsWith('/plan') ? 'Get Started' :
       path.startsWith('/onboarding') ? 'Get Started' :
       path.startsWith('/connections') ? 'Connections' :
       path.startsWith('/sync-backup') || path.startsWith('/git-mirror') ? 'GitHub Backup' :
-      path.startsWith('/settings/billing') || path.startsWith('/billing') ? 'Plan & Billing' :
+      path.startsWith('/settings/billing') || path.startsWith('/billing') ? 'Account' :
       path.startsWith('/settings/developer-access') || path.startsWith('/settings/developer') ? 'Developer Access' :
       path.startsWith('/settings/security') ? 'System Settings' :
       path.startsWith('/settings/profile') || path.startsWith('/info') ? 'My Profile' :
@@ -286,12 +402,37 @@ function App() {
       path.startsWith('/data/projects') || path.startsWith('/projects') ? 'Projects' :
       path.startsWith('/data') ? 'Data Explorer' :
       path.startsWith('/memory') ? 'Memory' :
+      path.startsWith('/growth-proposals') ? 'Growth Proposals' :
       path.startsWith('/skills') ? 'Skills' :
       path.startsWith('/imports/local-apps') || path.startsWith('/imports/claude') || path.startsWith('/imports/codex') ? 'Local App Data Import' :
       path.startsWith('/imports') ? 'Data Imports' :
-      'neuDrive'
-    document.title = pageTitle === 'neuDrive' ? 'neuDrive' : `${pageTitle} — neuDrive`
-  }, [location.pathname, user])
+      PRODUCT_NAME
+    document.title = pageTitle === PRODUCT_NAME ? PRODUCT_NAME : `${pageTitle} — ${PRODUCT_NAME}`
+  }, [location.pathname, currentUser])
+
+  useEffect(() => {
+    if (!currentUser) {
+      setConnectionCount(null)
+      return
+    }
+    let active = true
+    const fetchConnections = async () => {
+      try {
+        const conns = await api.getConnections()
+        if (active) setConnectionCount(conns.length)
+      } catch (err) {
+        console.error("Failed to load connections in sidebar:", err)
+      }
+    }
+    void fetchConnections()
+    const timer = setInterval(() => {
+      void fetchConnections()
+    }, 15000)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [currentUser])
 
   useEffect(() => {
     setUserMenuOpen(false)
@@ -322,15 +463,38 @@ function App() {
 
   const handleLogout = async () => {
     await api.logout()
-    setUser(null)
-    navigate('/login')
+    if (!localMode) {
+      setUser(null)
+      navigate('/login')
+      return
+    }
+    try {
+      const created = await api.bootstrapLocalOwnerToken()
+      if (created?.token) {
+        localStorage.setItem('token', created.token)
+        localStorage.removeItem('refresh_token')
+        setUser(await api.getMe())
+      } else {
+        setUser(null)
+      }
+    } catch {
+      setUser(null)
+    }
+    navigate('/', { replace: true })
   }
 
   if (loading) {
     return (
       <div className="loading-screen">
         <div className="loading-spinner" />
-        <p>{tx('加载中...', 'Loading...')}</p>
+        {isTauri ? (
+          <>
+            <h2 style={{ fontSize: '18px', fontWeight: 850, color: '#12192d', marginTop: '16px', marginBottom: '4px' }}>{PRODUCT_NAME}</h2>
+            <p style={{ fontSize: '13px', color: '#506074' }}>{tx('正在连接本地 Vola 数据引擎...', 'Connecting to local Vola engine...')}</p>
+          </>
+        ) : (
+          <p>{tx('加载中...', 'Loading...')}</p>
+        )}
       </div>
     )
   }
@@ -358,7 +522,7 @@ function App() {
     )
   }
 
-  if (!user) {
+  if (!user && !localMode) {
     const protectedSignupRedirect = `/signup?redirect=${encodeURIComponent(location.pathname + location.search)}`
     const protectedLoginRedirect = `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
     return (
@@ -366,7 +530,7 @@ function App() {
       <Suspense fallback={routeFallback}>
         <Routes>
           <Route path="/" element={<MarketingHomePage />} />
-          <Route path="/pricing" element={<PricingPage />} />
+          <Route path="/pricing" element={<Navigate to="/" replace />} />
           <Route path="/integrations" element={<IntegrationsPage />} />
           <Route path="/integrations/:platform" element={<IntegrationDetailPage />} />
           <Route path="/docs" element={<DocsLandingPage />} />
@@ -385,7 +549,6 @@ function App() {
   }
 
   const showGitHubBackup = localMode || !!publicConfig?.github_enabled || !!publicConfig?.github_app_enabled
-  const showUpgrade = billingEnabled && (!shellBilling || shellBilling.current_plan === 'free')
   const isSyncLoginRoute = location.pathname === '/sync/login'
   const isLegacySyncLoginRoute =
     location.pathname === '/data/sync' &&
@@ -404,64 +567,91 @@ function App() {
       <aside className="sidebar">
         <div className="sidebar-brand">
           <div className="sidebar-brand-lockup">
-            <img className="sidebar-brand-logo" src="/logo-mark.png" alt="" aria-hidden="true" />
-            <h1>neuDrive</h1>
+            <img className="sidebar-brand-logo" src="/vola-mark.svg" alt="" aria-hidden="true" />
+            <h1>{PRODUCT_NAME}</h1>
           </div>
-          <GitHubRepoLink className="sidebar-github-link" />
         </div>
 
         <nav className="sidebar-nav">
+          <div className="sidebar-group-header">{tx('核心与引导', 'Core & Setup')}</div>
+
           <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">■</span>
-            <span>{tx('概览', 'Home')}</span>
+            <NavIcon name="home" />
+            <span>{tx('数据概览', 'Home')}</span>
           </NavLink>
 
-          <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">▦</span>
-            <span>{tx('团队资料', 'Team Library')}</span>
+          <NavLink to="/setup/mcp" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="settings" />
+            <span>{tx('新手接入指南', 'Get Started')}</span>
+            {connectionCount !== null && (
+              connectionCount > 0 ? (
+                <span className="nav-item-badge badge-online" title={tx('AI 已就绪', 'AI Connected')}>
+                  {tx('已连接', 'Linked')}
+                </span>
+              ) : (
+                <span className="nav-item-badge badge-offline" title={tx('未连接 AI', 'No AI Connected')}>
+                  {tx('未连接', 'Offline')}
+                </span>
+              )
+            )}
           </NavLink>
+
+          <NavLink to="/growth-proposals" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="growth" />
+            <span>{tx('成长提案', 'Growth Proposals')}</span>
+          </NavLink>
+
+          <div className="sidebar-divider" />
+          <div className="sidebar-group-header">{tx('集成与开发', 'Integrations & Dev')}</div>
 
           <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">⌘</span>
+            <NavIcon name="developer" />
             <span>{tx('开发者访问', 'Developer Access')}</span>
+          </NavLink>
+
+          <NavLink to="/cli" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="cli" />
+            <span>{tx('命令行工具', 'Command Line')}</span>
           </NavLink>
 
           {localMode && (
             <NavLink to={importsHomePath} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <span className="nav-icon">⇩</span>
+              <NavIcon name="import" />
               <span>{tx('本地 App Data 导入', 'Local App Data Import')}</span>
             </NavLink>
           )}
 
-          {showGitHubBackup && (
-            <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <span className="nav-icon">↕</span>
-              <span>{tx('GitHub 备份', 'GitHub Backup')}</span>
+          {localMode && (
+            <NavLink to="/mcp-hub" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavIcon name="mcp" />
+              <span>{tx('MCP 控制中心', 'MCP Hub')}</span>
             </NavLink>
           )}
 
-          <NavLink to="/cli" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <span className="nav-icon">›_</span>
-            <span>{tx('命令行工具', 'Command Line')}</span>
+          <div className="sidebar-divider" />
+          <div className="sidebar-group-header">{tx('协作与管理', 'Sync & Collab')}</div>
+
+          <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="team" />
+            <span>{tx('团队资料', 'Team Library')}</span>
           </NavLink>
 
-          {billingEnabled && (
-            <NavLink to="/settings/billing" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <span className="nav-icon">◈</span>
-              <span>{tx('套餐与账单', 'Plan & Billing')}</span>
+          {showGitHubBackup && (
+            <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavIcon name="backup" />
+              <span>{tx('GitHub 备份', 'GitHub Backup')}</span>
             </NavLink>
           )}
 
           {systemSettingsEnabled && (
             <NavLink to="/settings/security" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <span className="nav-icon">⚙</span>
+              <NavIcon name="settings" />
               <span>{tx('系统设置', 'System Settings')}</span>
             </NavLink>
           )}
         </nav>
 
         <div className="sidebar-footer">
-          {showUpgrade && <NavLink to="/plan" className="sidebar-upgrade">{tx('升级到 Pro', 'Upgrade to Pro')}</NavLink>}
           <LanguageToggle compact />
           <div className="sidebar-user-menu-wrap">
             <button
@@ -471,10 +661,10 @@ function App() {
               aria-expanded={userMenuOpen}
               onClick={() => setUserMenuOpen((open) => !open)}
             >
-              <span className="sidebar-user-avatar">{(user.name || user.slug || 'U').slice(0, 1).toUpperCase()}</span>
+              <span className="sidebar-user-avatar">{currentUserInitial}</span>
               <span className="user-info">
-                <span className="user-name">{user.name || user.slug || tx('用户', 'User')}</span>
-                <span className="user-menu-hint">{tx('账户菜单', 'Account menu')}</span>
+                <span className="user-name">{currentUserName}</span>
+                <span className="user-menu-hint">{currentUserHint}</span>
               </span>
               <span className="user-menu-chevron">⌄</span>
             </button>
@@ -493,26 +683,36 @@ function App() {
       </aside>
 
       <main className="main-content">
+        {cloudUserVisible && (
+          <header className="main-account-bar">
+            <span className="main-account-avatar">{currentUserInitial}</span>
+            <span className="main-account-copy">
+              <strong>{currentUserName}</strong>
+              <span>{currentUserHint}</span>
+            </span>
+          </header>
+        )}
         <RouteErrorBoundary key={location.pathname} fallback={routeErrorFallback}>
         <Suspense fallback={routeFallback}>
           <Routes>
-            <Route path="/" element={<DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} billingEnabled={billingEnabled} />} />
-            <Route path="/plan" element={<PlanGatePage billingEnabled={billingEnabled} />} />
+            <Route path="/" element={<DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} />} />
+            <Route path="/plan" element={<Navigate to="/onboarding" replace />} />
             <Route path="/onboarding" element={<Navigate to="/setup/mcp" replace />} />
             <Route path="/onboarding/:platform" element={<LegacyOnboardingRedirect />} />
             <Route path="/connections" element={<ConnectionsPage />} />
             <Route path="/sync-backup" element={<GitMirrorPage />} />
             <Route path="/git-mirror" element={<Navigate to="/sync-backup" replace />} />
-            <Route path="/billing" element={<Navigate to="/settings/billing" replace />} />
-            <Route path="/billing/success" element={billingEnabled ? <BillingSuccessPage /> : <Navigate to="/onboarding" replace />} />
+            <Route path="/billing" element={<Navigate to="/onboarding" replace />} />
+            <Route path="/billing/success" element={<Navigate to="/onboarding" replace />} />
             <Route path="/settings" element={<Navigate to="/settings/profile" replace />} />
             <Route path="/settings/profile" element={<InfoPage />} />
-            <Route path="/settings/billing" element={billingEnabled ? <BillingPage /> : <Navigate to="/settings/profile" replace />} />
+            <Route path="/settings/billing" element={<Navigate to="/settings/profile" replace />} />
             <Route path="/settings/developer-access" element={<DeveloperAccessPage />} />
             <Route path="/settings/security" element={systemSettingsEnabled ? <SystemSettingsPage /> : <Navigate to="/settings/profile" replace />} />
             <Route path="/settings/developer" element={<Navigate to="/settings/developer-access" replace />} />
             <Route path="/team" element={<TeamLibraryPage />} />
             <Route path="/cli" element={<CommandLineToolsPage />} />
+            <Route path="/mcp-hub" element={<McpHubPage />} />
             <Route path="/command-line-tools" element={<Navigate to="/cli" replace />} />
 
             <Route path="/setup/mcp" element={<OnboardingPage />} />
@@ -552,6 +752,7 @@ function App() {
             <Route path="/memory" element={<DataMemoryPage />} />
             <Route path="/skills" element={<DataSkillsPage />} />
             <Route path="/skills/:bundleKey" element={<DataSkillsPage />} />
+            <Route path="/growth-proposals" element={<GrowthProposalsPage />} />
 
             <Route path="/imports" element={<Navigate to={importsHomePath} replace />} />
             <Route path="/imports/local-apps" element={localMode ? <ClaudeMigrationPage localMode={localMode} officialExportPath="/imports/claude-export" /> : <Navigate to="/" replace />} />
@@ -561,7 +762,7 @@ function App() {
 
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route path="/signup" element={<Navigate to="/" replace />} />
-            <Route path="/pricing" element={<Navigate to="/settings/billing" replace />} />
+            <Route path="/pricing" element={<Navigate to="/" replace />} />
             <Route path="/integrations" element={<Navigate to="/connections" replace />} />
             <Route path="/docs" element={<Navigate to="/onboarding" replace />} />
             <Route path="/info" element={<Navigate to="/settings/profile" replace />} />

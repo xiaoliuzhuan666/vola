@@ -16,13 +16,13 @@ import (
 // Full integration tests against a live server.
 //
 // Run with:
-//   NEUDRIVE_TEST_URL=http://localhost:8080 go test ./internal/api/ -run TestIntegration -v -count=1
+//   VOLA_TEST_URL=http://localhost:8080 go test ./internal/api/ -run TestIntegration -v -count=1
 //
 // Requires: docker compose up (server + database running)
 // ---------------------------------------------------------------------------
 
 func baseURL() string {
-	u := os.Getenv("NEUDRIVE_TEST_URL")
+	u := os.Getenv("VOLA_TEST_URL")
 	if u == "" {
 		return ""
 	}
@@ -33,7 +33,7 @@ func skipIfNoServer(t *testing.T) string {
 	t.Helper()
 	u := baseURL()
 	if u == "" {
-		t.Skip("NEUDRIVE_TEST_URL not set; skipping integration test")
+		t.Skip("VOLA_TEST_URL not set; skipping integration test")
 	}
 	return u
 }
@@ -762,8 +762,8 @@ func TestIntegration_FullLifecycle(t *testing.T) {
 			t.Fatalf("expected 200, got %d", resp.StatusCode)
 		}
 		body, _ := io.ReadAll(resp.Body)
-		if !strings.Contains(string(body), "neuDrive") {
-			t.Error("frontend should contain 'neuDrive'")
+		if !strings.Contains(string(body), "Vola") {
+			t.Error("frontend should contain 'Vola'")
 		}
 	})
 }

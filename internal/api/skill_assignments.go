@@ -10,13 +10,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/google/uuid"
 )
 
 const (
-	skillAssignmentsVersion = "neudrive.skill-assignments/v1"
+	skillAssignmentsVersion = "vola.skill-assignments/v1"
 	skillAssignmentsPath    = "/settings/agent-skill-assignments.json"
 )
 
@@ -66,8 +66,8 @@ var skillAgentTargets = []skillAgentTarget{
 		SupportsApply: true, SupportStatus: "managed_apply", ApplyMode: "managed-directory", ExportSupported: true,
 		DocsPath: "docs/agent-skill-targets.zh-CN.md",
 		DirectoryRules: []string{
-			"neuDrive writes assigned skills into ~/.claude/skills by default.",
-			"Only directories with .neudrive-managed.json are updated or cleaned.",
+			"Vola writes assigned skills into ~/.claude/skills by default.",
+			"Only directories with .vola-managed.json are updated or cleaned.",
 		},
 	},
 	{
@@ -75,30 +75,28 @@ var skillAgentTargets = []skillAgentTarget{
 		SupportsApply: true, SupportStatus: "managed_apply", ApplyMode: "managed-directory", ExportSupported: true,
 		DocsPath: "docs/agent-skill-targets.zh-CN.md",
 		DirectoryRules: []string{
-			"neuDrive writes assigned skills into ~/.codex/skills by default.",
-			"Only directories with .neudrive-managed.json are updated or cleaned.",
+			"Vola writes assigned skills into ~/.codex/skills by default.",
+			"Only directories with .vola-managed.json are updated or cleaned.",
 		},
 	},
 	{
-		ID: "cursor", Name: "Cursor", Platform: "cursor", InstallPathHint: "Export package; manual project rules",
-		SupportsApply: false, SupportStatus: "export_only", ApplyMode: "export-only", ExportSupported: true,
-		AutoApplyReason: "Cursor does not expose a stable user-level Skill directory that neuDrive can safely write across projects.",
-		DocsPath:        "docs/agent-skill-targets.zh-CN.md",
+		ID: "cursor", Name: "Cursor", Platform: "cursor", InstallPathHint: ".cursor/rules",
+		SupportsApply: true, SupportStatus: "managed_apply", ApplyMode: "managed-directory", ExportSupported: true,
+		DocsPath: "docs/agent-skill-targets.zh-CN.md",
 		DirectoryRules: []string{
-			"Cursor assignments are preserved in Hub and can be exported as a zip package.",
-			"If a project uses .cursor/rules, review the exported SKILL.md and assets before manually adapting them.",
-			"neuDrive does not edit Cursor global or workspace configuration automatically.",
+			"Vola writes assigned skills into .cursor/rules by default.",
+			"Only directories with .vola-managed.json are updated or cleaned.",
 		},
 	},
 	{
 		ID: "gemini-cli", Name: "Gemini CLI", Platform: "gemini-cli", InstallPathHint: "Export package; manual GEMINI.md integration",
 		SupportsApply: false, SupportStatus: "export_only", ApplyMode: "export-only", ExportSupported: true,
-		AutoApplyReason: "Gemini CLI guidance is commonly file-based, but there is no neuDrive-managed Skill directory contract to write safely.",
+		AutoApplyReason: "Gemini CLI guidance is commonly file-based, but there is no Vola-managed Skill directory contract to write safely.",
 		DocsPath:        "docs/agent-skill-targets.zh-CN.md",
 		DirectoryRules: []string{
 			"Gemini CLI assignments are preserved in Hub and can be exported as a zip package.",
 			"Review the exported SKILL.md and assets, then manually reference or adapt them in the project or user guidance files you already use.",
-			"neuDrive does not edit GEMINI.md or Gemini CLI configuration automatically.",
+			"Vola does not edit GEMINI.md or Gemini CLI configuration automatically.",
 		},
 	},
 }

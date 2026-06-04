@@ -13,7 +13,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -177,7 +177,7 @@ func (s *WebhookService) Test(ctx context.Context, webhookID, userID uuid.UUID) 
 	envelope := models.WebhookPayload{
 		Event:     "test",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
-		Data:      map[string]string{"message": "This is a test webhook from neuDrive."},
+		Data:      map[string]string{"message": "This is a test webhook from Vola."},
 	}
 
 	body, err := json.Marshal(envelope)

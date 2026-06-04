@@ -15,8 +15,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -391,7 +391,7 @@ func (s *ExportService) ExportBundle(ctx context.Context, userID uuid.UUID) (*mo
 	bundle := &models.Bundle{
 		Version:   models.BundleVersionV1,
 		CreatedAt: time.Now().UTC().Format(time.RFC3339),
-		Source:    "neudrive",
+		Source:    "vola",
 		Mode:      bundleModeMerge,
 		Profile:   map[string]string{},
 		Skills:    map[string]models.BundleSkill{},

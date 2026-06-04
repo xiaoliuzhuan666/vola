@@ -1,6 +1,9 @@
 # Codeup + Flow + ACR image build
 
-This path keeps neuDrive image builds away from the production Tencent Cloud host.
+This path keeps Vola image builds away from the production Tencent Cloud host.
+
+For a customer-facing step-by-step manual, see
+[flow-acr-manual-runbook.zh-CN.md](flow-acr-manual-runbook.zh-CN.md).
 
 ## Flow setup
 
@@ -8,13 +11,13 @@ This path keeps neuDrive image builds away from the production Tencent Cloud hos
 2. Create an Alibaba Cloud Container Registry repository, for example:
    - registry: `crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com`
    - namespace: `sxhx`
-   - repository: `neudrive`
+   - repository: `vola`
 3. Store these values as Flow variables or a variable group:
 
 ```text
 ACR_REGISTRY=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com
 ACR_NAMESPACE=sxhx
-ACR_REPOSITORY=neudrive
+ACR_REPOSITORY=vola
 ACR_USERNAME=<registry username>
 ACR_PASSWORD=<registry password>
 IMAGE_TAG=<commit sha or release tag>
@@ -28,7 +31,7 @@ PLATFORM=linux/amd64
 ```bash
 export ACR_REGISTRY=crpi-ie94et80ojbqnl7z.cn-shanghai.personal.cr.aliyuncs.com
 export ACR_NAMESPACE=sxhx
-export ACR_REPOSITORY=neudrive
+export ACR_REPOSITORY=vola
 export ACR_USERNAME=<registry username>
 export ACR_PASSWORD=<registry password>
 export PLATFORM=linux/amd64
@@ -36,7 +39,7 @@ export PLATFORM=linux/amd64
 bash deploy/aliyun/push-acr-base-images.sh
 ```
 
-By default this pushes these tags into the existing `sxhx/neudrive` repository:
+By default this pushes these tags into the existing `sxhx/vola` repository:
 
 ```text
 base-node-20-alpine
@@ -52,7 +55,7 @@ If Docker Hub rate limits the local machine too, set `DOCKERHUB_USERNAME` and `D
 bash deploy/aliyun/flow-build-acr.sh
 ```
 
-The script builds the root `Dockerfile` using the mirrored ACR base images, pushes both `:${IMAGE_TAG}` and `:latest`, and prints the exact `NEUDRIVE_IMAGE=...` value for the server env file.
+The script builds the root `Dockerfile` using the mirrored ACR base images, pushes both `:${IMAGE_TAG}` and `:latest`, and prints the exact `VOLA_IMAGE=...` value for the server env file.
 
 Optional overrides:
 
@@ -67,7 +70,7 @@ RUNTIME_BASE_IMAGE=<full runtime base image>
 
 ## Notes
 
-- The Tencent Cloud server should not run `docker build` for neuDrive.
+- The Tencent Cloud server should not run `docker build` for Vola.
 - For ACR Personal Edition, use the repository page's public endpoint as `ACR_REGISTRY`. The VPC endpoint is only for Alibaba Cloud VPC access and should not be used from the Tencent Cloud host.
 - If ACR Enterprise Edition uses public access control, allow the Flow build cluster egress address in ACR. If a private build cluster is used, push through the VPC address when configured in Flow.
 - The Dockerfile builds a Linux image. For Tencent Lighthouse/CVM x86 hosts, keep `PLATFORM=linux/amd64`.

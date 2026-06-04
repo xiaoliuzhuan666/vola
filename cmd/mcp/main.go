@@ -7,7 +7,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/agi-bar/neudrive/internal/app/mcpapp"
+	"github.com/agi-bar/vola/internal/app/mcpapp"
 )
 
 func main() {
@@ -17,8 +17,8 @@ func main() {
 
 	if _, err := mcpapp.ResolveToken(*token, *tokenEnv); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
-		fmt.Fprintf(os.Stderr, "usage: neudrive-mcp --token ndt_xxxxx\n")
-		fmt.Fprintf(os.Stderr, "   or: export %s=ndt_xxxxx && neudrive-mcp --token-env %s\n", mcpapp.DefaultTokenEnvVar, mcpapp.DefaultTokenEnvVar)
+		fmt.Fprintf(os.Stderr, "usage: vola mcp stdio --token ndt_xxxxx\n")
+		fmt.Fprintf(os.Stderr, "   or: export %s=ndt_xxxxx && vola mcp stdio --token-env %s\n", mcpapp.DefaultTokenEnvVar, mcpapp.DefaultTokenEnvVar)
 		os.Exit(1)
 	}
 

@@ -15,10 +15,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/skillsarchive"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -604,7 +604,7 @@ func (s *Server) importLocalSkillsArchive(ctx context.Context, userID uuid.UUID,
 }
 
 func isManagedNeuDriveDir(pathValue string) bool {
-	_, err := os.Stat(filepath.Join(pathValue, ".neudrive-managed.json"))
+	_, err := os.Stat(filepath.Join(pathValue, ".vola-managed.json"))
 	return err == nil
 }
 
@@ -725,7 +725,7 @@ func isEmptyAgentPayload(payload any) bool {
 }
 
 func importedScratchPath(source, title string, createdAt time.Time) string {
-	key := fmt.Sprintf("neudrive/imported-scratch/%s/%s/%s", source, title, createdAt.UTC().Format(time.RFC3339Nano))
+	key := fmt.Sprintf("vola/imported-scratch/%s/%s/%s", source, title, createdAt.UTC().Format(time.RFC3339Nano))
 	legacyID := uuid.NewSHA1(uuid.NameSpaceURL, []byte(key))
 	slugBase := title
 	if strings.TrimSpace(slugBase) == "" {

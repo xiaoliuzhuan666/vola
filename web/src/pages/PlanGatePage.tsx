@@ -1,128 +1,47 @@
-import { useEffect, useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
-import { api, type BillingStatus, type PaidBillingPlanCode } from '../api'
 import { useI18n } from '../i18n'
-import { formatBillingStorage } from './BillingShared'
 
-interface PlanGatePageProps {
-  billingEnabled?: boolean
-}
-
-export default function PlanGatePage({ billingEnabled = false }: PlanGatePageProps) {
-  const { locale, tx } = useI18n()
+export default function PlanGatePage() {
+  const { tx } = useI18n()
   const navigate = useNavigate()
-  const [status, setStatus] = useState<BillingStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [busy, setBusy] = useState<PaidBillingPlanCode | ''>('')
-  const [error, setError] = useState('')
-
-  useEffect(() => {
-    let cancelled = false
-    const load = async () => {
-      if (!billingEnabled) {
-        setLoading(false)
-        return
-      }
-      try {
-        const next = await api.getBillingStatus()
-        if (!cancelled) setStatus(next)
-      } catch {
-        if (!cancelled) setStatus(null)
-      } finally {
-        if (!cancelled) setLoading(false)
-      }
-    }
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [billingEnabled])
-
-  const startCheckout = async (plan: PaidBillingPlanCode) => {
-    if (!status?.can_checkout) {
-      navigate('/onboarding', { replace: true })
-      return
-    }
-    setBusy(plan)
-    setError('')
-    try {
-      const response = await api.createBillingCheckout(plan)
-      window.location.assign(response.checkout_url)
-    } catch (err: any) {
-      setError(err?.message || tx('创建支付链接失败', 'Failed to create checkout session'))
-      setBusy('')
-    }
-  }
-
   const continueFree = () => {
-    localStorage.removeItem('neudrive.postSignupIntent')
-    localStorage.setItem('neudrive.planGateSeen', '1')
+    localStorage.removeItem('vola.postSignupIntent')
+    localStorage.setItem('vola.planGateSeen', '1')
     navigate('/onboarding', { replace: true })
   }
-
-  if (loading) {
-    return <div className="page-loading">{tx('加载中...', 'Loading...')}</div>
-  }
-
-  const canCheckout = !!status?.can_checkout
-  const freeLimit = status?.plans.find((plan) => plan.code === 'free')?.storage_limit_bytes || 10 * 1024 * 1024
-  const proLimit = status?.plans.find((plan) => plan.code === 'pro_yearly')?.storage_limit_bytes || 1024 * 1024 * 1024
 
   return (
     <div className="page app-narrow-page">
       <section className="plan-gate">
         <div className="plan-gate-head">
-          <p className="materials-kicker">{tx('选择套餐', 'Choose your plan')}</p>
-          <h2>{tx('选择你想怎样使用 neuDrive。', 'Choose how you want to use neuDrive.')}</h2>
+          <p className="materials-kicker">{tx('接入准备', 'Setup readiness')}</p>
+          <h2>{tx('当前部署暂不展示价格。', 'Pricing is hidden in this deployment.')}</h2>
           <p>
             {tx(
-              '如果你需要更多存储、自动同步和备份，推荐使用 Pro。',
-              'Pro is recommended if you need more storage, auto sync, and backup.',
+              '你可以先完成账号、MCP 接入、数据导入和备份设置。存储限制和账号策略以当前部署配置为准。',
+              'You can continue with account setup, MCP connection, imports, and backup settings. Storage limits and account policy follow this deployment.',
             )}
           </p>
-          {!billingEnabled && (
-            <div className="alert alert-warn">
-              {tx('当前是开源核心部署，支付网关未启用。你可以直接进入接入向导。', 'This open-source core deployment does not have the hosted billing gateway enabled. You can continue to setup.')}
-            </div>
-          )}
-          {billingEnabled && !canCheckout && (
-            <div className="alert alert-warn">
-              {tx('支付网关当前不可用或你的账户已拥有付费权益。', 'Billing gateway is unavailable or this account already has paid access.')}
-            </div>
-          )}
-          {error && <div className="alert alert-warn">{error}</div>}
+          <div className="alert alert-warn">
+            {tx('价格与订阅入口已暂时关闭；页面会直接引导你进入接入向导。', 'Pricing and subscription entry points are currently disabled; continue to the setup guide.')}
+          </div>
         </div>
 
         <div className="plan-gate-grid">
           <article className="plan-option-card featured">
-            <span className="recommended-chip">{tx('推荐', 'Recommended')}</span>
-            <h3>{tx('Pro 年付', 'Pro Yearly')}</h3>
-            <div className="pricing-price">{tx('$60 / 年', '$60 / year')}</div>
-            <p>{tx('Save 50% · 约 $5/月', 'Save 50% · about $5/month')}</p>
+            <h3>{tx('继续配置 Vola', 'Continue configuring Vola')}</h3>
+            <p>{tx('连接 Claude、ChatGPT、Cursor、Windsurf 或命令行工具。', 'Connect Claude, ChatGPT, Cursor, Windsurf, or command-line tools.')}</p>
             <ul>
-              <li>{formatBillingStorage(proLimit, locale)} {tx('存储', 'storage')}</li>
-              <li>{tx('自动同步', 'Auto sync')}</li>
-              <li>{tx('GitHub 备份', 'Git backup')}</li>
-              <li>{tx('优先导入', 'Priority import')}</li>
+              <li>{tx('账号登录与个人资料', 'Account sign-in and profile')}</li>
+              <li>{tx('Memory、项目、会话数据', 'Memory, projects, and conversations')}</li>
+              <li>{tx('Skills Library 和 Team Library', 'Skills Library and Team Library')}</li>
+              <li>{tx('导入、同步和备份', 'Import, sync, and backup')}</li>
             </ul>
-            <button className="btn btn-primary btn-block" disabled={busy !== ''} onClick={() => { void startCheckout('pro_yearly') }}>
-              {busy === 'pro_yearly' ? tx('跳转中...', 'Redirecting...') : tx('年付 Pro', 'Start Pro yearly')}
-            </button>
-          </article>
-
-          <article className="plan-option-card">
-            <h3>{tx('Pro 月付', 'Pro Monthly')}</h3>
-            <div className="pricing-price">{tx('$10 / 月', '$10 / month')}</div>
-            <p>{tx('先按月验证工作流，可在 Stripe Checkout 输入优惠码。', 'Validate the workflow month to month. Promo codes can be entered in Stripe Checkout.')}</p>
-            <button className="btn btn-outline btn-block" disabled={busy !== ''} onClick={() => { void startCheckout('pro_monthly') }}>
-              {busy === 'pro_monthly' ? tx('跳转中...', 'Redirecting...') : tx('月付 Pro', 'Start monthly')}
+            <button className="btn btn-primary btn-block" type="button" onClick={continueFree}>
+              {tx('进入接入向导', 'Open setup guide')}
             </button>
           </article>
         </div>
-
-        <button className="plan-free-link" type="button" onClick={continueFree}>
-          {tx('继续使用 Free', 'Continue with Free')} · {formatBillingStorage(freeLimit, locale)} {tx('存储', 'storage')}
-        </button>
         <p className="login-note"><Link to="/">{tx('稍后再选', 'Decide later')}</Link></p>
       </section>
     </div>

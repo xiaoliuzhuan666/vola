@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/agi-bar/neudrive/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/localgitsync"
 	"github.com/google/uuid"
 )
 

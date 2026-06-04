@@ -69,4 +69,5 @@ else
   docker push "$LATEST_IMAGE"
 fi
 
+printf 'VOLA_IMAGE=%s\n' "$IMAGE"
 printf 'NEUDRIVE_IMAGE=%s\n' "$IMAGE"

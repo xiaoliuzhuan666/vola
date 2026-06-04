@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	platformspkg "github.com/agi-bar/neudrive/internal/platforms"
+	platformspkg "github.com/agi-bar/vola/internal/platforms"
 )
 
 type adapterContractCase struct {
@@ -41,8 +41,8 @@ func TestAdapterContracts(t *testing.T) {
 					t.Fatalf("expected claude auth header and daemon url in shim log: %s", logText)
 				}
 				for _, expected := range []string{
-					filepath.Join(home, ".claude", "skills", "neudrive", "SKILL.md"),
-					filepath.Join(home, ".claude", "commands", "neudrive.md"),
+					filepath.Join(home, ".claude", "skills", "vola", "SKILL.md"),
+					filepath.Join(home, ".claude", "commands", "vola.md"),
 				} {
 					if _, err := os.Stat(expected); err != nil {
 						t.Fatalf("expected managed claude entrypoint %s: %v", expected, err)
@@ -52,8 +52,8 @@ func TestAdapterContracts(t *testing.T) {
 			assertDisconnect: func(t *testing.T, home string) {
 				t.Helper()
 				for _, target := range []string{
-					filepath.Join(home, ".claude", "skills", "neudrive"),
-					filepath.Join(home, ".claude", "commands", "neudrive.md"),
+					filepath.Join(home, ".claude", "skills", "vola"),
+					filepath.Join(home, ".claude", "commands", "vola.md"),
 				} {
 					if _, err := os.Stat(target); !os.IsNotExist(err) {
 						t.Fatalf("expected claude managed path removed: %s", target)
@@ -77,22 +77,22 @@ func TestAdapterContracts(t *testing.T) {
 			},
 			assertConnect: func(t *testing.T, home, daemonURL, logText string, _ string) {
 				t.Helper()
-				if !strings.Contains(logText, "ARG=mcp ARG=add ARG=neudrive-local") {
+				if !strings.Contains(logText, "ARG=mcp ARG=add ARG=vola-local") {
 					t.Fatalf("expected codex add invocation in shim log: %s", logText)
 				}
-				for _, needle := range []string{"NEUDRIVE_TOKEN=", "NEUDRIVE_STORAGE=postgres", "DATABASE_URL=postgres://local-mode.example/neudrive?sslmode=disable", "ARG=mcp ARG=stdio"} {
+				for _, needle := range []string{"VOLA_TOKEN=", "VOLA_STORAGE=postgres", "DATABASE_URL=postgres://local-mode.example/vola?sslmode=disable", "ARG=mcp ARG=stdio"} {
 					if !strings.Contains(logText, needle) {
 						t.Fatalf("expected %q in codex shim log: %s", needle, logText)
 					}
 				}
-				skillPath := filepath.Join(home, ".agents", "skills", "neudrive", "SKILL.md")
+				skillPath := filepath.Join(home, ".agents", "skills", "vola", "SKILL.md")
 				if _, err := os.Stat(skillPath); err != nil {
 					t.Fatalf("expected managed codex skill %s: %v", skillPath, err)
 				}
 			},
 			assertDisconnect: func(t *testing.T, home string) {
 				t.Helper()
-				if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "neudrive")); !os.IsNotExist(err) {
+				if _, err := os.Stat(filepath.Join(home, ".agents", "skills", "vola")); !os.IsNotExist(err) {
 					t.Fatalf("expected codex managed skill removed")
 				}
 			},
@@ -196,7 +196,7 @@ func TestAdapterContracts(t *testing.T) {
 				t.Fatalf("expected agent mediated state for %s", tc.id)
 			}
 
-			connection, err := platformspkg.EnsureConnection(ctx, cfg, tc.id, "/tmp/neudrive-test", daemonURL)
+			connection, err := platformspkg.EnsureConnection(ctx, cfg, tc.id, "/tmp/vola-test", daemonURL)
 			if err != nil {
 				t.Fatalf("EnsureConnection(%s): %v", tc.id, err)
 			}
@@ -211,12 +211,12 @@ func TestAdapterContracts(t *testing.T) {
 				t.Fatalf("expected transport for %s", tc.id)
 			}
 			if tc.id == "codex" {
-				if saved.EntrypointType != "skill" || !strings.Contains(saved.EntrypointPath, filepath.Join(".agents", "skills", "neudrive")) {
+				if saved.EntrypointType != "skill" || !strings.Contains(saved.EntrypointPath, filepath.Join(".agents", "skills", "vola")) {
 					t.Fatalf("unexpected codex entrypoint metadata: %+v", saved)
 				}
 			}
 			if tc.id == "claude-code" {
-				if saved.EntrypointType != "command" || !strings.Contains(saved.EntrypointPath, filepath.Join(".claude", "commands", "neudrive.md")) {
+				if saved.EntrypointType != "command" || !strings.Contains(saved.EntrypointPath, filepath.Join(".claude", "commands", "vola.md")) {
 					t.Fatalf("unexpected claude entrypoint metadata: %+v", saved)
 				}
 			}

@@ -12,7 +12,7 @@ export default function SetupGptActionsPage() {
     <SetupSection
       icon={<>&#129302;</>}
       title="ChatGPT GPT Actions"
-      description={tx('在自定义 GPT 中通过 Actions 连接 neuDrive。', 'Connect neuDrive to a custom GPT through Actions.')}
+      description={tx('在自定义 GPT 中通过 Actions 连接 Vola。', 'Connect Vola to a custom GPT through Actions.')}
       badge="GPT"
     >
       <SetupCodeBlock

@@ -5,7 +5,10 @@ __pycache__/
 *.py[cod]
 node_modules/
 web/dist/
+desktop/sidecars/
+desktop/target/
 .env
+vola.env
 neudrive.env
 .local/
 .claude/
@@ -22,7 +25,7 @@ web/test-results/
 # Local release verification artifacts
 .playwright-mcp/
 console-stage4*.txt
-neudrive-local-home.png
+vola-local-home.png
 stage3-*.png
 stage4-*.png
 stage4-*.md

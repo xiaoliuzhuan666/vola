@@ -1,13 +1,9 @@
 import { useState } from 'react'
 import { useI18n } from '../i18n'
 
-type CopyKey = 'install' | 'login' | 'daily' | 'import' | 'backup'
+type CopyKey = 'login' | 'daily' | 'import' | 'backup'
 
-const installCommand = `git clone https://github.com/agi-bar/neuDrive.git
-cd neuDrive
-./tools/install-neudrive.sh`
-
-const loginCommand = `neu login`
+const loginCommand = `neu login --api-base https://your-vola.example`
 
 const dailyCommands = `neu status
 neu platform ls
@@ -19,9 +15,9 @@ neu import codex --dry-run
 neu import skill ./demo-skill
 neu import memory ./notes`
 
-const backupCommands = `neu git init --output ./neudrive-export/git-mirror
+const backupCommands = `neu git init --output ./vola-export/git-mirror
 neu git pull
-neu sync pull --format archive --output neudrive-backup.ndrvz`
+neu sync pull --format archive --output vola-backup.ndrvz`
 
 function CommandBlock({
   title,
@@ -77,15 +73,10 @@ export default function CommandLineToolsPage() {
           <h2 className="materials-title">{tx('命令行工具', 'Command Line Tools')}</h2>
           <p className="materials-subtitle">
             {tx(
-              '使用 neu 在终端里登录官方云服务、检查本地运行状态、连接 AI 工具、导入本地数据，并把 neuDrive 内容备份出来。',
-              'Use neu from your terminal to sign in to the hosted service, check local status, connect AI tools, import local data, and back up neuDrive content.',
+              '使用 neu 在终端里登录官方云服务、检查本地运行状态、连接 AI 工具、导入本地数据，并把 Vola 内容备份出来。',
+              'Use neu from your terminal to sign in to the hosted service, check local status, connect AI tools, import local data, and back up Vola content.',
             )}
           </p>
-        </div>
-        <div className="materials-actions">
-          <a className="btn" href="https://github.com/agi-bar/neuDrive/blob/main/docs/cli.md" target="_blank" rel="noreferrer">
-            {tx('打开 CLI 手册', 'Open CLI manual')}
-          </a>
         </div>
       </section>
 
@@ -100,16 +91,8 @@ export default function CommandLineToolsPage() {
         </div>
         <div className="cli-command-list">
         <CommandBlock
-          title={tx('安装 neu', 'Install neu')}
-          description={tx('从当前开源仓库安装 CLI。安装后直接使用 neu。', 'Install the CLI from the open-source repository. After install, use neu directly.')}
-          command={installCommand}
-          copyKey="install"
-          copied={copied}
-          onCopy={copyCommand}
-        />
-        <CommandBlock
-          title={tx('登录官方云服务', 'Sign in to hosted neuDrive')}
-          description={tx('运行这条命令即可登录 neuDrive 官网账号。', 'Run this command to sign in to your neuDrive website account.')}
+          title={tx('登录 Vola 服务', 'Sign in to Vola')}
+          description={tx('把示例地址替换成你的部署域名；登录完成后 CLI 会保存当前 profile。', 'Replace the example URL with your deployment domain. After sign-in, the CLI stores the current profile.')}
           command={loginCommand}
           copyKey="login"
           copied={copied}

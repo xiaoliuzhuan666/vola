@@ -3,13 +3,15 @@ package platforms
 import (
 	"bufio"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
-	"github.com/agi-bar/neudrive/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/storage/sqlite"
 )
 
 type codexLocalScanResult struct {
@@ -83,9 +85,11 @@ type codexProjectAggregate struct {
 type codexScannedSession struct {
 	Summary      codexSessionSummary
 	Conversation *sqlite.ClaudeConversation
+	SkippedPath  string
 }
 
 const codexJSONLScannerMaxToken = 16 << 20
+const codexSessionConversationMaxBytes = 16 << 20
 
 func enrichCodexPayload(payload sqlite.AgentExportPayload) (sqlite.AgentExportPayload, []string, error) {
 	scan, err := scanLocalCodexMigration()
@@ -517,7 +521,11 @@ func scanCodexSessions(result *codexLocalScanResult, indexPath, activeRoot, arch
 
 	groups := map[string]*codexProjectAggregate{}
 	groupOrder := []string{}
+	skippedSessionNotes := []string{}
 	for _, scanned := range sessions {
+		if strings.TrimSpace(scanned.SkippedPath) != "" {
+			skippedSessionNotes = append(skippedSessionNotes, scanned.SkippedPath)
+		}
 		session := scanned.Summary
 		cwd := strings.TrimSpace(session.CWD)
 		if cwd == "" {
@@ -553,6 +561,9 @@ func scanCodexSessions(result *codexLocalScanResult, indexPath, activeRoot, arch
 		if len(group.SourcePaths) < 6 {
 			group.SourcePaths = append(group.SourcePaths, session.FilePath)
 		}
+	}
+	if note := summarizeCodexSkippedSessions(skippedSessionNotes); note != "" {
+		result.Notes = appendUniqueStrings(result.Notes, []string{note})
 	}
 
 	sort.Strings(groupOrder)
@@ -633,22 +644,17 @@ func readCodexSessionIndex(path string) (map[string]codexSessionIndexEntry, erro
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), codexJSONLScannerMaxToken)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
+	err = scanCodexJSONLLines(file, func(line string) error {
 		var entry codexSessionIndexEntry
 		if err := json.Unmarshal([]byte(line), &entry); err != nil {
-			continue
+			return nil
 		}
 		if entry.ID != "" {
 			entries[entry.ID] = entry
 		}
-	}
-	return entries, scanner.Err()
+		return nil
+	})
+	return entries, err
 }
 
 func scanCodexSessionDirectory(out *[]codexScannedSession, root string, archived bool, titles map[string]codexSessionIndexEntry) (int, error) {
@@ -678,26 +684,36 @@ func scanCodexSessionDirectory(out *[]codexScannedSession, root string, archived
 }
 
 func parseCodexSessionFile(path string, archived bool, titles map[string]codexSessionIndexEntry) (codexScannedSession, bool, error) {
+	if info, err := os.Stat(path); err == nil && info.Size() > codexSessionConversationMaxBytes {
+		summary := codexSessionSummary{
+			ID:       strings.TrimSuffix(filepath.Base(path), filepath.Ext(path)),
+			FilePath: path,
+			Archived: archived,
+		}
+		if indexEntry, ok := titles[summary.ID]; ok {
+			summary.ThreadName = strings.TrimSpace(indexEntry.ThreadName)
+			summary.UpdatedAt = strings.TrimSpace(indexEntry.UpdatedAt)
+		}
+		if summary.ThreadName == "" {
+			summary.ThreadName = summary.ID
+		}
+		return codexScannedSession{Summary: summary, SkippedPath: path}, true, nil
+	}
+
 	file, err := os.Open(path)
 	if err != nil {
 		return codexScannedSession{}, false, err
 	}
 	defer file.Close()
 
-	scanner := bufio.NewScanner(file)
-	scanner.Buffer(make([]byte, 0, 64*1024), codexJSONLScannerMaxToken)
 	summary := codexSessionSummary{FilePath: path, Archived: archived}
 	messages := []sqlite.ClaudeConversationMessage{}
 	firstTimestamp := ""
 	lastTimestamp := ""
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
+	if err := scanCodexJSONLLines(file, func(line string) error {
 		var envelope map[string]interface{}
 		if err := json.Unmarshal([]byte(line), &envelope); err != nil {
-			continue
+			return nil
 		}
 		envelopeType := strings.TrimSpace(fmt.Sprint(envelope["type"]))
 		envelopeTimestamp := strings.TrimSpace(fmt.Sprint(envelope["timestamp"]))
@@ -713,12 +729,12 @@ func parseCodexSessionFile(path string, archived bool, titles map[string]codexSe
 				summary.CLI = strings.TrimSpace(fmt.Sprint(payload["cli_version"]))
 				summary.ModelProvider = strings.TrimSpace(fmt.Sprint(payload["model_provider"]))
 			}
-			continue
+			return nil
 		case "response_item":
 			payload, _ := envelope["payload"].(map[string]interface{})
 			message, ok := extractCodexConversationMessage(payload, envelopeTimestamp)
 			if !ok {
-				continue
+				return nil
 			}
 			if firstTimestamp == "" && strings.TrimSpace(message.Timestamp) != "" {
 				firstTimestamp = strings.TrimSpace(message.Timestamp)
@@ -728,8 +744,8 @@ func parseCodexSessionFile(path string, archived bool, titles map[string]codexSe
 			}
 			messages = append(messages, message)
 		}
-	}
-	if err := scanner.Err(); err != nil {
+		return nil
+	}); err != nil {
 		return codexScannedSession{}, false, err
 	}
 	if summary.UpdatedAt == "" {
@@ -773,6 +789,76 @@ func parseCodexSessionFile(path string, archived bool, titles map[string]codexSe
 		return codexScannedSession{}, false, nil
 	}
 	return scanned, true, nil
+}
+
+func scanCodexJSONLLines(reader io.Reader, handle func(string) error) error {
+	return scanCodexJSONLLinesWithMax(reader, codexJSONLScannerMaxToken, handle)
+}
+
+func scanCodexJSONLLinesWithMax(reader io.Reader, maxLineBytes int, handle func(string) error) error {
+	if maxLineBytes <= 0 {
+		maxLineBytes = codexJSONLScannerMaxToken
+	}
+	buffer := bufio.NewReaderSize(reader, 64*1024)
+	var line strings.Builder
+	oversized := false
+
+	for {
+		chunk, err := buffer.ReadSlice('\n')
+		if len(chunk) > 0 && !oversized {
+			if line.Len()+len(chunk) > maxLineBytes {
+				oversized = true
+				line.Reset()
+			} else {
+				_, _ = line.Write(chunk)
+			}
+		}
+
+		lineEnded := err == nil || errors.Is(err, io.EOF)
+		if lineEnded {
+			if !oversized {
+				text := strings.TrimSpace(line.String())
+				if text != "" {
+					if handleErr := handle(text); handleErr != nil {
+						return handleErr
+					}
+				}
+			}
+			line.Reset()
+			oversized = false
+		}
+
+		switch {
+		case err == nil:
+			continue
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF):
+			return nil
+		default:
+			return err
+		}
+	}
+}
+
+func summarizeCodexSkippedSessions(notes []string) string {
+	if len(notes) == 0 {
+		return ""
+	}
+	examples := make([]string, 0, len(notes))
+	for _, note := range notes {
+		examples = append(examples, filepath.ToSlash(note))
+	}
+	sort.Strings(examples)
+	if len(examples) > 3 {
+		examples = examples[:3]
+	}
+	return fmt.Sprintf(
+		"Skipped %d Codex session conversations larger than %d MB during preview; the session inventory still records those files. Example paths: %s",
+		len(notes),
+		codexSessionConversationMaxBytes/(1024*1024),
+		strings.Join(examples, " | "),
+	)
 }
 
 func scanCodexAutomations(result *codexLocalScanResult, dir string) error {

@@ -8,6 +8,7 @@ import {
   type UpdateGitMirrorRequest,
 } from '../../api'
 import { formatDateTime, localizeGitHubAccessMessage } from './DataShared'
+import CustomSelect from '../../components/CustomSelect'
 
 type ConfigViewMode = 'settings' | 'raw'
 
@@ -27,7 +28,7 @@ type LocalSettingsDraft = {
 
 const REMOTE_PROFILES_EXAMPLE = `${JSON.stringify({
   official: {
-    api_base: 'https://neudrive.ai',
+    api_base: 'https://your-vola.example',
     token: 'eyJhbGciOi...',
     refresh_token: 'ndr_refresh_xxxxxxxx',
     expires_at: '2026-12-31T23:59:59Z',
@@ -40,7 +41,7 @@ const LOCAL_CONNECTIONS_EXAMPLE = `${JSON.stringify({
   'codex-local': {
     transport: 'stdio',
     entrypoint_type: 'binary',
-    entrypoint_path: '/Users/you/.local/bin/neudrive-mcp',
+    entrypoint_path: '/Users/you/.local/bin/vola',
     managed_paths: ['/skills', '/memory', '/projects'],
     chat_usage: ['codex'],
   },
@@ -502,7 +503,7 @@ export default function DataSyncPage() {
     <div className="page materials-page">
       <section className="materials-hero">
         <div className="materials-hero-copy">
-          <div className="materials-kicker">neuDrive Local</div>
+          <div className="materials-kicker">Vola Local</div>
           <h2 className="materials-title">{tx('系统设置', 'System Settings')}</h2>
           <p className="materials-subtitle">{tx('这里集中管理本地 config.json 与 Git Mirror。默认先展示更友好的设置表单；切到 config.json 时也能直接查看和编辑原始 JSON。', 'Manage local config.json and Git Mirror here. The default view is a friendlier settings form, and you can still switch to config.json to edit the raw JSON directly.')}</p>
         </div>
@@ -570,15 +571,16 @@ export default function DataSyncPage() {
                     <div className="form-group">
                       <label htmlFor="config-storage">{tx('存储后端', 'Storage backend')}</label>
                       <div className="data-sync-field-note">{tx('本地模式通常使用 SQLite；如果你手动接 Postgres，也可以在这里切换。', 'Local mode usually uses SQLite. Switch this only if you intentionally want to use Postgres.')}</div>
-                      <select
-                        id="config-storage"
+                      <CustomSelect
                         value={settingsDraft.storage}
-                        onChange={(e) => updateSettingsDraft({ storage: e.target.value })}
-                      >
-                        <option value="">{tx('自动', 'Auto')}</option>
-                        <option value="sqlite">SQLite</option>
-                        <option value="postgres">Postgres</option>
-                      </select>
+                        onChange={(val) => updateSettingsDraft({ storage: val })}
+                        options={[
+                          { value: '', label: tx('自动', 'Auto') },
+                          { value: 'sqlite', label: 'SQLite' },
+                          { value: 'postgres', label: 'Postgres' },
+                        ]}
+                        ariaLabel={tx('存储后端', 'Storage backend')}
+                      />
                     </div>
                     <div className="form-group">
                       <label htmlFor="config-sqlite-path">{tx('SQLite 文件路径', 'SQLite file path')}</label>
@@ -587,7 +589,7 @@ export default function DataSyncPage() {
                         id="config-sqlite-path"
                         value={settingsDraft.sqlitePath}
                         onChange={(e) => updateSettingsDraft({ sqlitePath: e.target.value })}
-                        placeholder="~/.local/share/neudrive/local.db"
+                        placeholder="~/.local/share/vola/local.db"
                       />
                     </div>
                     <div className="form-group">
@@ -597,17 +599,17 @@ export default function DataSyncPage() {
                         id="config-database-url"
                         value={settingsDraft.databaseURL}
                         onChange={(e) => updateSettingsDraft({ databaseURL: e.target.value })}
-                        placeholder="postgres://user:pass@host:5432/neudrive?sslmode=disable"
+                        placeholder="postgres://user:pass@host:5432/vola?sslmode=disable"
                       />
                     </div>
                     <div className="form-group">
                       <label htmlFor="config-git-mirror-path">{tx('Git Mirror 目录', 'Git Mirror path')}</label>
-                      <div className="data-sync-field-note">{tx('首次初始化本地 Git Mirror 时，neuDrive 会优先使用这里的目录。', 'When neuDrive initializes the local Git Mirror for the first time, it uses this directory first.')}</div>
+                      <div className="data-sync-field-note">{tx('首次初始化本地 Git Mirror 时，Vola 会优先使用这里的目录。', 'When Vola initializes the local Git Mirror for the first time, it uses this directory first.')}</div>
                       <input
                         id="config-git-mirror-path"
                         value={settingsDraft.gitMirrorPath}
                         onChange={(e) => updateSettingsDraft({ gitMirrorPath: e.target.value })}
-                        placeholder="./neudrive-export/git-mirror"
+                        placeholder="./vola-export/git-mirror"
                       />
                     </div>
                   </div>
@@ -734,7 +736,7 @@ export default function DataSyncPage() {
         {gitMirrorBusy && <div className="page-loading">{tx('加载中...', 'Loading...')}</div>}
         {!gitMirrorBusy && gitMirror && !gitMirrorEnabled && (
           <div className="alert alert-warn">
-            {tx('当前还没有初始化 Git Mirror。你现在就可以直接保存下面的配置；首次保存时，neuDrive 会自动创建并同步本地 mirror。', 'Git Mirror is not initialized yet. You can save the configuration below directly; on the first save, neuDrive will create and sync the local mirror automatically.')}
+            {tx('当前还没有初始化 Git Mirror。你现在就可以直接保存下面的配置；首次保存时，Vola 会自动创建并同步本地 mirror。', 'Git Mirror is not initialized yet. You can save the configuration below directly; on the first save, Vola will create and sync the local mirror automatically.')}
           </div>
         )}
         {!gitMirrorBusy && gitMirror && (
@@ -801,15 +803,15 @@ export default function DataSyncPage() {
                   <div className="form-group">
                     <label htmlFor="git-mirror-auth-mode">{tx('认证方式', 'Auth mode')}</label>
                     <div className="data-sync-field-note">{tx('选择是复用本机 Git 凭证，还是为这个 mirror 单独保存 GitHub token。', 'Choose whether to reuse your machine Git credentials or save a dedicated GitHub token for this mirror.')}</div>
-                    <select
-                      id="git-mirror-auth-mode"
-                      aria-label="Git mirror auth mode"
-                      value={gitMirrorDraft.auth_mode}
-                      onChange={(e) => updateGitMirrorDraft({ auth_mode: e.target.value as 'local_credentials' | 'github_token' })}
-                    >
-                      <option value="local_credentials">{tx('本机 Git 凭证', 'Local Git credentials')}</option>
-                      <option value="github_token">{tx('GitHub Token', 'GitHub token')}</option>
-                    </select>
+                    <CustomSelect
+                      value={gitMirrorDraft.auth_mode || ''}
+                      onChange={(val) => updateGitMirrorDraft({ auth_mode: val as 'local_credentials' | 'github_token' })}
+                      options={[
+                        { value: 'local_credentials', label: tx('本机 Git 凭证', 'Local Git credentials') },
+                        { value: 'github_token', label: tx('GitHub Token', 'GitHub token') },
+                      ]}
+                      ariaLabel={tx('认证方式', 'Auth mode')}
+                    />
                   </div>
                   <div className="form-group">
                     <label htmlFor="git-mirror-remote-url">{tx('仓库 URL', 'Repository URL')}</label>

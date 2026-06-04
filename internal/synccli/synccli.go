@@ -11,22 +11,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/profileauth"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/profileauth"
+	"github.com/agi-bar/vola/internal/runtimecfg"
 )
 
 const (
 	fallbackAPIBase = "http://localhost:8080"
-	syncConfigEnv   = "NEUDRIVE_SYNC_CONFIG"
-	syncProfileEnv  = "NEUDRIVE_SYNC_PROFILE"
-	syncAPIBaseEnv  = "NEUDRIVE_SYNC_API_BASE"
-	syncTokenEnv    = "NEUDRIVE_SYNC_TOKEN"
+	syncConfigEnv   = "VOLA_SYNC_CONFIG"
+	syncProfileEnv  = "VOLA_SYNC_PROFILE"
+	syncAPIBaseEnv  = "VOLA_SYNC_API_BASE"
+	syncTokenEnv    = "VOLA_SYNC_TOKEN"
 )
 
 var (
-	apiBaseEnvs = []string{syncAPIBaseEnv, "NEUDRIVE_API_BASE"}
-	tokenEnvs   = []string{syncTokenEnv, "NEUDRIVE_TOKEN"}
+	apiBaseEnvs = []string{syncAPIBaseEnv, "VOLA_API_BASE"}
+	tokenEnvs   = []string{syncTokenEnv, "VOLA_TOKEN"}
 )
 
 type ExitError struct {
@@ -100,7 +100,7 @@ func Run(args []string) error {
 }
 
 func printUsage() {
-	fmt.Println("Usage: neudrive sync export|preview|push|pull|resume|history|diff")
+	fmt.Println("Usage: vola sync export|preview|push|pull|resume|history|diff")
 }
 
 func runExport(args []string) error {
@@ -595,10 +595,10 @@ func parseCommonOptions(name string, args []string) (commonOptions, error) {
 
 func addCommonFlags(fs *flag.FlagSet, opts *commonOptions) {
 	fs.StringVar(&opts.Token, "token", "", "override sync token")
-	fs.StringVar(&opts.APIBase, "api-base", "", "override neuDrive base URL")
+	fs.StringVar(&opts.APIBase, "api-base", "", "override Vola base URL")
 	fs.StringVar(&opts.Profile, "profile", "", "profile name")
 	fs.StringVar(&opts.ConfigPath, "config", "", "override config path")
-	fs.BoolVar(&opts.Local, "local", false, "force the local neuDrive target")
+	fs.BoolVar(&opts.Local, "local", false, "force the local Vola target")
 }
 
 func addFilterFlags(fs *flag.FlagSet) (filterFlags, error) {
@@ -672,20 +672,20 @@ func resolveRuntimeAuth(opts commonOptions, state *sessionState) (string, *runti
 	}
 	profileName, profile, ok := profileEntry(opts.Profile, cfg)
 	if !ok {
-		return "", nil, "", "", "", "", errors.New("no sync token found; run `neudrive login` or pass --token")
+		return "", nil, "", "", "", "", errors.New("no sync token found; run `vola login` or pass --token")
 	}
 	if strings.TrimSpace(profile.AuthMode) == runtimecfg.AuthModeOAuthSession {
 		refreshed, err := profileauth.EnsureProfileToken(context.Background(), configPath, cfg, profileName)
 		if err != nil {
-			return "", nil, "", "", "", "", fmt.Errorf("profile %s needs a fresh hosted login; run `neudrive login --profile %s`", profileName, profileName)
+			return "", nil, "", "", "", "", fmt.Errorf("profile %s needs a fresh hosted login; run `vola login --profile %s`", profileName, profileName)
 		}
 		profile = refreshed
 	}
 	if strings.TrimSpace(profile.Token) == "" {
-		return "", nil, "", "", "", "", fmt.Errorf("profile %s has no saved token; run `neudrive login --profile %s`", profileName, profileName)
+		return "", nil, "", "", "", "", fmt.Errorf("profile %s has no saved token; run `vola login --profile %s`", profileName, profileName)
 	}
 	if strings.TrimSpace(profile.AuthMode) != runtimecfg.AuthModeOAuthSession && profileExpired(profile) {
-		return "", nil, "", "", "", "", fmt.Errorf("stored token for profile %s expired at %s; run `neudrive login --profile %s`", profileName, profile.ExpiresAt, profileName)
+		return "", nil, "", "", "", "", fmt.Errorf("stored token for profile %s expired at %s; run `vola login --profile %s`", profileName, profile.ExpiresAt, profileName)
 	}
 	return configPath, cfg, apiBaseValue, profile.Token, profileName, "profile:" + profileName, nil
 }

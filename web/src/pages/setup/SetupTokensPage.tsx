@@ -8,6 +8,7 @@ import {
   useSetup,
 } from '../SetupPage'
 import { SetupSection } from './SetupShared'
+import CustomSelect from '../../components/CustomSelect'
 
 export default function SetupTokensPage() {
   const { tx } = useI18n()
@@ -180,28 +181,28 @@ export default function SetupTokensPage() {
           <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
             <div className="form-group" style={{ flex: 1 }}>
               <label>{tx('信任等级', 'Trust level')}</label>
-              <select
-                className={`trust-select trust-l${trustLevel}`}
-                value={trustLevel}
-                onChange={(e) => setTrustLevel(Number(e.target.value))}
-              >
-                {trustLevels.map((item) => (
-                  <option key={item.value} value={item.value}>{item.label} - {item.desc}</option>
-                ))}
-              </select>
+              <CustomSelect
+                value={String(trustLevel)}
+                onChange={(val) => setTrustLevel(Number(val))}
+                options={trustLevels.map((item) => ({
+                  value: String(item.value),
+                  label: `${item.label} - ${item.desc}`
+                }))}
+                ariaLabel={tx('信任等级', 'Trust level')}
+              />
             </div>
 
             <div className="form-group" style={{ flex: 1 }}>
               <label>{tx('有效期', 'Expiry')}</label>
-              <select
-                className="expiry-select"
-                value={expiryDays}
-                onChange={(e) => setExpiryDays(Number(e.target.value))}
-              >
-                {expiryOptions.map((item) => (
-                  <option key={item.value} value={item.value}>{item.label}</option>
-                ))}
-              </select>
+              <CustomSelect
+                value={String(expiryDays)}
+                onChange={(val) => setExpiryDays(Number(val))}
+                options={expiryOptions.map((item) => ({
+                  value: String(item.value),
+                  label: item.label
+                }))}
+                ariaLabel={tx('有效期', 'Expiry')}
+              />
             </div>
           </div>
 

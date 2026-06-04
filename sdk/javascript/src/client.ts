@@ -1,5 +1,5 @@
 import type {
-  NeuDriveConfig,
+  VolaConfig,
   Profile,
   Project,
   ProjectLog,
@@ -21,9 +21,9 @@ import type {
 } from './types'
 
 /**
- * NeuDriveError is thrown when the API returns a non-2xx response.
+ * VolaError is thrown when the API returns a non-2xx response.
  */
-export class NeuDriveError extends Error {
+export class VolaError extends Error {
   constructor(
     public readonly status: number,
     public readonly body: unknown,
@@ -33,29 +33,29 @@ export class NeuDriveError extends Error {
         ? (body as { error: string }).error
         : `HTTP ${status}`
     super(msg)
-    this.name = 'NeuDriveError'
+    this.name = 'VolaError'
   }
 }
 
 /**
- * Main client for neuDrive.
+ * Main client for Vola.
  *
  * Uses the `/agent/*` API surface authenticated via a scoped token
  * (ndt_xxxxx) sent as `Authorization: Bearer <token>`.
  *
  * @example
  * ```ts
- * const hub = new NeuDrive({ baseURL: 'https://neudrive.ai', token: 'ndt_xxxxx' })
+ * const hub = new Vola({ baseURL: 'https://vola.ai', token: 'ndt_xxxxx' })
  * const profile = await hub.getProfile('preferences')
  * ```
  */
-export class NeuDrive {
+export class Vola {
   private readonly baseURL: string
   private readonly token: string
 
-  constructor(config: NeuDriveConfig) {
-    if (!config.baseURL) throw new Error('NeuDrive: baseURL is required')
-    if (!config.token) throw new Error('NeuDrive: token is required')
+  constructor(config: VolaConfig) {
+    if (!config.baseURL) throw new Error('Vola: baseURL is required')
+    if (!config.token) throw new Error('Vola: token is required')
     this.baseURL = config.baseURL.replace(/\/+$/, '')
     this.token = config.token
   }
@@ -95,7 +95,7 @@ export class NeuDrive {
       } catch {
         errBody = await res.text()
       }
-      throw new NeuDriveError(res.status, errBody)
+      throw new VolaError(res.status, errBody)
     }
     // Some endpoints return 204 No Content
     if (res.status === 204) return undefined as T
@@ -133,7 +133,7 @@ export class NeuDrive {
       } catch {
         errBody = await res.text()
       }
-      throw new NeuDriveError(res.status, errBody)
+      throw new VolaError(res.status, errBody)
     }
     return new Uint8Array(await res.arrayBuffer())
   }
@@ -510,3 +510,5 @@ export class NeuDrive {
     return safePath.endsWith('/') ? safePath : `${safePath}/`
   }
 }
+
+export { Vola as NeuDrive, VolaError as NeuDriveError }

@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 )
 
 const (
@@ -178,7 +178,7 @@ func (s *Server) handleAgentCreateEphemeralToken(w http.ResponseWriter, r *http.
 			"scopes":                       created.ScopedToken.Scopes,
 			"usage":                        "Probe connectivity first, then upload the skills zip directly from the sandbox or browser.",
 			"warning":                      agentSkillsUploadWarning(),
-			"curl_example":                 fmt.Sprintf(`curl -f -X POST -H "Authorization: Bearer %s" -F "platform=%s" -F "file=@/mnt/user-data/outputs/neudrive-skills.zip" "%s"`, created.Token, platform, uploadURL),
+			"curl_example":                 fmt.Sprintf(`curl -f -X POST -H "Authorization: Bearer %s" -F "platform=%s" -F "file=@/mnt/user-data/outputs/vola-skills.zip" "%s"`, created.Token, platform, uploadURL),
 			"inline_archive_max_zip_bytes": agentSkillsUploadMaxZipBytes,
 		})
 		return

@@ -11,13 +11,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
+	"github.com/agi-bar/vola/internal/skillsarchive"
 	"github.com/google/uuid"
 )
 
-const skillConversionVersion = "neudrive.skill-conversion/v1"
+const skillConversionVersion = "vola.skill-conversion/v1"
 
 type skillConversionRequest struct {
 	SourcePath     string `json:"source_path"`
@@ -374,7 +374,7 @@ func buildConvertedSkillManifestEntries(entries []skillConversionEntry, targetNa
 	manifests[0].Warnings = append(manifests[0].Warnings, skillsarchive.SkillManifestWarning{
 		Code:     "converted_skill",
 		Severity: "info",
-		Message:  fmt.Sprintf("Converted from %s to %s by neuDrive.", sourcePlatform, targetPlatform),
+		Message:  fmt.Sprintf("Converted from %s to %s by Vola.", sourcePlatform, targetPlatform),
 	})
 	withManifest, err := skillsarchive.AppendManifestEntries(nil, manifests)
 	if err != nil {
@@ -488,7 +488,7 @@ func buildSkillConversionAutoItems(manifest *skillsarchive.SkillManifest, entrie
 			Code:     "skill_markdown_converted",
 			Severity: "info",
 			Path:     "SKILL.md",
-			Message:  "SKILL.md is copied with neuDrive conversion notes for " + targetPlatform + ".",
+			Message:  "SKILL.md is copied with Vola conversion notes for " + targetPlatform + ".",
 		},
 		{
 			Code:     "file_tree_preserved",
@@ -553,8 +553,8 @@ func adaptSkillMarkdownForConversion(content string, manifest *skillsarchive.Ski
 		}
 	}
 	noteLines := []string{
-		"<!-- neudrive-conversion:start -->",
-		"## neuDrive Conversion Notes",
+		"<!-- vola-conversion:start -->",
+		"## Vola Conversion Notes",
 		"",
 		"- Source platform: " + sourcePlatform,
 		"- Target platform: " + targetPlatform,
@@ -570,16 +570,16 @@ func adaptSkillMarkdownForConversion(content string, manifest *skillsarchive.Ski
 			noteLines = append(noteLines, "- Environment variables: "+strings.Join(manifest.EnvVars, ", "))
 		}
 		if len(manifest.ExternalReferences) > 0 {
-			noteLines = append(noteLines, "- External references: check `manifest.neudrive.json` for included and missing files.")
+			noteLines = append(noteLines, "- External references: check `manifest.vola.json` for included and missing files.")
 		}
 	}
-	noteLines = append(noteLines, "<!-- neudrive-conversion:end -->")
+	noteLines = append(noteLines, "<!-- vola-conversion:end -->")
 	return strings.TrimSpace(body) + "\n\n" + strings.Join(noteLines, "\n") + "\n"
 }
 
 func removeExistingConversionBlock(content string) string {
-	const start = "<!-- neudrive-conversion:start -->"
-	const end = "<!-- neudrive-conversion:end -->"
+	const start = "<!-- vola-conversion:start -->"
+	const end = "<!-- vola-conversion:end -->"
 	startIndex := strings.Index(content, start)
 	endIndex := strings.Index(content, end)
 	if startIndex >= 0 && endIndex > startIndex {

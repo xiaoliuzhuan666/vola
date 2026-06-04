@@ -10,18 +10,18 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/api"
-	"github.com/agi-bar/neudrive/internal/auth"
-	"github.com/agi-bar/neudrive/internal/backups"
-	"github.com/agi-bar/neudrive/internal/config"
-	"github.com/agi-bar/neudrive/internal/database"
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/mcp"
-	"github.com/agi-bar/neudrive/internal/objectstore"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/services"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/vault"
+	"github.com/agi-bar/vola/internal/api"
+	"github.com/agi-bar/vola/internal/auth"
+	"github.com/agi-bar/vola/internal/backups"
+	"github.com/agi-bar/vola/internal/config"
+	"github.com/agi-bar/vola/internal/database"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/mcp"
+	"github.com/agi-bar/vola/internal/objectstore"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/services"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/vault"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -54,12 +54,17 @@ type App struct {
 	NewMCPServer func(token string) (mcp.JSONRPCHandler, error)
 	Close        func() error
 
-	MemoryService    *services.MemoryService
-	TokenService     any
-	InboxService     *services.InboxService
-	SyncService      *services.SyncService
-	GitMirrorService *localgitsync.Service
-	BackupService    *backups.Service
+	UserService           *services.UserService
+	MemoryService         *services.MemoryService
+	SkillLearningService  *services.SkillLearningService
+	ModelProviderService  *services.ModelProviderService
+	GrowthProposalService *services.GrowthProposalService
+	TokenService          any
+	InboxService          *services.InboxService
+	SyncService           *services.SyncService
+	GitMirrorService      *localgitsync.Service
+	BackupService         *backups.Service
+	MCPGateway            *mcp.MCPGateway
 }
 
 const (
@@ -128,6 +133,9 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 	teamSvc := services.NewTeamServiceWithRepo(sqlitestorage.NewTeamRepo(store))
 	connSvc := services.NewConnectionServiceWithRepo(sqlitestorage.NewConnectionRepo(store))
 	vaultSvc := services.NewVaultServiceWithRepo(sqlitestorage.NewVaultRepo(store), v)
+	modelProviderSvc := services.NewModelProviderService(fileTreeSvc, vaultSvc)
+	growthProposalSvc := services.NewGrowthProposalService(fileTreeSvc)
+	skillLearningSvc := services.NewSkillLearningServiceWithDeps(fileTreeSvc, modelProviderSvc, growthProposalSvc)
 	roleSvc := services.NewRoleServiceWithRepo(sqlitestorage.NewRoleRepo(store), fileTreeSvc)
 	inboxSvc := services.NewInboxServiceWithRepo(sqlitestorage.NewInboxRepo(store), fileTreeSvc)
 	projectSvc := services.NewProjectServiceWithRepo(sqlitestorage.NewProjectRepo(store), roleSvc, fileTreeSvc)
@@ -175,6 +183,9 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 	authSvc := services.NewAuthServiceWithRepo(sqlitestorage.NewAuthRepo(store), tokenGen, ghExchange)
 	externalAuthSvc := services.NewExternalAuthServiceWithRepo(sqlitestorage.NewExternalAuthRepo(store), authSvc, cfg)
 	oauthSvc := services.NewOAuthServiceWithRepo(sqlitestorage.NewOAuthRepo(store), cfg.JWTSecret)
+
+	mcpGateway := mcp.NewGateway(fileTreeSvc, owner.ID)
+
 	httpServer := api.NewServerWithDeps(api.ServerDeps{
 		Storage:               "sqlite",
 		Config:                cfg,
@@ -188,6 +199,9 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 		VaultService:          vaultSvc,
 		MemoryService:         memorySvc,
 		ProjectService:        projectSvc,
+		SkillLearningService:  skillLearningSvc,
+		ModelProviderService:  modelProviderSvc,
+		GrowthProposalService: growthProposalSvc,
 		RoleService:           roleSvc,
 		InboxService:          inboxSvc,
 		DashboardService:      dashboardSvc,
@@ -205,17 +219,23 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 		GitHubAppClientID:     cfg.GitHubAppClientID,
 		GitHubAppClientSecret: cfg.GitHubAppClientSecret,
 		GitHubAppSlug:         cfg.GitHubAppSlug,
+		MCPGateway:            mcpGateway,
 	})
 	app := &App{
-		Storage:          "sqlite",
-		Config:           cfg,
-		HTTPHandler:      httpServer.Router,
-		MemoryService:    memorySvc,
-		TokenService:     tokenSvc,
-		InboxService:     inboxSvc,
-		SyncService:      syncSvc,
-		GitMirrorService: localGitSyncSvc,
-		BackupService:    backupSvc,
+		Storage:               "sqlite",
+		Config:                cfg,
+		HTTPHandler:           httpServer.Router,
+		UserService:           userSvc,
+		MemoryService:         memorySvc,
+		SkillLearningService:  skillLearningSvc,
+		ModelProviderService:  modelProviderSvc,
+		GrowthProposalService: growthProposalSvc,
+		TokenService:          tokenSvc,
+		InboxService:          inboxSvc,
+		MCPGateway:            mcpGateway,
+		SyncService:           syncSvc,
+		GitMirrorService:      localGitSyncSvc,
+		BackupService:         backupSvc,
 		NewMCPServer: func(token string) (mcp.JSONRPCHandler, error) {
 			scopedToken, err := tokenSvc.ValidateToken(ctx, token)
 			if err != nil {
@@ -311,6 +331,9 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 		MemoryService:         deps.memorySvc,
 		ProjectService:        deps.projectSvc,
 		SummaryService:        deps.summarySvc,
+		SkillLearningService:  deps.skillLearningSvc,
+		ModelProviderService:  deps.modelProviderSvc,
+		GrowthProposalService: deps.growthProposalSvc,
 		RoleService:           deps.roleSvc,
 		InboxService:          deps.inboxSvc,
 		DashboardService:      deps.dashboardSvc,
@@ -333,15 +356,19 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 	})
 
 	app := &App{
-		Storage:          "postgres",
-		Config:           cfg,
-		HTTPHandler:      httpServer.Router,
-		MemoryService:    deps.memorySvc,
-		TokenService:     deps.tokenSvc,
-		InboxService:     deps.inboxSvc,
-		SyncService:      deps.syncSvc,
-		GitMirrorService: localGitSyncSvc,
-		BackupService:    backupSvc,
+		Storage:               "postgres",
+		Config:                cfg,
+		HTTPHandler:           httpServer.Router,
+		UserService:           deps.userSvc,
+		MemoryService:         deps.memorySvc,
+		SkillLearningService:  deps.skillLearningSvc,
+		ModelProviderService:  deps.modelProviderSvc,
+		GrowthProposalService: deps.growthProposalSvc,
+		TokenService:          deps.tokenSvc,
+		InboxService:          deps.inboxSvc,
+		SyncService:           deps.syncSvc,
+		GitMirrorService:      localGitSyncSvc,
+		BackupService:         backupSvc,
 		NewMCPServer: func(token string) (mcp.JSONRPCHandler, error) {
 			scopedToken, err := deps.tokenSvc.ValidateToken(ctx, token)
 			if err != nil {
@@ -377,27 +404,30 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 }
 
 type postgresDeps struct {
-	userSvc         *services.UserService
-	teamSvc         *services.TeamService
-	authSvc         *services.AuthService
-	externalAuthSvc *services.ExternalAuthService
-	connSvc         *services.ConnectionService
-	fileTreeSvc     *services.FileTreeService
-	vaultSvc        *services.VaultService
-	memorySvc       *services.MemoryService
-	projectSvc      *services.ProjectService
-	summarySvc      *services.SummaryService
-	roleSvc         *services.RoleService
-	inboxSvc        *services.InboxService
-	dashboardSvc    *services.DashboardService
-	tokenSvc        *services.TokenService
-	importSvc       *services.ImportService
-	exportSvc       *services.ExportService
-	syncSvc         *services.SyncService
-	collabSvc       *services.CollaborationService
-	webhookSvc      *services.WebhookService
-	oauthSvc        *services.OAuthService
-	vaultCrypto     *vault.Vault
+	userSvc           *services.UserService
+	teamSvc           *services.TeamService
+	authSvc           *services.AuthService
+	externalAuthSvc   *services.ExternalAuthService
+	connSvc           *services.ConnectionService
+	fileTreeSvc       *services.FileTreeService
+	vaultSvc          *services.VaultService
+	memorySvc         *services.MemoryService
+	projectSvc        *services.ProjectService
+	summarySvc        *services.SummaryService
+	skillLearningSvc  *services.SkillLearningService
+	modelProviderSvc  *services.ModelProviderService
+	growthProposalSvc *services.GrowthProposalService
+	roleSvc           *services.RoleService
+	inboxSvc          *services.InboxService
+	dashboardSvc      *services.DashboardService
+	tokenSvc          *services.TokenService
+	importSvc         *services.ImportService
+	exportSvc         *services.ExportService
+	syncSvc           *services.SyncService
+	collabSvc         *services.CollaborationService
+	webhookSvc        *services.WebhookService
+	oauthSvc          *services.OAuthService
+	vaultCrypto       *vault.Vault
 }
 
 func buildPostgresDeps(_ context.Context, db *pgxpool.Pool, cfg *config.Config) (*postgresDeps, error) {
@@ -440,6 +470,9 @@ func buildPostgresDeps(_ context.Context, db *pgxpool.Pool, cfg *config.Config) 
 	fileTreeSvc.SetBlobStore(blobStore)
 	vaultSvc := services.NewVaultService(db, v)
 	memorySvc := services.NewMemoryService(db, fileTreeSvc)
+	modelProviderSvc := services.NewModelProviderService(fileTreeSvc, vaultSvc)
+	growthProposalSvc := services.NewGrowthProposalService(fileTreeSvc)
+	skillLearningSvc := services.NewSkillLearningServiceWithDeps(fileTreeSvc, modelProviderSvc, growthProposalSvc)
 	roleSvc := services.NewRoleService(db, fileTreeSvc)
 	projectSvc := services.NewProjectService(db, roleSvc, fileTreeSvc)
 	summarySvc := services.NewSummaryService(db, projectSvc)
@@ -458,27 +491,30 @@ func buildPostgresDeps(_ context.Context, db *pgxpool.Pool, cfg *config.Config) 
 	seedDefaultUser(db, userSvc)
 
 	return &postgresDeps{
-		userSvc:         userSvc,
-		teamSvc:         teamSvc,
-		authSvc:         authSvc,
-		externalAuthSvc: externalAuthSvc,
-		connSvc:         connSvc,
-		fileTreeSvc:     fileTreeSvc,
-		vaultSvc:        vaultSvc,
-		memorySvc:       memorySvc,
-		projectSvc:      projectSvc,
-		summarySvc:      summarySvc,
-		roleSvc:         roleSvc,
-		inboxSvc:        inboxSvc,
-		dashboardSvc:    dashboardSvc,
-		tokenSvc:        tokenSvc,
-		importSvc:       importSvc,
-		exportSvc:       exportSvc,
-		syncSvc:         syncSvc,
-		collabSvc:       collabSvc,
-		webhookSvc:      webhookSvc,
-		oauthSvc:        oauthSvc,
-		vaultCrypto:     v,
+		userSvc:           userSvc,
+		teamSvc:           teamSvc,
+		authSvc:           authSvc,
+		externalAuthSvc:   externalAuthSvc,
+		connSvc:           connSvc,
+		fileTreeSvc:       fileTreeSvc,
+		vaultSvc:          vaultSvc,
+		memorySvc:         memorySvc,
+		projectSvc:        projectSvc,
+		summarySvc:        summarySvc,
+		skillLearningSvc:  skillLearningSvc,
+		modelProviderSvc:  modelProviderSvc,
+		growthProposalSvc: growthProposalSvc,
+		roleSvc:           roleSvc,
+		inboxSvc:          inboxSvc,
+		dashboardSvc:      dashboardSvc,
+		tokenSvc:          tokenSvc,
+		importSvc:         importSvc,
+		exportSvc:         exportSvc,
+		syncSvc:           syncSvc,
+		collabSvc:         collabSvc,
+		webhookSvc:        webhookSvc,
+		oauthSvc:          oauthSvc,
+		vaultCrypto:       v,
 	}, nil
 }
 
@@ -572,7 +608,7 @@ func loadConfig(opts Options) (*config.Config, error) {
 func loadSQLiteConfig(opts Options) (*config.Config, error) {
 	sqliteOpts := opts
 	if strings.TrimSpace(sqliteOpts.JWTSecret) == "" {
-		sqliteOpts.JWTSecret = "neudrive-local-sqlite-jwt-secret"
+		sqliteOpts.JWTSecret = "vola-local-sqlite-jwt-secret"
 	}
 	if strings.TrimSpace(sqliteOpts.VaultMasterKey) == "" {
 		sqliteOpts.VaultMasterKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"

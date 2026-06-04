@@ -3,19 +3,19 @@
 Recommended server layout:
 
 ```text
-~/apps/neudrive/
+~/apps/vola/
   bin/
     deploy-main
     status
   config/
-    neudrive.env
+    vola.env
   k8s/
   logs/
   repo/
 ```
 
-`repo/` is a clean git checkout of `git@github.com:agi-bar/neudrive.git`.
-`config/neudrive.env` is copied from `repo/neudrive.env.example` and holds the
+`repo/` is a clean git checkout of `git@github.com:agi-bar/vola.git`.
+`config/vola.env` is copied from `repo/vola.env.example` and holds the
 real deployment settings and secrets.
 
 `bin/deploy-main` is a thin wrapper that:
@@ -27,12 +27,12 @@ real deployment settings and secrets.
 
 `deploy/prod/deploy.sh` builds the Docker image directly inside the minikube
 Docker daemon, syncs the tracked manifests into `k8s/`, creates or updates the
-runtime secrets/config from `config/neudrive.env`, applies the Kubernetes
+runtime secrets/config from `config/vola.env`, applies the Kubernetes
 manifests, updates the deployment image, waits for rollout, and verifies the
 public healthcheck.
 
 The production manifests mount `/data/git-mirrors` as a persistent volume and
-set `GIT_MIRROR_HOSTED_ROOT` through the `neudrive-config` ConfigMap. The
+set `GIT_MIRROR_HOSTED_ROOT` through the `vola-config` ConfigMap. The
 healthcheck only proves that the HTTP service is alive; backup readiness should
 be checked through the admin-only `/api/ops/status` endpoint and a real restore
 drill.
@@ -40,10 +40,10 @@ drill.
 Useful commands from the server:
 
 ```bash
-cp ~/apps/neudrive/repo/neudrive.env.example ~/apps/neudrive/config/neudrive.env
-vim ~/apps/neudrive/config/neudrive.env
-~/apps/neudrive/bin/deploy-main
-~/apps/neudrive/bin/status
+cp ~/apps/vola/repo/vola.env.example ~/apps/vola/config/vola.env
+vim ~/apps/vola/config/vola.env
+~/apps/vola/bin/deploy-main
+~/apps/vola/bin/status
 ```
 
 Required settings for the release candidate:

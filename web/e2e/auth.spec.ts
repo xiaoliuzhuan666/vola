@@ -57,7 +57,7 @@ test.describe('Auth — Login Page', () => {
     await expect(page.locator('.login-shell')).toBeVisible()
     await expect(page.locator('.login-hero')).toBeVisible()
     await expect(page.locator('.login-panel-card')).toBeVisible()
-    await expect(page.locator('.login-hero-title')).toHaveText('neuDrive')
+    await expect(page.locator('.login-hero-title')).toHaveText('Vola')
     await expect(page.locator('.login-hero-slogan')).toHaveText('One hub for all your AI agents')
     await expect(page.locator('.login-hero-subtitle')).toHaveText('Identity, memory, skills, and connections in one place.')
 

@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "neuDrive",
+  "name": "Vola",
   "version": "0.1.0",
   "description": "将你的 AI 身份和记忆连接到任何 AI 平台",
   "permissions": ["storage", "activeTab"],
@@ -10,8 +10,8 @@
     "https://chatgpt.com/*",
     "https://gemini.google.com/*",
     "https://kimi.moonshot.cn/*",
-    "https://www.neudrive.ai/*",
-    "https://neudrive.ai/*"
+    "https://www.vola.ai/*",
+    "https://vola.ai/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -23,8 +23,8 @@
       "https://chatgpt.com/*",
       "https://gemini.google.com/*",
       "https://kimi.moonshot.cn/*",
-      "https://www.neudrive.ai/*",
-      "https://neudrive.ai/*"
+      "https://www.vola.ai/*",
+      "https://vola.ai/*"
     ],
     "js": ["content.js"],
     "css": ["content.css"]

@@ -7,7 +7,7 @@ function daysAgo(n: number) {
   return d.toISOString()
 }
 
-export function buildNeuDriveMock(): FileNode[] {
+export function buildVolaMock(): FileNode[] {
   const rows: FileNode[] = []
 
   // Ensure top-level namespaces are visible
@@ -113,7 +113,7 @@ export function buildNeuDriveMock(): FileNode[] {
     mime_type: 'text/markdown',
     size: 40,
     updated_at: daysAgo(2),
-    content: 'neuDrive User',
+    content: 'Vola User',
   })
   rows.push({ path: '/memory/scratch', name: 'scratch', is_dir: true, updated_at: daysAgo(3) })
   for (let i = 1; i <= 8; i++) {

@@ -45,7 +45,7 @@ def materialize_source(multiplier: int = 1) -> str:
     files = _load_skill_fixture()
     plan = _load_plan()
     binary = _load_binary()
-    tempdir = Path(tempfile.mkdtemp(prefix="neudrive-sync-fixture-"))
+    tempdir = Path(tempfile.mkdtemp(prefix="vola-sync-fixture-"))
 
     for skill_name in plan["skill_names"]:
         skill_root = tempdir / skill_name
@@ -65,20 +65,20 @@ def materialize_source(multiplier: int = 1) -> str:
     return str(tempdir)
 
 
-def _neudrive_cli_command() -> list[str]:
-    configured = os.environ.get("NEUDRIVE_CLI")
+def _vola_cli_command() -> list[str]:
+    configured = os.environ.get("VOLA_CLI") or os.environ.get("NEUDRIVE_CLI")
     if configured:
         return [configured]
-    fallback = Path("/tmp/neudrive")
+    fallback = Path("/tmp/vola")
     if fallback.exists():
         return [str(fallback)]
-    return ["go", "run", "./cmd/neudrive"]
+    return ["go", "run", "./cmd/vola"]
 
 
 def export_bundle_with_cli(source_dir: str, fmt: str = "json") -> tuple[Path, dict | None]:
     suffix = ".ndrvz" if fmt == "archive" else ".ndrv"
-    target = Path(tempfile.mkdtemp(prefix="neudrive-sync-export-")) / f"bundle{suffix}"
-    cmd = _neudrive_cli_command() + ["sync", "export", "--source", source_dir, "--format", fmt, "-o", str(target)]
+    target = Path(tempfile.mkdtemp(prefix="vola-sync-export-")) / f"bundle{suffix}"
+    cmd = _vola_cli_command() + ["sync", "export", "--source", source_dir, "--format", fmt, "-o", str(target)]
     subprocess.run(cmd, cwd=ROOT, check=True)
     if fmt == "archive":
         with zipfile.ZipFile(target) as zf:

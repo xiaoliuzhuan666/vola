@@ -1,12 +1,12 @@
 /**
- * neuDrive - Popup Script
+ * Vola - Popup Script
  * Handles login, status display, settings, and quick links.
  */
 
 (function () {
   'use strict';
 
-  const OFFICIAL_HUB_URL = 'https://www.neudrive.ai';
+  const OFFICIAL_HUB_URL = 'https://www.vola.ai';
 
   // --- DOM References ---
   const viewLogin = document.getElementById('view-login');
@@ -113,7 +113,7 @@
     btnOfficialLogin.disabled = true;
     try {
       await sendMessage('startOfficialLogin');
-      showLoginMessage('已打开 neuDrive 官方登录页，完成授权后扩展会自动连接。', false);
+      showLoginMessage('已打开 Vola 官方登录页，完成授权后扩展会自动连接。', false);
     } catch (err) {
       showLoginMessage(err.message, true);
     } finally {

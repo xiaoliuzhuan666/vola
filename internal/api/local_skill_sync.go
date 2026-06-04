@@ -17,20 +17,21 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/google/uuid"
 )
 
 const (
-	localSkillSyncVersion     = "neudrive.local-skill-sync/v1"
-	localSkillManagedFileName = ".neudrive-managed.json"
+	localSkillSyncVersion     = "vola.local-skill-sync/v1"
+	localSkillManagedFileName = ".vola-managed.json"
 )
 
 type localSkillSyncRequest struct {
-	AgentIDs    []string          `json:"agent_ids,omitempty"`
-	TargetRoots map[string]string `json:"target_roots,omitempty"`
-	TeamID      string            `json:"team_id,omitempty"`
+	AgentIDs         []string          `json:"agent_ids,omitempty"`
+	TargetRoots      map[string]string `json:"target_roots,omitempty"`
+	TeamID           string            `json:"team_id,omitempty"`
+	AckQualityReview bool              `json:"ack_quality_review,omitempty"`
 }
 
 type localSkillSyncExportRequest struct {
@@ -47,6 +48,7 @@ type localSkillSyncResponse struct {
 	Cleanup   bool                      `json:"cleanup"`
 	UpdatedAt string                    `json:"updated_at"`
 	Agents    []localSkillSyncAgentPlan `json:"agents"`
+	Blocked   bool                      `json:"blocked,omitempty"`
 }
 
 type localSkillSyncAgentPlan struct {
@@ -89,15 +91,21 @@ type localSkillSyncSummary struct {
 	Export    int `json:"export"`
 	Written   int `json:"written"`
 	Deleted   int `json:"deleted"`
+	SyncRisk  int `json:"sync_risk"`
+	Blocked   int `json:"blocked"`
+	Manual    int `json:"manual_required"`
 }
 
 type localSkillSyncChange struct {
-	Action     string `json:"action"`
-	SkillPath  string `json:"skill_path,omitempty"`
-	RelPath    string `json:"rel_path,omitempty"`
-	TargetPath string `json:"target_path,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-	SizeBytes  int64  `json:"size_bytes,omitempty"`
+	Action               string `json:"action"`
+	SkillPath            string `json:"skill_path,omitempty"`
+	RelPath              string `json:"rel_path,omitempty"`
+	TargetPath           string `json:"target_path,omitempty"`
+	Reason               string `json:"reason,omitempty"`
+	SizeBytes            int64  `json:"size_bytes,omitempty"`
+	VerificationStatus   string `json:"verification_status,omitempty"`
+	VerificationRequired bool   `json:"verification_required,omitempty"`
+	VerificationMessage  string `json:"verification_message,omitempty"`
 }
 
 type localSkillManagedMarker struct {
@@ -277,6 +285,7 @@ func (s *Server) buildLocalSkillSyncResponse(ctx context.Context, target scopedH
 		return nil, err
 	}
 	assigned := localSkillAssignmentsByAgent(doc.Assignments)
+	verification := s.localSkillVerificationMap(ctx, target.UserID, trustLevelFromCtx(ctx))
 	agents := localSkillSelectedAgents(req.AgentIDs)
 	resp := &localSkillSyncResponse{
 		Version:   localSkillSyncVersion,
@@ -296,16 +305,111 @@ func (s *Server) buildLocalSkillSyncResponse(ctx context.Context, target scopedH
 
 	for _, agent := range agents {
 		plan, writes, deletes := s.buildLocalSkillSyncAgentPlan(ctx, target.UserID, scope, agent, assigned[agent.ID], req.TargetRoots, cleanupOnly)
+		annotateLocalSkillSyncPlan(&plan, verification)
 		if apply {
 			if cleanupOnly {
 				s.applyLocalSkillDeletes(&plan, deletes)
 			} else {
-				s.applyLocalSkillWrites(&plan, scope, writes)
+				s.applyLocalSkillWrites(&plan, scope, writes, req.AckQualityReview)
+				if plan.Summary.Blocked > 0 || (plan.Summary.Manual > 0 && !req.AckQualityReview) {
+					resp.Blocked = true
+				}
 			}
 		}
 		resp.Agents = append(resp.Agents, plan)
 	}
 	return resp, nil
+}
+
+type localSkillVerificationInfo struct {
+	Status   string
+	Required bool
+	Message  string
+}
+
+func (s *Server) localSkillVerificationMap(ctx context.Context, userID uuid.UUID, trustLevel int) map[string]localSkillVerificationInfo {
+	out := map[string]localSkillVerificationInfo{}
+	if s == nil || s.SkillLearningService == nil {
+		return out
+	}
+	summary, err := s.SkillLearningService.LoadSummary(ctx, userID, trustLevel)
+	if err != nil {
+		return out
+	}
+	for _, item := range summary.Items {
+		status := strings.TrimSpace(item.VerificationStatus)
+		if status == "" {
+			status = strings.TrimSpace(item.Status)
+		}
+		info := localSkillVerificationInfo{
+			Status:   status,
+			Required: item.VerificationNeeded || status == "required" || status == "blocked" || status == "manual_required",
+			Message:  localSkillVerificationMessage(item),
+		}
+		for _, skillPath := range []string{item.Path, item.PrimaryPath} {
+			normalized := normalizeAssignedSkillPath(skillPath)
+			if normalized == "" || normalized == "/skills" {
+				continue
+			}
+			out[normalized] = info
+		}
+	}
+	return out
+}
+
+func annotateLocalSkillSyncPlan(plan *localSkillSyncAgentPlan, verification map[string]localSkillVerificationInfo) {
+	if plan == nil || len(verification) == 0 {
+		return
+	}
+	riskSkills := map[string]struct{}{}
+	for i := range plan.Changes {
+		skillPath := normalizeAssignedSkillPath(plan.Changes[i].SkillPath)
+		if skillPath == "" {
+			continue
+		}
+		info, ok := verification[skillPath]
+		if !ok {
+			continue
+		}
+		plan.Changes[i].VerificationStatus = info.Status
+		plan.Changes[i].VerificationRequired = info.Required
+		plan.Changes[i].VerificationMessage = info.Message
+		if info.Required {
+			riskSkills[skillPath] = struct{}{}
+			if info.Status == "blocked" {
+				plan.Summary.Blocked++
+			} else if info.Status == "manual_required" {
+				plan.Summary.Manual++
+			}
+		}
+	}
+	for _, skillPath := range plan.AssignedSkillPaths {
+		normalized := normalizeAssignedSkillPath(skillPath)
+		if info, ok := verification[normalized]; ok && info.Required {
+			riskSkills[normalized] = struct{}{}
+		}
+	}
+	plan.Summary.SyncRisk = len(riskSkills)
+}
+
+func localSkillVerificationMessage(item services.SkillLearningItem) string {
+	for _, finding := range item.QualityFindings {
+		if finding.Status == "blocked" || finding.Status == "manual_required" || finding.Status == "warning" {
+			if strings.TrimSpace(finding.Title) != "" && strings.TrimSpace(finding.Message) != "" {
+				return finding.Title + ": " + finding.Message
+			}
+			if strings.TrimSpace(finding.Message) != "" {
+				return finding.Message
+			}
+			if strings.TrimSpace(finding.Title) != "" {
+				return finding.Title
+			}
+		}
+	}
+	if len(item.Recommendations) > 0 {
+		return item.Recommendations[0]
+	}
+	return ""
 }
 
 func (s *Server) buildLocalSkillSyncAgentPlan(
@@ -332,7 +436,7 @@ func (s *Server) buildLocalSkillSyncAgentPlan(
 		Changes:            []localSkillSyncChange{},
 	}
 	if !agent.SupportsApply {
-		plan.Message = "This agent can be assigned and exported, but neuDrive will not write its local configuration automatically."
+		plan.Message = "This agent can be assigned and exported, but Vola will not write its local configuration automatically."
 		if !cleanupOnly {
 			s.addLocalSkillExportChanges(ctx, userID, scope, &plan, assignedSkillPaths)
 		}
@@ -396,29 +500,42 @@ func (s *Server) buildLocalSkillSyncAgentPlan(
 					Action:     "conflict",
 					SkillPath:  skillPath,
 					TargetPath: skillDir,
-					Reason:     "target skill directory already exists and is not managed by neuDrive for this assignment",
+					Reason:     "target skill directory already exists and is not managed by Vola for this assignment",
 				})
 				continue
 			}
 
 			for _, file := range files {
-				sourceRelPaths[file.RelPath] = struct{}{}
-				targetPath, err := localSkillDestinationPath(root, skillPath, file.RelPath, scope)
+				relPath := file.RelPath
+				fileData := file.Data
+
+				// 如果是 cursor agent，将 SKILL.md 改写转换为 <skill-name>.mdc 规则文件并加入 Frontmatter
+				if agent.ID == "cursor" && file.RelPath == "SKILL.md" {
+					skillName := strings.TrimPrefix(normalizeAssignedSkillPath(skillPath), "/skills/")
+					relPath = skillName + ".mdc"
+
+					desc := fmt.Sprintf("Vola managed skill: %s", skillName)
+					frontmatter := fmt.Sprintf("---\ndescription: %q\nglobs: \"*\"\n---\n\n", desc)
+					fileData = append([]byte(frontmatter), file.Data...)
+				}
+
+				sourceRelPaths[relPath] = struct{}{}
+				targetPath, err := localSkillDestinationPath(root, skillPath, relPath, scope)
 				if err != nil {
 					plan.Errors = append(plan.Errors, err.Error())
 					continue
 				}
 				change := localSkillSyncChange{
 					SkillPath:  skillPath,
-					RelPath:    file.RelPath,
+					RelPath:    relPath,
 					TargetPath: targetPath,
-					SizeBytes:  int64(len(file.Data)),
+					SizeBytes:  int64(len(fileData)),
 				}
 				existing, err := os.ReadFile(targetPath)
 				if errors.Is(err, os.ErrNotExist) {
 					change.Action = "add"
 					plan.addChange(change)
-					writes = append(writes, localSkillWriteOperation{Change: change, Data: file.Data})
+					writes = append(writes, localSkillWriteOperation{Change: change, Data: fileData})
 					continue
 				}
 				if err != nil {
@@ -427,7 +544,7 @@ func (s *Server) buildLocalSkillSyncAgentPlan(
 					plan.addChange(change)
 					continue
 				}
-				if bytes.Equal(existing, file.Data) {
+				if bytes.Equal(existing, fileData) {
 					change.Action = "unchanged"
 					plan.addChange(change)
 					continue
@@ -435,11 +552,11 @@ func (s *Server) buildLocalSkillSyncAgentPlan(
 				if managedBySameSkill {
 					change.Action = "update"
 					plan.addChange(change)
-					writes = append(writes, localSkillWriteOperation{Change: change, Data: file.Data})
+					writes = append(writes, localSkillWriteOperation{Change: change, Data: fileData})
 					continue
 				}
 				change.Action = "conflict"
-				change.Reason = "target file differs and is not managed by neuDrive for this skill"
+				change.Reason = "target file differs and is not managed by Vola for this skill"
 				plan.addChange(change)
 			}
 			addMissingLocalSkillFiles(&plan, root, agent.ID, skillPath, scope, sourceRelPaths)
@@ -542,12 +659,20 @@ func (s *Server) collectLocalSkillFiles(ctx context.Context, userID uuid.UUID, s
 	return files, nil
 }
 
-func (s *Server) applyLocalSkillWrites(plan *localSkillSyncAgentPlan, scope localSkillScope, writes []localSkillWriteOperation) {
+func (s *Server) applyLocalSkillWrites(plan *localSkillSyncAgentPlan, scope localSkillScope, writes []localSkillWriteOperation, ackQualityReview bool) {
 	if !plan.Supported || plan.TargetRoot == "" {
 		return
 	}
 	if plan.Summary.Conflict > 0 {
 		plan.Errors = append(plan.Errors, "conflicts found; no files were written for this agent")
+		return
+	}
+	if plan.Summary.Blocked > 0 {
+		plan.Errors = append(plan.Errors, "blocked quality findings found; fix them before applying local skill sync")
+		return
+	}
+	if plan.Summary.Manual > 0 && !ackQualityReview {
+		plan.Errors = append(plan.Errors, "manual quality review is required; preview first and confirm before applying")
 		return
 	}
 	for _, op := range writes {
@@ -759,6 +884,8 @@ func localSkillTargetRoot(agentID string, targetRoots map[string]string) (string
 			value = "~/.claude/skills"
 		case "codex":
 			value = "~/.codex/skills"
+		case "cursor":
+			value = ".cursor/rules"
 		default:
 			return "", fmt.Errorf("no local skill root configured for %s", agentID)
 		}
@@ -936,7 +1063,7 @@ func writeLocalSkillManagedMarker(skillDir, agentID, skillPath string, scope loc
 	}
 	marker := localSkillManagedMarker{
 		Version:   localSkillSyncVersion,
-		ManagedBy: "neudrive",
+		ManagedBy: "vola",
 		AgentID:   agentID,
 		SkillPath: normalizeAssignedSkillPath(skillPath),
 		Scope:     localSkillScopeName(scope),
@@ -954,14 +1081,14 @@ func writeLocalSkillManagedMarker(skillDir, agentID, skillPath string, scope loc
 }
 
 func localSkillMarkerMatches(marker localSkillManagedMarker, agentID, skillPath string, scope localSkillScope) bool {
-	return marker.ManagedBy == "neudrive" &&
+	return marker.ManagedBy == "vola" &&
 		marker.AgentID == agentID &&
 		localSkillMarkerMatchesScope(marker, agentID, scope) &&
 		normalizeAssignedSkillPath(marker.SkillPath) == normalizeAssignedSkillPath(skillPath)
 }
 
 func localSkillMarkerMatchesScope(marker localSkillManagedMarker, agentID string, scope localSkillScope) bool {
-	if marker.ManagedBy != "neudrive" || marker.AgentID != agentID {
+	if marker.ManagedBy != "vola" || marker.AgentID != agentID {
 		return false
 	}
 	markerScope := strings.TrimSpace(marker.Scope)
@@ -989,9 +1116,9 @@ func localSkillExportFileName(agent skillAgentTarget, scope localSkillScope) str
 		if teamSlug == "" {
 			teamSlug = "team"
 		}
-		return "neudrive-skills-" + teamSlug + "-" + name + ".zip"
+		return "vola-skills-" + teamSlug + "-" + name + ".zip"
 	}
-	return "neudrive-skills-" + name + ".zip"
+	return "vola-skills-" + name + ".zip"
 }
 
 func (s *Server) writeLocalSkillExportPackage(ctx context.Context, zw *zip.Writer, userID uuid.UUID, agent skillAgentTarget, scope localSkillScope, assignedSkillPaths []string) error {
@@ -1038,7 +1165,7 @@ func writeLocalSkillExportFile(zw *zip.Writer, zipPath string, data []byte) erro
 
 func localSkillExportReadme(agent skillAgentTarget, scope localSkillScope, assignedSkillPaths []string) string {
 	lines := []string{
-		"# neuDrive Skill Export",
+		"# Vola Skill Export",
 		"",
 		"Agent: " + agent.Name,
 		"Scope: " + localSkillScopeLabel(scope),
@@ -1046,7 +1173,7 @@ func localSkillExportReadme(agent skillAgentTarget, scope localSkillScope, assig
 		"",
 		"## What is included",
 		"",
-		"- Full skill folders under `skills/`, including `SKILL.md`, scripts, dependency files, assets, external Claude tools/plugins, and `manifest.neudrive.json` when present.",
+		"- Full skill folders under `skills/`, including `SKILL.md`, scripts, dependency files, assets, external Claude tools/plugins, and `manifest.vola.json` when present.",
 		"- This package does not install MCP servers, plugins, hooks, or secrets.",
 		"",
 		"## Directory rules",
@@ -1060,7 +1187,7 @@ func localSkillExportReadme(agent skillAgentTarget, scope localSkillScope, assig
 		}
 	}
 	if strings.TrimSpace(agent.AutoApplyReason) != "" {
-		lines = append(lines, "", "## Why neuDrive did not write this automatically", "", agent.AutoApplyReason)
+		lines = append(lines, "", "## Why Vola did not write this automatically", "", agent.AutoApplyReason)
 	}
 	lines = append(lines, "", "## Assigned skills", "")
 	if len(assignedSkillPaths) == 0 {

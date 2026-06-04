@@ -22,7 +22,7 @@ export default function SetupAdaptersPage() {
 
       <h4 className="setup-platform-title">Feishu Bot Adapter</h4>
       <p className="setup-note setup-note-first">
-        {tx('完成请求网址校验后，飞书发来的事件会进入 neuDrive 的结构化事件记录。', 'After request URL verification, Feishu events are written into neuDrive structured event records.')}
+        {tx('完成请求网址校验后，飞书发来的事件会进入 Vola 的结构化事件记录。', 'After request URL verification, Feishu events are written into Vola structured event records.')}
       </p>
 
       <SetupCodeBlock
@@ -50,14 +50,14 @@ export default function SetupAdaptersPage() {
         <li>{tx('在飞书开放平台创建一个自建应用，并启用 ', 'Create a custom app in Feishu Open Platform and enable ')}<code>{tx('机器人能力', 'Bot capability')}</code>{tx('。', '.')}</li>
         <li>{tx('进入 ', 'Open ')}<code>{tx('事件与回调', 'Events and callbacks')}</code>{tx('，订阅 ', ' and subscribe to ')}<code>{tx('消息与群组 - 接收消息 v2.0', 'Messages and groups - receive messages v2.0')}</code>{tx('。', '.')}</li>
         <li>{tx('订阅方式选择 ', 'Set subscription delivery to ')}<code>{tx('将事件发送至开发者服务器', 'Send events to developer server')}</code>{tx('。', '.')}</li>
-        <li>{tx('请求网址填写 ', 'Set the request URL to ')}<code>{callbackUrl}</code>{tx('，把其中的 ', ', replacing ')}<code>&lt;your-slug&gt;</code>{tx(' 换成 neuDrive 用户 slug。', ' with your neuDrive user slug.')}</li>
+        <li>{tx('请求网址填写 ', 'Set the request URL to ')}<code>{callbackUrl}</code>{tx('，把其中的 ', ', replacing ')}<code>&lt;your-slug&gt;</code>{tx(' 换成 Vola 用户 slug。', ' with your Vola user slug.')}</li>
         <li>{tx('把飞书应用里的 ', 'Map the Feishu app values ')}<code>App ID</code>{tx('、', ', ')}<code>App Secret</code>{tx('、', ', and ')}<code>Verification Token</code>{tx(' 配到服务端环境变量 ', ' to the server environment variables ')}<code>FEISHU_APP_ID</code>{tx('、', ', ')}<code>FEISHU_APP_SECRET</code>{tx('、', ', and ')}<code>FEISHU_VERIFICATION_TOKEN</code>{tx('。', '.')}</li>
-        <li>{tx('推荐同时开启加密推送，并把 ', 'We also recommend enabling encrypted delivery and setting ')}<code>Encrypt Key</code>{tx(' 配到 ', ' as ')}<code>FEISHU_ENCRYPT_KEY</code>{tx('；neuDrive 已支持飞书要求的签名校验和事件解密。', '; neuDrive already supports Feishu signature verification and event decryption.')}</li>
-        <li>{tx('保存配置后，飞书会先发起 ', 'After saving, Feishu sends a ')}<code>challenge</code>{tx(' 验证；验证通过后，后续消息事件就会被 neuDrive 接收。', ' verification request first. After it passes, neuDrive receives future message events.')}</li>
+        <li>{tx('推荐同时开启加密推送，并把 ', 'We also recommend enabling encrypted delivery and setting ')}<code>Encrypt Key</code>{tx(' 配到 ', ' as ')}<code>FEISHU_ENCRYPT_KEY</code>{tx('；Vola 已支持飞书要求的签名校验和事件解密。', '; Vola already supports Feishu signature verification and event decryption.')}</li>
+        <li>{tx('保存配置后，飞书会先发起 ', 'After saving, Feishu sends a ')}<code>challenge</code>{tx(' 验证；验证通过后，后续消息事件就会被 Vola 接收。', ' verification request first. After it passes, Vola receives future message events.')}</li>
       </ol>
 
       <p className="setup-note">
-        {tx('飞书消息会写入 neuDrive 的事件记录；配置 ', 'Feishu messages are written into neuDrive event records. After ')}<code>FEISHU_APP_ID</code> / <code>FEISHU_APP_SECRET</code>{tx(' 后，neuDrive 会自动回复一条确认消息。文本消息会提取正文，非文本消息会保留结构化内容。', ' are configured, neuDrive can automatically reply with a confirmation message. Text messages extract the body; non-text messages keep structured content.')}
+        {tx('飞书消息会写入 Vola 的事件记录；配置 ', 'Feishu messages are written into Vola event records. After ')}<code>FEISHU_APP_ID</code> / <code>FEISHU_APP_SECRET</code>{tx(' 后，Vola 会自动回复一条确认消息。文本消息会提取正文，非文本消息会保留结构化内容。', ' are configured, Vola can automatically reply with a confirmation message. Text messages extract the body; non-text messages keep structured content.')}
       </p>
     </SetupSection>
   )

@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/runtimecfg"
 )
 
 type Session struct {

@@ -1,4 +1,4 @@
-# neuDrive 小范围上线测试清单
+# Vola 小范围上线测试清单
 
 更新时间：2026-05-14
 
@@ -55,9 +55,9 @@
 | 项目 | 通过标准 |
 | --- | --- |
 | 复杂 Skill 导入 | `SKILL.md`、scripts、依赖文件、assets、外部 Claude tools/plugins 引用进入 manifest |
-| Claude Code 同步 | 只写 `~/.claude/skills` 下 neuDrive 管理的目录 |
-| Codex 同步 | 只写 `~/.codex/skills` 下 neuDrive 管理的目录 |
-| 冲突保护 | 同名但没有 `.neudrive-managed.json` 的目录不会被覆盖 |
+| Claude Code 同步 | 只写 `~/.claude/skills` 下 Vola 管理的目录 |
+| Codex 同步 | 只写 `~/.codex/skills` 下 Vola 管理的目录 |
+| 冲突保护 | 同名但没有 `.vola-managed.json` 的目录不会被覆盖 |
 | Cursor / Gemini CLI | 只出现导出项，不自动改本地配置 |
 | Claude / Codex 转换 | 简单 Skill 可生成副本，复杂 Skill 的 MCP、plugin、hook 显示人工处理提示 |
 | 真实运行 | 至少选 1 个简单 Skill 分别在 Claude Code 和 Codex 里试用一次 |
@@ -87,7 +87,7 @@ Team Library 只按“小团队共享资料库”验收。
 | 临时库恢复 | 临时环境能使用原 `JWT_SECRET` 和 `VAULT_MASTER_KEY` 启动 |
 | 外部备份上传 | GitHub / WebDAV / S3-compatible 至少一个真实目标上传成功 |
 | 备份历史 | 手动和自动备份能在页面或 API 中看到 |
-| 恢复预览 | 上传 neuDrive export zip 后能识别 Skills、Memory、Projects、Vault 等分类 |
+| 恢复预览 | 上传 Vola export zip 后能识别 Skills、Memory、Projects、Vault 等分类 |
 | 恢复应用 | 在临时环境验证跳过已有文件和覆盖已有文件 |
 | 保留策略 | 对真实 provider 验证保留最近 N 份，不处理第三方文件 |
 | 运维状态 | `/api/ops/status` 显示最近成功对象名，没有最近失败错误 |

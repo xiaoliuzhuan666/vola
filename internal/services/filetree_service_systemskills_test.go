@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -43,7 +43,7 @@ func TestFileTreeServiceListSkillSummariesIncludesSystemSkills(t *testing.T) {
 	if len(summaries) != 5 {
 		t.Fatalf("expected 5 system skills, got %d", len(summaries))
 	}
-	foundNeuDrive := false
+	foundVola := false
 	for _, summary := range summaries {
 		if summary.Source != "system" {
 			t.Fatalf("expected source=system, got %q", summary.Source)
@@ -51,12 +51,12 @@ func TestFileTreeServiceListSkillSummariesIncludesSystemSkills(t *testing.T) {
 		if !summary.ReadOnly {
 			t.Fatalf("expected read_only summary for %q", summary.Name)
 		}
-		if summary.Name == "neudrive" {
-			foundNeuDrive = true
+		if summary.Name == "vola" {
+			foundVola = true
 		}
 	}
-	if !foundNeuDrive {
-		t.Fatal("expected neudrive system skill summary")
+	if !foundVola {
+		t.Fatal("expected vola system skill summary")
 	}
 }
 

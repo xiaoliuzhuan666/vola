@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react'
 
 export type AppLocale = 'zh-CN' | 'en'
 
@@ -11,7 +11,8 @@ type I18nContextValue = {
   isZh: boolean
 }
 
-const STORAGE_KEY = 'neudrive.locale'
+const STORAGE_KEY = 'vola.locale'
+const MANUAL_STORAGE_KEY = 'vola.locale.manual'
 
 const I18nContext = createContext<I18nContextValue | null>(null)
 
@@ -26,18 +27,24 @@ export function getLocaleTag(locale: AppLocale) {
 }
 
 function detectInitialLocale(): AppLocale {
-  if (typeof window === 'undefined') return 'en'
+  if (typeof window === 'undefined') return 'zh-CN'
 
-  const stored = window.localStorage.getItem(STORAGE_KEY)
+  const manuallySelected = window.localStorage.getItem(MANUAL_STORAGE_KEY) === '1'
+  const stored = manuallySelected ? window.localStorage.getItem(STORAGE_KEY) : null
   if (stored) return normalizeLocale(stored)
 
-  return 'en'
+  return 'zh-CN'
 }
 
 export function I18nProvider({ children }: { children: ReactNode }) {
   const [locale, setLocale] = useState<AppLocale>(detectInitialLocale)
   const isZh = locale === 'zh-CN'
   const localeTag = getLocaleTag(locale)
+
+  const updateLocale = useCallback((nextLocale: AppLocale) => {
+    window.localStorage.setItem(MANUAL_STORAGE_KEY, '1')
+    setLocale(nextLocale)
+  }, [])
 
   useEffect(() => {
     window.localStorage.setItem(STORAGE_KEY, locale)
@@ -46,7 +53,7 @@ export function I18nProvider({ children }: { children: ReactNode }) {
 
   const value: I18nContextValue = {
     locale,
-    setLocale,
+    setLocale: updateLocale,
     tx: (zh, en) => (isZh ? zh : en),
     formatDateTime: (rawValue, options) => {
       if (!rawValue) return '-'

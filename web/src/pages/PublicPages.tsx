@@ -1,13 +1,12 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
 import { api, type AuthProvider } from '../api'
-import GitHubRepoLink from '../components/GitHubRepoLink'
 import LanguageToggle from '../components/LanguageToggle'
 import { useI18n } from '../i18n'
 
-const HUB_URL = 'https://www.neudrive.ai'
+const HUB_URL = typeof window !== 'undefined' ? window.location.origin : 'https://vola.cn'
 const MCP_URL = `${HUB_URL}/mcp`
-const DEFAULT_SEO_DESCRIPTION = 'neuDrive is a personal data hub for AI agents, connecting profile, memory, projects, conversations, skills, and vault access.'
+const DEFAULT_SEO_DESCRIPTION = 'Vola is a personal data hub for AI agents, connecting profile, memory, projects, conversations, skills, and vault access.'
 
 type LocalizedText = {
   zh: string
@@ -60,29 +59,29 @@ const integrations: IntegrationGuide[] = [
     setup: { zh: '约 2 分钟', en: '~2 min' },
     accent: 'C',
     audience: {
-      zh: '适合正在使用 Claude Web 的用户。Claude 会通过 Connectors 连接 neuDrive。',
-      en: 'For Claude Web users. Claude connects to neuDrive through Connectors.',
+      zh: '适合正在使用 Claude Web 的用户。Claude 会通过 Connectors 连接 Vola。',
+      en: 'For Claude Web users. Claude connects to Vola through Connectors.',
     },
     demo: {
-      zh: '复制 neuDrive MCP 地址，在 Claude 添加 Connector，完成授权后验证读取。',
-      en: 'Copy the neuDrive MCP URL, add a Connector in Claude, authorize, then verify the read.',
+      zh: '复制 Vola MCP 地址，在 Claude 添加 Connector，完成授权后验证读取。',
+      en: 'Copy the Vola MCP URL, add a Connector in Claude, authorize, then verify the read.',
     },
     workflowSummary: {
-      zh: '准备好 Claude 登录状态和 neuDrive 账号，按下面 4 步完成连接。',
-      en: 'Make sure you are signed in to Claude and neuDrive, then follow the 4 steps below.',
+      zh: '准备好 Claude 登录状态和 Vola 账号，按下面 4 步完成连接。',
+      en: 'Make sure you are signed in to Claude and Vola, then follow the 4 steps below.',
     },
     guideTitle: {
-      zh: '把 Claude 连接到 neuDrive',
-      en: 'Connect Claude to neuDrive',
+      zh: '把 Claude 连接到 Vola',
+      en: 'Connect Claude to Vola',
     },
     steps: [
       {
-        title: { zh: '复制 neuDrive MCP 地址', en: 'Copy the neuDrive MCP URL' },
+        title: { zh: '复制 Vola MCP 地址', en: 'Copy the Vola MCP URL' },
         copy: {
           zh: '点击复制。下一步把它粘贴到 Claude 的 Remote MCP Server URL 输入框。',
           en: 'Click copy. In the next step, paste it into Claude’s Remote MCP Server URL field.',
         },
-        codes: [{ label: { zh: 'neuDrive MCP 地址', en: 'neuDrive MCP URL' }, language: 'text', value: MCP_URL }],
+        codes: [{ label: { zh: 'Vola MCP 地址', en: 'Vola MCP URL' }, language: 'text', value: MCP_URL }],
       },
       {
         title: { zh: '在 Claude 添加自定义 Connector', en: 'Add a custom Connector in Claude' },
@@ -91,15 +90,15 @@ const integrations: IntegrationGuide[] = [
           en: 'Open Claude: Settings -> Connectors -> Go to Customize -> Add custom connector.',
         },
         detail: {
-          zh: 'Name 填 `neuDrive`，Remote MCP Server URL 粘贴上面的地址，然后保存。',
-          en: 'Use `neuDrive` as the name, paste the URL above into Remote MCP Server URL, then save.',
+          zh: 'Name 填 `Vola`，Remote MCP Server URL 粘贴上面的地址，然后保存。',
+          en: 'Use `Vola` as the name, paste the URL above into Remote MCP Server URL, then save.',
         },
       },
       {
-        title: { zh: '完成 neuDrive 授权', en: 'Finish neuDrive authorization' },
+        title: { zh: '完成 Vola 授权', en: 'Finish Vola authorization' },
         copy: {
-          zh: '点击 Connect。浏览器会打开 neuDrive 授权页；登录并确认连接。',
-          en: 'Click Connect. The browser opens neuDrive authorization; sign in and approve the connection.',
+          zh: '点击 Connect。浏览器会打开 Vola 授权页；登录并确认连接。',
+          en: 'Click Connect. The browser opens Vola authorization; sign in and approve the connection.',
         },
         note: {
           zh: '完成后回到 Claude，新开一个对话。',
@@ -109,26 +108,26 @@ const integrations: IntegrationGuide[] = [
       {
         title: { zh: '验证 Claude 能读取记忆', en: 'Verify Claude can read memory' },
         copy: {
-          zh: '复制下方测试问题，让 Claude 读取 neuDrive。',
-          en: 'Copy the test question below and ask Claude to read neuDrive.',
+          zh: '复制下方测试问题，让 Claude 读取 Vola。',
+          en: 'Copy the test question below and ask Claude to read Vola.',
         },
       },
     ],
     testPrompt: {
-      zh: '请读取我的 neuDrive 资料，并总结你现在能看到的工作偏好、项目资料和技能。',
-      en: 'Please read my neuDrive data and summarize the work preferences, project material, and skills you can see.',
+      zh: '请读取我的 Vola 资料，并总结你现在能看到的工作偏好、项目资料和技能。',
+      en: 'Please read my Vola data and summarize the work preferences, project material, and skills you can see.',
     },
     afterConnection: [
       { zh: '导入 Claude 官方导出文件。', en: 'Import the official Claude export file.' },
-      { zh: '把当前项目资料保存到 neuDrive。', en: 'Save current project material to neuDrive.' },
+      { zh: '把当前项目资料保存到 Vola。', en: 'Save current project material to Vola.' },
       { zh: '在 Connections 里查看 Claude 连接状态。', en: 'Check Claude connection status in Connections.' },
     ],
     detailSummary: {
-      zh: 'Claude 适合成为第一个接入的 AI 工具：连接后可以直接读取 neuDrive 中的个人记忆、项目资料和可用技能。',
-      en: 'Claude is a good first connection: after setup, it can read Profile Memory, project material, and available Skills from neuDrive.',
+      zh: 'Claude 适合成为第一个接入的 AI 工具：连接后可以直接读取 Vola 中的个人记忆、项目资料和可用技能。',
+      en: 'Claude is a good first connection: after setup, it can read Profile Memory, project material, and available Skills from Vola.',
     },
     detailHighlights: [
-      { zh: '通过 Claude Connectors 添加 neuDrive。', en: 'Add neuDrive through Claude Connectors.' },
+      { zh: '通过 Claude Connectors 添加 Vola。', en: 'Add Vola through Claude Connectors.' },
       { zh: '浏览器授权后，新会话即可使用。', en: 'After browser authorization, use it from a fresh chat.' },
       { zh: '适合读取偏好、项目上下文和可复用技能。', en: 'Good for reading preferences, project context, and reusable skills.' },
     ],
@@ -138,12 +137,12 @@ const integrations: IntegrationGuide[] = [
     ],
     detailFaq: [
       {
-        question: { zh: 'Claude 会读取全部 neuDrive 数据吗？', en: 'Can Claude read all neuDrive data?' },
+        question: { zh: 'Claude 会读取全部 Vola 数据吗？', en: 'Can Claude read all Vola data?' },
         answer: { zh: '不会。Claude 只能读取当前连接被授权访问的资料。', en: 'No. Claude can only read material authorized for that connection.' },
       },
       {
         question: { zh: '需要每次复制上下文吗？', en: 'Do I need to paste context every time?' },
-        answer: { zh: '不需要。连接后可以让 Claude 从 neuDrive 读取已有记忆和项目资料。', en: 'No. After setup, Claude can read existing memory and project material from neuDrive.' },
+        answer: { zh: '不需要。连接后可以让 Claude 从 Vola 读取已有记忆和项目资料。', en: 'No. After setup, Claude can read existing memory and project material from Vola.' },
       },
     ],
   },
@@ -156,46 +155,46 @@ const integrations: IntegrationGuide[] = [
     setup: { zh: '约 3 分钟', en: '~3 min' },
     accent: 'G',
     audience: {
-      zh: '适合已经在 ChatGPT 设置里看到 Apps 入口的用户。ChatGPT 会通过 App 连接 neuDrive。',
-      en: 'For ChatGPT users who already see Apps in settings. ChatGPT connects to neuDrive through an App.',
+      zh: '适合已经在 ChatGPT 设置里看到 Apps 入口的用户。ChatGPT 会通过 App 连接 Vola。',
+      en: 'For ChatGPT users who already see Apps in settings. ChatGPT connects to Vola through an App.',
     },
     demo: {
-      zh: '在 ChatGPT Apps 里创建 neuDrive App，粘贴 MCP 地址，完成授权后验证读取。',
-      en: 'Create a neuDrive App in ChatGPT Apps, paste the MCP URL, authorize, then verify the read.',
+      zh: '在 ChatGPT Apps 里创建 Vola App，粘贴 MCP 地址，完成授权后验证读取。',
+      en: 'Create a Vola App in ChatGPT Apps, paste the MCP URL, authorize, then verify the read.',
     },
     workflowSummary: {
-      zh: '准备好 ChatGPT 登录状态和 neuDrive 账号，按下面 4 步完成连接。',
-      en: 'Make sure you are signed in to ChatGPT and neuDrive, then follow the 4 steps below.',
+      zh: '准备好 ChatGPT 登录状态和 Vola 账号，按下面 4 步完成连接。',
+      en: 'Make sure you are signed in to ChatGPT and Vola, then follow the 4 steps below.',
     },
     guideTitle: {
-      zh: '把 ChatGPT Apps 连接到 neuDrive',
-      en: 'Connect ChatGPT Apps to neuDrive',
+      zh: '把 ChatGPT Apps 连接到 Vola',
+      en: 'Connect ChatGPT Apps to Vola',
     },
     steps: [
       {
-        title: { zh: '复制 neuDrive MCP 地址', en: 'Copy the neuDrive MCP URL' },
+        title: { zh: '复制 Vola MCP 地址', en: 'Copy the Vola MCP URL' },
         copy: {
           zh: '点击复制。创建 ChatGPT App 时，把它粘贴到 MCP Server URL 输入框。',
           en: 'Click copy. When creating the ChatGPT App, paste it into the MCP Server URL field.',
         },
-        codes: [{ label: { zh: 'neuDrive MCP 地址', en: 'neuDrive MCP URL' }, language: 'text', value: MCP_URL }],
+        codes: [{ label: { zh: 'Vola MCP 地址', en: 'Vola MCP URL' }, language: 'text', value: MCP_URL }],
       },
       {
-        title: { zh: '创建 neuDrive App', en: 'Create the neuDrive App' },
+        title: { zh: '创建 Vola App', en: 'Create the Vola App' },
         copy: {
           zh: '打开 ChatGPT：Settings -> Apps -> Advanced settings -> Create app。',
           en: 'Open ChatGPT: Settings -> Apps -> Advanced settings -> Create app.',
         },
         detail: {
-          zh: 'App 名称填 `neuDrive`，MCP Server URL 粘贴上面的地址，然后保存。',
-          en: 'Use `neuDrive` as the App name, paste the URL above into MCP Server URL, then save.',
+          zh: 'App 名称填 `Vola`，MCP Server URL 粘贴上面的地址，然后保存。',
+          en: 'Use `Vola` as the App name, paste the URL above into MCP Server URL, then save.',
         },
       },
       {
-        title: { zh: '完成 neuDrive 授权', en: 'Finish neuDrive authorization' },
+        title: { zh: '完成 Vola 授权', en: 'Finish Vola authorization' },
         copy: {
-          zh: '保存 App。浏览器会打开 neuDrive 授权页；登录并确认连接。',
-          en: 'Save the App. The browser opens neuDrive authorization; sign in and approve the connection.',
+          zh: '保存 App。浏览器会打开 Vola 授权页；登录并确认连接。',
+          en: 'Save the App. The browser opens Vola authorization; sign in and approve the connection.',
         },
       },
       {
@@ -207,8 +206,8 @@ const integrations: IntegrationGuide[] = [
       },
     ],
     testPrompt: {
-      zh: '请读取我的 neuDrive 资料，并总结我的工作偏好和最近项目上下文。',
-      en: 'Please read my neuDrive data and summarize my work preferences and recent project context.',
+      zh: '请读取我的 Vola 资料，并总结我的工作偏好和最近项目上下文。',
+      en: 'Please read my Vola data and summarize my work preferences and recent project context.',
     },
     afterConnection: [
       { zh: '把重要对话保存到 Conversations。', en: 'Save important chats to Conversations.' },
@@ -216,13 +215,13 @@ const integrations: IntegrationGuide[] = [
       { zh: '把需要复用的资料整理成 Memory 或 Projects。', en: 'Turn reusable material into Memory or Projects.' },
     ],
     detailSummary: {
-      zh: 'ChatGPT Apps 接入适合希望在 ChatGPT 里调用 neuDrive 记忆、文件和技能的用户。',
-      en: 'ChatGPT Apps setup is for using neuDrive memory, files, and skills from inside ChatGPT.',
+      zh: 'ChatGPT Apps 接入适合希望在 ChatGPT 里调用 Vola 记忆、文件和技能的用户。',
+      en: 'ChatGPT Apps setup is for using Vola memory, files, and skills from inside ChatGPT.',
     },
     detailHighlights: [
-      { zh: '创建 neuDrive App 并粘贴 MCP Server URL。', en: 'Create a neuDrive App and paste the MCP Server URL.' },
+      { zh: '创建 Vola App 并粘贴 MCP Server URL。', en: 'Create a Vola App and paste the MCP Server URL.' },
       { zh: '授权后在新会话里测试读取。', en: 'After authorization, test from a fresh chat.' },
-      { zh: '可与 Claude、编辑器和 CLI 接入共享同一份资料。', en: 'Shares the same neuDrive data with Claude, editors, and CLI tools.' },
+      { zh: '可与 Claude、编辑器和 CLI 接入共享同一份资料。', en: 'Shares the same Vola data with Claude, editors, and CLI tools.' },
     ],
     detailLimits: [
       { zh: 'ChatGPT Apps 入口取决于账号计划和开放范围。', en: 'The ChatGPT Apps entry depends on account plan and rollout availability.' },
@@ -235,7 +234,7 @@ const integrations: IntegrationGuide[] = [
       },
       {
         question: { zh: '连接后能做什么？', en: 'What can I do after setup?' },
-        answer: { zh: '可以让 ChatGPT 读取 neuDrive 中的个人资料、项目上下文、文件和技能。', en: 'You can ask ChatGPT to read your neuDrive profile, project context, files, and skills.' },
+        answer: { zh: '可以让 ChatGPT 读取 Vola 中的个人资料、项目上下文、文件和技能。', en: 'You can ask ChatGPT to read your Vola profile, project context, files, and skills.' },
       },
     ],
   },
@@ -248,8 +247,8 @@ const integrations: IntegrationGuide[] = [
     setup: { zh: '约 3 分钟', en: '~3 min' },
     accent: 'Ed',
     audience: {
-      zh: '适合 Cursor、Windsurf 这类代码编辑器。编辑器里的 AI 可以读取 neuDrive 项目资料。',
-      en: 'For coding editors such as Cursor and Windsurf. The editor AI can read project material from neuDrive.',
+      zh: '适合 Cursor、Windsurf 这类代码编辑器。编辑器里的 AI 可以读取 Vola 项目资料。',
+      en: 'For coding editors such as Cursor and Windsurf. The editor AI can read project material from Vola.',
     },
     demo: {
       zh: '选择你的编辑器，复制对应配置，完成授权后让 AI 读取项目上下文。',
@@ -260,8 +259,8 @@ const integrations: IntegrationGuide[] = [
       en: 'Choose your editor, copy the matching config, save it, then finish browser authorization.',
     },
     guideTitle: {
-      zh: '把 Cursor / Windsurf 连接到 neuDrive',
-      en: 'Connect Cursor / Windsurf to neuDrive',
+      zh: '把 Cursor / Windsurf 连接到 Vola',
+      en: 'Connect Cursor / Windsurf to Vola',
     },
     steps: [
       {
@@ -281,33 +280,33 @@ const integrations: IntegrationGuide[] = [
           {
             label: { zh: 'Cursor MCP config', en: 'Cursor MCP config' },
             language: 'json',
-            value: JSON.stringify({ mcpServers: { neudrive: { url: MCP_URL } } }, null, 2),
+            value: JSON.stringify({ mcpServers: { vola: { url: MCP_URL } } }, null, 2),
           },
           {
             label: { zh: 'Windsurf MCP config', en: 'Windsurf MCP config' },
             language: 'json',
-            value: JSON.stringify({ mcpServers: { neudrive: { serverUrl: MCP_URL } } }, null, 2),
+            value: JSON.stringify({ mcpServers: { vola: { serverUrl: MCP_URL } } }, null, 2),
           },
         ],
       },
       {
         title: { zh: '保存并完成授权', en: 'Save and authorize' },
         copy: {
-          zh: '保存配置后点击 Connect、Authenticate 或 Open。浏览器会打开 neuDrive 授权页；登录并确认连接。',
-          en: 'After saving, click Connect, Authenticate, or Open. The browser opens neuDrive authorization; sign in and approve the connection.',
+          zh: '保存配置后点击 Connect、Authenticate 或 Open。浏览器会打开 Vola 授权页；登录并确认连接。',
+          en: 'After saving, click Connect, Authenticate, or Open. The browser opens Vola authorization; sign in and approve the connection.',
         },
       },
       {
         title: { zh: '测试项目上下文', en: 'Test project context' },
         copy: {
-          zh: '复制下方测试问题，让编辑器里的 AI 读取当前项目并写入 neuDrive。',
-          en: 'Copy the test question below and ask the editor AI to read the current project and write it to neuDrive.',
+          zh: '复制下方测试问题，让编辑器里的 AI 读取当前项目并写入 Vola。',
+          en: 'Copy the test question below and ask the editor AI to read the current project and write it to Vola.',
         },
       },
     ],
     testPrompt: {
-      zh: '请读取当前项目，并把项目背景、开发约定和常用命令保存到 neuDrive。',
-      en: 'Please read the current project and save its background, development conventions, and common commands to neuDrive.',
+      zh: '请读取当前项目，并把项目背景、开发约定和常用命令保存到 Vola。',
+      en: 'Please read the current project and save its background, development conventions, and common commands to Vola.',
     },
     afterConnection: [
       { zh: '保存项目 README 和开发约定。', en: 'Save the project README and development conventions.' },
@@ -315,11 +314,11 @@ const integrations: IntegrationGuide[] = [
       { zh: '在文件管理器里查看写入结果。', en: 'Review the result in Data Explorer.' },
     ],
     detailSummary: {
-      zh: 'Cursor / Windsurf 适合把当前 repo 的项目背景、命令、约定和长期上下文写入 neuDrive。',
-      en: 'Cursor / Windsurf are best for saving repo background, commands, conventions, and durable project context into neuDrive.',
+      zh: 'Cursor / Windsurf 适合把当前 repo 的项目背景、命令、约定和长期上下文写入 Vola。',
+      en: 'Cursor / Windsurf are best for saving repo background, commands, conventions, and durable project context into Vola.',
     },
     detailHighlights: [
-      { zh: '在编辑器 MCP 设置里添加 neuDrive。', en: 'Add neuDrive in the editor MCP settings.' },
+      { zh: '在编辑器 MCP 设置里添加 Vola。', en: 'Add Vola in the editor MCP settings.' },
       { zh: '让编辑器 AI 读取当前 repo 并写入项目上下文。', en: 'Ask the editor AI to read the current repo and write project context.' },
       { zh: '后续可在 Claude 或 ChatGPT 复用这些项目资料。', en: 'Reuse that project material later from Claude or ChatGPT.' },
     ],
@@ -330,7 +329,7 @@ const integrations: IntegrationGuide[] = [
     detailFaq: [
       {
         question: { zh: 'Cursor 和 Windsurf 为什么放一起？', en: 'Why are Cursor and Windsurf grouped together?' },
-        answer: { zh: '它们都属于代码编辑器接入，目标都是让 repo 上下文进入 neuDrive。', en: 'They are both coding editor setups, focused on bringing repo context into neuDrive.' },
+        answer: { zh: '它们都属于代码编辑器接入，目标都是让 repo 上下文进入 Vola。', en: 'They are both coding editor setups, focused on bringing repo context into Vola.' },
       },
       {
         question: { zh: '会自动上传整个仓库吗？', en: 'Will it upload the entire repo automatically?' },
@@ -351,23 +350,23 @@ const integrations: IntegrationGuide[] = [
       en: 'For terminal users running Codex, Claude Code, Gemini CLI, or Cursor Agent.',
     },
     demo: {
-      zh: '先登录 neuDrive 官网，再复制对应 CLI 命令并验证连接。',
-      en: 'First sign in to the neuDrive website, then copy the matching CLI commands and verify the connection.',
+      zh: '先登录 Vola 官网，再复制对应 CLI 命令并验证连接。',
+      en: 'First sign in to the Vola website, then copy the matching CLI commands and verify the connection.',
     },
     workflowSummary: {
-      zh: '先登录 neuDrive，再选择你使用的 CLI 并复制对应命令。',
-      en: 'Sign in to neuDrive first, then choose your CLI and copy the matching commands.',
+      zh: '先登录 Vola，再选择你使用的 CLI 并复制对应命令。',
+      en: 'Sign in to Vola first, then choose your CLI and copy the matching commands.',
     },
     guideTitle: {
-      zh: '把 Codex / Claude CLI 连接到 neuDrive',
-      en: 'Connect Codex / Claude CLI to neuDrive',
+      zh: '把 Codex / Claude CLI 连接到 Vola',
+      en: 'Connect Codex / Claude CLI to Vola',
     },
     steps: [
       {
-        title: { zh: '先登录官方 neuDrive', en: 'Sign in to official neuDrive' },
+        title: { zh: '先登录官方 Vola', en: 'Sign in to official Vola' },
         copy: {
-          zh: '运行这一条命令即可登录 neuDrive 官网账号。',
-          en: 'Run this one command to sign in to your neuDrive website account.',
+          zh: '运行这一条命令即可登录 Vola 官网账号。',
+          en: 'Run this one command to sign in to your Vola website account.',
         },
         codes: [{
           label: { zh: 'neu hosted profile', en: 'neu hosted profile' },
@@ -378,14 +377,14 @@ const integrations: IntegrationGuide[] = [
       {
         title: { zh: '连接 Claude Code', en: 'Connect Claude Code' },
         copy: {
-          zh: '使用 Claude Code 时，先添加 neuDrive，再在 Claude Code 里运行 `/mcp` 完成授权。',
-          en: 'If you use Claude Code, add neuDrive first, then run `/mcp` inside Claude Code to authorize.',
+          zh: '使用 Claude Code 时，先添加 Vola，再在 Claude Code 里运行 `/mcp` 完成授权。',
+          en: 'If you use Claude Code, add Vola first, then run `/mcp` inside Claude Code to authorize.',
         },
         codes: [
           {
             label: { zh: 'Claude Code command', en: 'Claude Code command' },
             language: 'bash',
-            value: `claude mcp add -s user --transport http neudrive ${MCP_URL}`,
+            value: `claude mcp add -s user --transport http vola ${MCP_URL}`,
           },
           {
             label: { zh: 'Claude Code auth menu', en: 'Claude Code auth menu' },
@@ -403,7 +402,7 @@ const integrations: IntegrationGuide[] = [
         codes: [{
           label: { zh: 'Codex CLI commands', en: 'Codex CLI commands' },
           language: 'bash',
-          value: `codex mcp add neudrive --url ${MCP_URL}\ncodex mcp login neudrive\ncodex mcp list`,
+          value: `codex mcp add vola --url ${MCP_URL}\ncodex mcp login vola\ncodex mcp list`,
         }],
       },
       {
@@ -420,8 +419,8 @@ const integrations: IntegrationGuide[] = [
       },
     ],
     testPrompt: {
-      zh: '请读取当前工作区，把有长期价值的项目背景、命令和偏好写入 neuDrive，并列出写入路径。',
-      en: 'Please read the current workspace, save durable project context, commands, and preferences into neuDrive, then list the written paths.',
+      zh: '请读取当前工作区，把有长期价值的项目背景、命令和偏好写入 Vola，并列出写入路径。',
+      en: 'Please read the current workspace, save durable project context, commands, and preferences into Vola, then list the written paths.',
     },
     afterConnection: [
       { zh: '用 `neu browse /data` 查看导入结果。', en: 'Use `neu browse /data` to review imported data.' },
@@ -429,16 +428,16 @@ const integrations: IntegrationGuide[] = [
       { zh: '用 `neu sync pull` 导出备份。', en: 'Use `neu sync pull` to export a backup.' },
     ],
     detailSummary: {
-      zh: 'CLI 接入适合日常在终端工作的用户，把 Codex、Claude Code 等命令行 AI 工具接到同一个 neuDrive 资料中枢。',
-      en: 'CLI setup is for terminal-based work, connecting Codex, Claude Code, and similar agents to the same neuDrive data layer.',
+      zh: 'CLI 接入适合日常在终端工作的用户，把 Codex、Claude Code 等命令行 AI 工具接到同一个 Vola 资料中枢。',
+      en: 'CLI setup is for terminal-based work, connecting Codex, Claude Code, and similar agents to the same Vola data layer.',
     },
     detailHighlights: [
-      { zh: '用 `neu login` 登录 neuDrive 官网账号。', en: 'Use `neu login` to sign in to your neuDrive website account.' },
+      { zh: '用 `neu login` 登录 Vola 官网账号。', en: 'Use `neu login` to sign in to your Vola website account.' },
       { zh: '为 Claude Code 或 Codex CLI 添加 remote MCP。', en: 'Add remote MCP for Claude Code or Codex CLI.' },
       { zh: '用 neu 命令导入、浏览和验证资料。', en: 'Use neu commands to import, browse, and verify material.' },
     ],
     detailLimits: [
-      { zh: 'CLI 接入需要一个可访问的 HTTPS neuDrive 地址。', en: 'CLI setup needs a reachable HTTPS neuDrive URL.' },
+      { zh: 'CLI 接入需要一个可访问的 HTTPS Vola 地址。', en: 'CLI setup needs a reachable HTTPS Vola URL.' },
       { zh: '不同 CLI 的登录命令不同，请按对应平台执行。', en: 'Login commands differ by CLI; use the commands for your platform.' },
     ],
     detailFaq: [
@@ -448,7 +447,7 @@ const integrations: IntegrationGuide[] = [
       },
       {
         question: { zh: 'CLI 适合做什么？', en: 'What is CLI setup best for?' },
-        answer: { zh: '适合导入项目资料、保存开发约定、同步备份，并让终端 AI 工具读取 neuDrive。', en: 'It is best for importing project material, saving conventions, syncing backups, and letting terminal agents read neuDrive.' },
+        answer: { zh: '适合导入项目资料、保存开发约定、同步备份，并让终端 AI 工具读取 Vola。', en: 'It is best for importing project material, saving conventions, syncing backups, and letting terminal agents read Vola.' },
       },
     ],
   },
@@ -497,7 +496,7 @@ const integrations: IntegrationGuide[] = [
           zh: '复制下面的服务地址，填到你的 AI 工具或内部系统里。',
           en: 'Copy the service URL below and add it to your agent or internal system.',
         },
-        codes: [{ label: { zh: 'neuDrive 服务地址', en: 'neuDrive service URL' }, language: 'text', value: MCP_URL }],
+        codes: [{ label: { zh: 'Vola 服务地址', en: 'Vola service URL' }, language: 'text', value: MCP_URL }],
       },
       {
         title: { zh: '审计和撤销', en: 'Audit and revoke' },
@@ -508,8 +507,8 @@ const integrations: IntegrationGuide[] = [
       },
     ],
     testPrompt: {
-      zh: '让自定义 AI 工具读取 neuDrive 个人资料摘要，并返回读取结果。',
-      en: 'Ask the custom agent to read a neuDrive profile summary and return the result.',
+      zh: '让自定义 AI 工具读取 Vola 个人资料摘要，并返回读取结果。',
+      en: 'Ask the custom agent to read a Vola profile summary and return the result.',
     },
     afterConnection: [
       { zh: '为每个 AI 工具单独创建凭证。', en: 'Create a separate credential for each agent.' },
@@ -517,7 +516,7 @@ const integrations: IntegrationGuide[] = [
       { zh: '不再使用时撤销连接。', en: 'Revoke the connection when it is no longer used.' },
     ],
     detailSummary: {
-      zh: 'MCP / REST API 面向自研 AI 工具、内部系统和自动化脚本，用独立访问凭证连接 neuDrive。',
+      zh: 'MCP / REST API 面向自研 AI 工具、内部系统和自动化脚本，用独立访问凭证连接 Vola。',
       en: 'MCP / REST API is for custom agents, internal systems, and automation scripts using separate access credentials.',
     },
     detailHighlights: [
@@ -619,15 +618,14 @@ export function PublicShell({ children }: { children: ReactNode }) {
   return (
     <div className={`public-site ${mobileMenuOpen ? 'public-menu-open' : ''}`}>
       <header className="public-nav">
-        <Link to="/" className="public-brand" onClick={closeMobileMenu}>neuDrive</Link>
+        <Link to="/" className="public-brand" onClick={closeMobileMenu}>Vola</Link>
         <nav className="public-nav-links" aria-label={tx('主导航', 'Primary navigation')}>
           <a href="/#product">{tx('产品', 'Product')}</a>
+          <a href="/#team-library">{tx('团队共享', 'Team sharing')}</a>
           <Link to="/integrations">{tx('集成', 'Integrations')}</Link>
-          <Link to="/pricing">{tx('价格', 'Pricing')}</Link>
           <Link to="/docs">{tx('文档', 'Docs')}</Link>
         </nav>
         <div className="public-nav-actions">
-          <GitHubRepoLink className="public-github-link" />
           <div className="public-nav-language"><LanguageToggle compact /></div>
           <Link to="/login" className="btn btn-outline public-login-link">{tx('登录', 'Log in')}</Link>
           <button
@@ -650,8 +648,8 @@ export function PublicShell({ children }: { children: ReactNode }) {
           className="public-mobile-menu"
         >
           <a href="/#product" onClick={closeMobileMenu}>{tx('产品', 'Product')}</a>
+          <a href="/#team-library" onClick={closeMobileMenu}>{tx('团队共享', 'Team sharing')}</a>
           <Link to="/integrations" onClick={closeMobileMenu}>{tx('集成', 'Integrations')}</Link>
-          <Link to="/pricing" onClick={closeMobileMenu}>{tx('价格', 'Pricing')}</Link>
           <Link to="/docs" onClick={closeMobileMenu}>{tx('文档', 'Docs')}</Link>
           <Link to="/login" onClick={closeMobileMenu}>{tx('登录', 'Log in')}</Link>
           <div className="public-mobile-language">
@@ -672,16 +670,15 @@ function PublicFooter() {
     <footer className="public-footer">
       <div className="public-footer-main">
         <div className="public-footer-brand">
-          <Link to="/" className="public-brand">neuDrive</Link>
+          <Link to="/" className="public-brand">Vola</Link>
           <p>{tx('让 Claude、ChatGPT、Cursor 等 AI 工具共用同一份个人数据 Hub。', 'One personal data hub for Claude, ChatGPT, Cursor, and other AI tools.')}</p>
-          <a className="public-footer-support" href="mailto:support@neudrive.ai">support@neudrive.ai</a>
         </div>
         <nav className="public-footer-columns" aria-label={tx('页脚导航', 'Footer navigation')}>
           <div>
             <h2>{tx('产品', 'Product')}</h2>
             <Link to="/integrations">{tx('集成', 'Integrations')}</Link>
-            <Link to="/pricing">{tx('价格', 'Pricing')}</Link>
             <a href="/#how-it-works">{tx('接入方式', 'How it works')}</a>
+            <a href="/#team-library">{tx('团队共享', 'Team sharing')}</a>
             <a href="/#product">{tx('能力', 'Capabilities')}</a>
           </div>
           <div>
@@ -692,21 +689,19 @@ function PublicFooter() {
             <Link to="/guides/editors">Cursor / Windsurf</Link>
           </div>
           <div>
-            <h2>{tx('公司', 'Company')}</h2>
-            <a href="mailto:support@neudrive.ai">{tx('联系支持', 'Contact support')}</a>
-            <a href="mailto:support@neudrive.ai?subject=neuDrive%20status">{tx('状态咨询', 'Status')}</a>
-            <a href="https://github.com/agi-bar/neuDrive" target="_blank" rel="noreferrer">GitHub</a>
+            <h2>{tx('支持', 'Support')}</h2>
+            <Link to="/docs">{tx('使用文档', 'Documentation')}</Link>
+            <Link to="/integrations">{tx('接入目录', 'Integration catalog')}</Link>
           </div>
           <div>
             <h2>{tx('法律', 'Legal')}</h2>
             <Link to="/privacy">{tx('隐私政策', 'Privacy')}</Link>
             <Link to="/terms">{tx('服务条款', 'Terms')}</Link>
-            <a href="mailto:support@neudrive.ai?subject=neuDrive%20security">{tx('安全联系', 'Security contact')}</a>
           </div>
         </nav>
       </div>
       <div className="public-footer-bottom">
-        <span>© {year} neuDrive</span>
+        <span>© {year} Vola</span>
         <span>{tx('AI 数据由你控制。', 'Your AI data stays under your control.')}</span>
       </div>
     </footer>
@@ -716,71 +711,108 @@ function PublicFooter() {
 export function MarketingHomePage() {
   const { tx, isZh } = useI18n()
   useDocumentTitle(
-    tx('Agent 个人数据 Hub — neuDrive', 'Personal data hub for AI agents — neuDrive'),
-    tx('neuDrive 统一管理 Agent 可使用的 profile、memory、projects、conversations、skills 和 vault 权限。', DEFAULT_SEO_DESCRIPTION),
+    tx('Agent 个人数据 Hub — Vola', 'Personal data hub for AI agents — Vola'),
+    tx('Vola 统一管理 Agent 可使用的 profile、memory、projects、conversations、skills 和 vault 权限。', DEFAULT_SEO_DESCRIPTION),
   )
   const [activeKey, setActiveKey] = useState('claude')
-  const [activeHeroPanel, setActiveHeroPanel] = useState<'memory' | 'files' | 'skills'>('memory')
+
+  // 交互式 Demo 演示状态
+  const [demoPlaying, setDemoPlaying] = useState(false)
+  const [demoStep, setDemoStep] = useState(0)
+  const [demoMessages, setDemoMessages] = useState<Array<{ sender: 'user' | 'agent' | 'system'; text: string }>>([])
+
+  const startInteractiveDemo = () => {
+    if (demoPlaying) return
+    setDemoPlaying(true)
+    setDemoStep(1)
+    setDemoMessages([{ sender: 'user', text: tx('请读取我的 Vola 资料，并总结我的开发偏好。', 'Read my Vola data and summarize my dev preferences.') }])
+
+    setTimeout(() => {
+      setDemoStep(2)
+      setDemoMessages(prev => [...prev, { sender: 'system', text: tx('[System Log] Agent 调用 MCP tool: vola_read_profile...', '[System Log] Agent invoking MCP tool: vola_read_profile...') }])
+
+      setTimeout(() => {
+        setDemoStep(3)
+        setDemoMessages(prev => [...prev, {
+          sender: 'agent',
+          text: tx(
+            '已成功读取您的 Vola Profile！您是一位偏好 TypeScript & React 的高级前端开发者，注重页面精美度与玻璃拟态微动效。',
+            'Successfully read your Vola Profile! You are a senior frontend developer who prefers TypeScript & React and loves sleek glassmorphic micro-animations.'
+          )
+        }])
+
+        setTimeout(() => {
+          setDemoPlaying(false)
+          setDemoStep(0)
+        }, 5000)
+      }, 1500)
+    }, 1500)
+  }
+
   const activeIntegration = getIntegration(activeKey) || integrations[0]
   const firstCode = activeIntegration.steps.flatMap((step) => step.codes || [])[0]
-  const heroPanels = {
-    memory: {
-      label: tx('记忆', 'Memory'),
-      source: 'Claude',
-      prompt: tx('读取我的工作偏好和项目上下文。', 'Read my working preferences and project context.'),
-      response: tx('返回已授权的个人记忆、项目资料和可用技能。', 'Returns approved profile memory, project files, and available skills.'),
-      meta: [
-        tx('长期偏好', 'Stable preferences'),
-        tx('项目上下文', 'Project context'),
-        tx('短期工作记忆', 'Scratch memory'),
-      ],
-    },
-    files: {
-      label: tx('文件', 'Files'),
-      source: 'Cursor',
-      prompt: tx('帮我找项目里关于接入配置的资料。', 'Find the project material related to setup configuration.'),
-      response: tx('返回匹配的文件、来源和访问范围。', 'Returns matching files, sources, and access ranges from Data Explorer.'),
-      meta: [
-        tx('会话资料', 'Conversations'),
-        tx('项目文件', 'Project files'),
-        tx('可导出', 'Exportable'),
-      ],
-    },
-    skills: {
-      label: tx('技能', 'Skills'),
-      source: 'ChatGPT',
-      prompt: tx('看看我有哪些可复用的工作技能。', 'Show the reusable work skills I can use.'),
-      response: tx('列出已启用的技能，并说明哪些 AI 工具可以使用。', 'Lists enabled Skills and which agents can use them.'),
-      meta: [
-        tx('接入一次', 'Register once'),
-        tx('多工具复用', 'Reuse across agents'),
-        tx('可验证', 'Testable'),
-      ],
-    },
-  }
-  const activeHero = heroPanels[activeHeroPanel]
-  const pains = [
+  const heroWorkspaceCards = [
     {
-      title: tx('Agent 数据分散', 'Agent data is scattered'),
-      copy: tx('Claude、ChatGPT、Cursor 各自保存 profile、项目资料和会话。', 'Claude, ChatGPT, and Cursor each keep their own profile, project material, and chats.'),
+      title: tx('项目资料包', 'Project packet'),
+      tags: [tx('会话摘要', 'Chat notes'), tx('文件', 'Files'), tx('偏好', 'Preferences')],
+      time: tx('今天 10:09', 'Today 10:09'),
+      accent: 'project',
     },
     {
-      title: tx('只同步 Skill 目录不够', 'Syncing skill folders is not enough'),
-      copy: tx('脚本、依赖、项目背景、会话和访问权限也需要被记录。', 'Scripts, dependencies, project background, chats, and access rules also need to be recorded.'),
+      title: tx('个人长期记忆', 'Personal memory'),
+      tags: [tx('Profile', 'Profile'), tx('Memory', 'Memory'), tx('Vault', 'Vault')],
+      time: tx('刚刚同步', 'Synced now'),
+      accent: 'memory',
     },
     {
-      title: tx('私密信息需要权限边界', 'Private material needs access rules'),
-      copy: tx('API Key、账号和私密资料应按 Agent 授权访问。', 'API keys, accounts, and private material should be accessed by agent-specific authorization.'),
+      title: tx('团队共享资料库', 'Team library'),
+      tags: [tx('Skill', 'Skill'), tx('MCP 说明', 'MCP docs'), tx('Prompt', 'Prompt')],
+      time: tx('3 位成员', '3 members'),
+      accent: 'team',
+    },
+  ]
+  const ownershipCards = [
+    {
+      title: tx('资料放在你名下', 'Owned by you'),
+      copy: tx('个人资料、记忆、项目、会话和技能先进入 Vola，再按连接授权给 AI 工具。', 'Profile, memory, projects, chats, and skills enter Vola first, then get authorized per agent.'),
+    },
+    {
+      title: tx('跨工具复用', 'Reusable across tools'),
+      copy: tx('Claude、ChatGPT、Cursor、Windsurf 和 CLI 工具读取同一份长期资料。', 'Claude, ChatGPT, Cursor, Windsurf, and CLI agents read the same durable context.'),
+    },
+    {
+      title: tx('访问可以管理', 'Manageable access'),
+      copy: tx('每个连接独立授权，凭证、范围和撤销都在 Vola 管理。', 'Each connection has its own authorization, credentials, range, and revocation path.'),
     },
   ]
   const modules = [
-    { name: tx('Profile', 'Profile'), label: tx('偏好 / 身份 / 工作方式', 'Preferences / Identity / Work style'), copy: tx('保存 Agent 需要长期记住的个人资料。', 'Store the personal context agents should remember over time.') },
-    { name: tx('Projects', 'Projects'), label: tx('项目上下文 / 会话', 'Project context / Conversations'), copy: tx('统一管理 AI 可读取的项目资料、会话和文件。', 'Manage project material, conversations, and files your AI can read.') },
-    { name: tx('Skills', 'Skills'), label: tx('技能 / 脚本 / 依赖', 'Skills / Scripts / Dependencies'), copy: tx('保存可复用技能，并记录复杂 Skill 的配套资产。', 'Store reusable skills and the assets that complex skills need.') },
-    { name: tx('Vault', 'Vault'), label: tx('访问权限', 'Access rules'), copy: tx('决定每个 Agent 能看到哪些私密资料。', 'Decide which private material each agent can see.') },
+    { name: tx('个人资料与记忆', 'Profile and Memory'), label: tx('偏好 / 身份 / 工作方式', 'Preferences / Identity / Work style'), copy: tx('保存 AI 工具需要长期记住的个人资料、工作偏好和短期记录。', 'Store profile data, work preferences, and short-term notes that agents should remember.') },
+    { name: tx('项目与会话', 'Projects and Conversations'), label: tx('项目上下文 / 文件 / 对话', 'Project context / Files / Conversations'), copy: tx('把项目资料、会话摘要和文件放在同一个可授权读取的位置。', 'Keep project material, chat summaries, and files in one place with access control.') },
+    { name: tx('技能库', 'Skills Library'), label: tx('技能 / 脚本 / 依赖', 'Skills / Scripts / Dependencies'), copy: tx('管理可复用技能，记录复杂 Skill 需要的说明、脚本和资源。', 'Manage reusable skills with the notes, scripts, and assets complex skills need.') },
+    { name: tx('团队资料', 'Team Library'), label: tx('共享 Skill / MCP 说明 / 提示词', 'Shared skills / MCP notes / Prompts'), copy: tx('团队页用于共享 AI 使用方法、MCP 配置说明和可复用工作资料。', 'The team page shares AI playbooks, MCP setup notes, and reusable work material.') },
+    { name: tx('开发者访问', 'Developer Access'), label: tx('Token / OAuth / MCP / REST', 'Token / OAuth / MCP / REST'), copy: tx('为 AI 工具和内部系统创建独立访问凭证，可查看并撤销。', 'Create separate credentials for agents and internal systems, then review or revoke them.') },
+    { name: tx('导入与备份', 'Import and Backup'), label: tx('Claude / Codex / ZIP / Git', 'Claude / Codex / ZIP / Git'), copy: tx('支持导入本地 AI 资料、导出恢复包；Git 备份在配置后可用。', 'Import local AI data, export recovery packages, and use Git backup when configured.') },
+  ]
+  const teamFeatures = [
+    {
+      title: tx('团队共享资料库', 'Shared team library'),
+      copy: tx('团队页会创建 /team、/team/mcp、/team/prompts、/team/playbooks 等目录，把协作资料放在统一位置。', 'Team pages create /team, /team/mcp, /team/prompts, and /team/playbooks so shared material has a clear home.'),
+    },
+    {
+      title: tx('团队 Skill 独立维护', 'Team skills stay separate'),
+      copy: tx('团队 Skill 存在团队 Hub 下，个人 Skills 默认仍是个人范围，需要时可复制到个人空间。', 'Team skills live under the team hub. Personal Skills remain personal by default and can copy from team when needed.'),
+    },
+    {
+      title: tx('成员角色控制写入', 'Roles control writes'),
+      copy: tx('owner、admin、member、viewer 会影响成员管理和文件写入，viewer 只能查看。', 'Owner, admin, member, and viewer roles control member management and file writes; viewers can only read.'),
+    },
   ]
   return (
     <PublicShell>
+      <div className="public-quickstart-banner">
+        💡 {tx('只需 3 分钟，即可将您的 Claude/ChatGPT 接入记忆 Hub。', 'Connect your Claude/ChatGPT to your memory Hub in just 3 minutes.')}
+        <Link to="/signup">{tx('立即开始新手接入指南 →', 'Get Started with Setup Guide →')}</Link>
+      </div>
       <main>
         <section className="public-hero">
           <div className="public-hero-copy">
@@ -797,102 +829,179 @@ export function MarketingHomePage() {
             </h1>
             <p>
               {tx(
-                'neuDrive 统一管理 profile、memory、projects、conversations、skills 和 vault 权限，再提供给 Claude、ChatGPT、Cursor、Windsurf 等 AI 工具。',
-                'neuDrive manages profile, memory, projects, conversations, skills, and vault access for Claude, ChatGPT, Cursor, Windsurf, and more.',
+                'Vola 把个人资料、记忆、项目、会话、技能和私密访问集中管理，再按授权提供给 Claude、ChatGPT、Cursor、Windsurf 等 AI 工具。',
+                'Vola manages profile, memory, projects, conversations, skills, and private access, then shares them with Claude, ChatGPT, Cursor, Windsurf, and more by authorization.',
               )}
             </p>
             <div className="public-hero-actions">
               <Link to="/signup" className="btn btn-primary">{tx('3 分钟连接第一个 AI 工具', 'Connect your first agent in 3 min')}</Link>
-              <a href="#how-it-works" className="btn btn-outline">{tx('查看接入方式', 'See how it works')}</a>
+              <a href="#team-library" className="btn btn-outline">{tx('查看团队共享', 'View team sharing')}</a>
             </div>
             <div className="public-hero-proof" aria-label={tx('产品能力', 'Product capabilities')}>
-              <span>{tx('Profile / Memory', 'Profile / Memory')}</span>
-              <span>{tx('Projects / Conversations', 'Projects / Conversations')}</span>
-              <span>{tx('Skills / Vault', 'Skills / Vault')}</span>
+              <span>{tx('个人资料归属', 'Personal ownership')}</span>
+              <span>{tx('授权给 AI 工具', 'Agent authorization')}</span>
+              <span>{tx('团队资料共享', 'Team sharing')}</span>
             </div>
-            <a href="#product" className="public-scroll-cue">
-              {tx('看看 neuDrive 怎么工作', 'Explore how the layer works')}
+
+            {/* 一键 Interactive Demo 测试 */}
+            <button
+              type="button"
+              className="demo-interactive-btn"
+              onClick={startInteractiveDemo}
+              disabled={demoPlaying}
+            >
+              <span>{demoPlaying ? '⚡' : '▶'}</span>
+              {demoPlaying ? tx('正在模拟 Agent 数据读取...', 'Simulating Agent MCP reads...') : tx('一键测试 AI 怎么读取你的数据 (Interactive Demo)', 'Interactive Demo: Test how AI reads your data')}
+            </button>
+
+            {demoMessages.length > 0 && (
+              <div className="mock-chat-container">
+                {demoMessages.map((msg, index) => {
+                  if (msg.sender === 'system') {
+                    return <div key={index} className="mock-mcp-log">{msg.text}</div>
+                  }
+                  return (
+                    <div key={index} className={`mock-chat-bubble ${msg.sender}`}>
+                      {msg.text}
+                    </div>
+                  )
+                })}
+              </div>
+            )}
+
+            <a href="#product" className="public-scroll-cue" style={{ marginTop: '24px' }}>
+              {tx('看看 Vola 怎么工作', 'Explore how the layer works')}
               <span />
             </a>
           </div>
-          <div className="public-product-visual public-product-visual-rich" aria-label={tx('neuDrive 产品演示', 'neuDrive product demonstration')}>
-            <div className="visual-grid" aria-hidden="true">
-              {Array.from({ length: 48 }).map((_, index) => <span key={index} />)}
-            </div>
-            <div className="signal-routes" aria-hidden="true">
-              <span className="signal-packet signal-packet-1" />
-              <span className="signal-packet signal-packet-2" />
-              <span className="signal-packet signal-packet-3" />
-            </div>
-            <div className="agent-orbit">
-              {integrations.slice(0, 4).map((item, index) => (
-                <span key={item.key} className={`orbit-chip orbit-chip-${index + 1}`}>{item.shortName}</span>
-              ))}
-              <div className="orbit-core">
-                <strong>neuDrive</strong>
-                <span>{tx('Profile / Memory / Projects / Skills / Vault', 'Profile / Memory / Projects / Skills / Vault')}</span>
+          <div className="public-product-visual public-product-visual-rich hub-visual" aria-label={tx('Vola 工作台预览', 'Vola workspace preview')}>
+            <aside className="hub-sidebar" aria-label={tx('资料分类', 'Data categories')}>
+              <div className="hub-sidebar-brand">
+                <span>X</span>
+                <strong>Vola</strong>
               </div>
-            </div>
-            <div className="hero-window">
-              <div className="window-bar"><span /><span /><span /></div>
-              <div className="window-tabs" role="tablist" aria-label={tx('产品示例', 'Product examples')}>
-                {(Object.keys(heroPanels) as Array<keyof typeof heroPanels>).map((key) => (
-                  <button
-                    key={key}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeHeroPanel === key}
-                    className={activeHeroPanel === key ? 'active' : ''}
-                    onClick={() => setActiveHeroPanel(key)}
-                  >
-                    {heroPanels[key].label}
-                  </button>
+              {[
+                tx('首页', 'Home'),
+                tx('我的资料', 'My data'),
+                tx('团队共享', 'Team sharing'),
+                tx('AI 接入', 'Agent access'),
+              ].map((item, index) => (
+                <div key={item} className={index === 1 ? 'active' : ''}>
+                  <span>{index + 1}</span>
+                  <strong>{item}</strong>
+                </div>
+              ))}
+              <div className="hub-sidebar-promo">
+                <strong>{tx('Agent 数据 Hub', 'Agent data hub')}</strong>
+                <p>{tx('个人资料和团队资料分开管理。', 'Personal and team data stay separate.')}</p>
+              </div>
+            </aside>
+            <div className="hub-workspace">
+              <div className="hub-toolbar">
+                <div className="hub-search">
+                  <span>{tx('默认空间', 'Default space')}</span>
+                  <strong>{tx('搜索记忆、项目、技能', 'Search memory, projects, skills')}</strong>
+                </div>
+                <button type="button">{tx('新建', 'New')}</button>
+              </div>
+              <div className="hub-board-head">
+                <div>
+                  <span>{tx('个人数据 Hub', 'Personal data hub')}</span>
+                  <strong>{tx('把 AI 工作资料放在你名下', 'Keep AI work data under your name')}</strong>
+                </div>
+                <p>{tx('按连接授权给 Claude、ChatGPT、Cursor、Windsurf。', 'Authorize Claude, ChatGPT, Cursor, and Windsurf per connection.')}</p>
+              </div>
+              <div className="hub-workspace-cards">
+                {heroWorkspaceCards.map((card) => (
+                  <article key={card.title} className={`hub-workspace-card ${card.accent} ${demoStep === 2 && card.accent === 'memory' ? 'visual-card-active card-scanning-effect' : ''}`}>
+                    <div>
+                      <span>{card.time}</span>
+                      <strong>{card.title}</strong>
+                    </div>
+                    <div className="hub-card-preview">
+                      <i />
+                      <i />
+                      <i />
+                    </div>
+                    <p>
+                      {card.tags.map((tag) => <em key={tag}>{tag}</em>)}
+                    </p>
+                  </article>
                 ))}
               </div>
-              <div className="memory-thread" role="tabpanel">
-                <div>
-                  <span className="thread-label">{activeHero.source}</span>
-                  <p>{activeHero.prompt}</p>
-                </div>
-                <div className="thread-response">
-                  <span className="thread-label">neuDrive</span>
-                  <p>{activeHero.response}</p>
-                </div>
-              </div>
-              <div className="visual-access-row">
-                {activeHero.meta.map((item) => <span key={item}>{item}</span>)}
+              <div className="hub-agent-strip">
+                {integrations.slice(0, 4).map((item) => (
+                  <span key={item.key}>{item.shortName}</span>
+                ))}
               </div>
             </div>
           </div>
         </section>
 
-        <section className="public-continuity-strip" aria-label={tx('neuDrive 产品流程', 'neuDrive product flow')}>
+        <section className="public-continuity-strip" aria-label={tx('Vola 产品流程', 'Vola product flow')}>
           <div>
             <span>01</span>
-            <strong>{tx('连接一次', 'Connect once')}</strong>
-            <p>{tx('把 Claude、ChatGPT、Cursor 等工具连接到同一个资料库。', 'Point Claude, ChatGPT, Cursor, and other tools at one data layer.')}</p>
+            <strong>{tx('先归集到个人 Hub', 'Gather into your hub')}</strong>
+            <p>{tx('个人资料、记忆、项目和会话先由你集中管理。', 'Profile, memory, projects, and conversations are managed under your account first.')}</p>
           </div>
           <div>
             <span>02</span>
-            <strong>{tx('控制访问', 'Control access')}</strong>
-            <p>{tx('为每个 AI 工具决定能读取哪些资料，之后可以随时调整或撤销。', 'Decide which material each AI tool can read, then adjust or revoke it anytime.')}</p>
+            <strong>{tx('需要协作时放入团队 Hub', 'Share through team hubs')}</strong>
+            <p>{tx('团队 Skill、MCP 说明、Prompt 和 Playbook 可以由成员共同维护。', 'Team skills, MCP docs, prompts, and playbooks can be maintained together.')}</p>
           </div>
           <div>
             <span>03</span>
-            <strong>{tx('跨工具复用', 'Reuse everywhere')}</strong>
-            <p>{tx('profile、memory、projects、skills 和 vault 权限跟着你走，而不是锁在某一个 AI 工具里。', 'Profile, memory, projects, skills, and vault access follow your workflow instead of staying locked inside one AI tool.')}</p>
+            <strong>{tx('再授权给 AI 工具', 'Authorize agents')}</strong>
+            <p>{tx('不同 AI 工具按授权读取资料，连接不用时可以撤销。', 'Different AI tools read authorized material and can be revoked when no longer needed.')}</p>
           </div>
         </section>
 
         <section className="public-band pain-band">
           <div className="public-section-head stacked">
-            <p className="public-kicker">{tx('为什么需要 neuDrive', 'Why neuDrive')}</p>
-            <h2>{tx('上下文散落，是 AI 工作流最隐形的成本。', 'Scattered context is the hidden cost of AI workflows.')}</h2>
+            <p className="public-kicker">{tx('产品重点', 'Product focus')}</p>
+            <h2>{tx('AI 可以换，工作资料应该留在你名下。', 'AI tools can change. Your working data should stay with you.')}</h2>
           </div>
           <div className="public-card-grid three">
-            {pains.map((item) => (
+            {ownershipCards.map((item) => (
               <article key={item.title} className="public-card pain-card">
                 <span className="card-mark" />
+                <h3>{item.title}</h3>
+                <p>{item.copy}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section id="team-library" className="public-band team-library-band">
+          <div className="team-library-copy">
+            <p className="public-kicker">{tx('团队共享', 'Team sharing')}</p>
+            <h2>{tx('把团队的 AI 工作方法沉淀成共享资料库。', 'Turn team AI practices into a shared library.')}</h2>
+            <p>{tx('Vola 的团队空间适合保存团队通用 Skill、MCP 配置说明、提示词、Playbook 和项目协作资料。个人资料和团队资料保持分开，成员按角色访问。', 'Vola team spaces are for shared skills, MCP setup notes, prompts, playbooks, and collaboration material. Personal and team data stay separate, with role-based access for members.')}</p>
+            <div className="team-library-actions">
+              <Link to="/signup" className="btn btn-primary">{tx('创建团队资料库', 'Create a team library')}</Link>
+              <a href="#how-it-works" className="btn btn-outline">{tx('查看 AI 接入', 'View agent setup')}</a>
+            </div>
+          </div>
+          <div className="team-library-panel">
+            <div className="team-folder-list">
+              {['/team/mcp', '/team/prompts', '/team/playbooks', '/skills/shared-review'].map((item, index) => (
+                <div key={item}>
+                  <span>{index + 1}</span>
+                  <strong>{item}</strong>
+                </div>
+              ))}
+            </div>
+            <div className="team-role-row">
+              {[
+                tx('owner 管成员', 'owner manages members'),
+                tx('member 可写入', 'member can write'),
+                tx('viewer 只读', 'viewer reads only'),
+              ].map((item) => <span key={item}>{item}</span>)}
+            </div>
+          </div>
+          <div className="team-feature-grid">
+            {teamFeatures.map((item) => (
+              <article key={item.title} className="public-card team-feature-card">
                 <h3>{item.title}</h3>
                 <p>{item.copy}</p>
               </article>
@@ -903,8 +1012,8 @@ export function MarketingHomePage() {
         <section id="product" className="public-band product-split-band">
           <div className="product-story">
             <p className="public-kicker">{tx('产品能力', 'Product')}</p>
-            <h2>{tx('一个 Hub 管理 Agent 可使用的资料。', 'One hub for the data your agents can use.')}</h2>
-            <p>{tx('把 profile、memory、projects、conversations、skills 和 vault 权限放在 neuDrive。连接新的 AI 工具时，它可以从同一份个人数据开始工作。', 'Keep profile, memory, projects, conversations, skills, and vault access in neuDrive. When you connect a new AI tool, it can start from the same personal data hub.')}</p>
+            <h2>{tx('围绕真实功能组织的 AI 工作资料台。', 'An AI work-data desk organized around real product functions.')}</h2>
+            <p>{tx('Vola 当前覆盖个人资料、记忆、项目、会话、技能、团队资料、开发者访问、导入导出和按配置启用的备份能力。', 'Vola currently covers profile, memory, projects, conversations, skills, team material, developer access, imports, exports, and backup capabilities when configured.')}</p>
           </div>
           <div className="module-board">
             {modules.map((item, index) => (
@@ -921,7 +1030,7 @@ export function MarketingHomePage() {
           <div className="public-section-head">
             <div>
               <p className="public-kicker">{tx('接入方式', 'How it works')}</p>
-              <h2>{tx('3 分钟连接第一个 AI 工具。', '3 minutes to connect your first AI agent.')}</h2>
+            <h2>{tx('从一个 AI 工具开始接入。', 'Start by connecting one AI tool.')}</h2>
               <p>{tx('先选择你要连接的平台。每个平台都有步骤、可复制内容和连接后的测试问题。', 'Choose the tool you want to connect. The guide gives you the URL to copy, the settings path, and a test question for after connection.')}</p>
             </div>
             <Link to={`/guides/${activeIntegration.key}`} className="btn btn-outline">{tx('查看接入指南', 'Open demo guide')}</Link>
@@ -1020,13 +1129,12 @@ export function MarketingHomePage() {
         </section>
 
         <IntegrationsSection />
-        <PricingSection />
 
         <section className="public-band security-band">
           <div>
             <p className="public-kicker">{tx('安全控制', 'Security')}</p>
             <h2>{tx('你的 AI 数据仍由你控制。', 'Your AI data stays under your control.')}</h2>
-            <p>{tx('neuDrive 保存的是会话、文件、偏好和私密资料，所以用户必须一开始就知道：数据能导出、访问能控制、连接能撤销。', 'neuDrive stores conversations, files, preferences, and private material, so users should know from the first visit: data can be exported, access can be controlled, and connections can be revoked.')}</p>
+            <p>{tx('Vola 保存的是会话、文件、偏好和私密资料，所以用户必须一开始就知道：数据能导出、访问能控制、连接能撤销。', 'Vola stores conversations, files, preferences, and private material, so users should know from the first visit: data can be exported, access can be controlled, and connections can be revoked.')}</p>
           </div>
           <div className="security-panel">
             {[
@@ -1056,7 +1164,7 @@ function IntegrationsSection() {
         <div>
           <p className="public-kicker">{tx('集成', 'Integrations')}</p>
           <h2>{tx('连接你每天使用的 AI 工具。', 'Connect the AI tools you use every day.')}</h2>
-          <p>{tx('先查看具体步骤。准备好后，再登录 neuDrive 完成连接。', 'Review the setup steps first. When you are ready, sign in to neuDrive to complete the connection.')}</p>
+          <p>{tx('先查看具体步骤。准备好后，再登录 Vola 完成连接。', 'Review the setup steps first. When you are ready, sign in to Vola to complete the connection.')}</p>
         </div>
         <Link to="/integrations" className="btn btn-outline">{tx('查看全部', 'View all')}</Link>
       </div>
@@ -1078,203 +1186,22 @@ function IntegrationsSection() {
   )
 }
 
-function PricingSection() {
-  const { tx } = useI18n()
-  return (
-    <section className="public-band">
-      <div className="public-section-head">
-        <div>
-          <p className="public-kicker">{tx('价格', 'Pricing')}</p>
-          <h2>{tx('默认年付，省下 50%。', 'Yearly by default. Save 50%.')}</h2>
-          <p>{tx('Free 适合试用和自托管评估。Pro 提供更多存储、托管同步和自动备份。', 'Free is for trying neuDrive or evaluating self-hosting. Pro adds more storage, hosted sync, and scheduled backup.')}</p>
-        </div>
-        <Link to="/pricing" className="btn btn-outline">{tx('比较套餐', 'Compare plans')}</Link>
-      </div>
-      <div className="pricing-public-grid">
-        <article className="pricing-public-card">
-          <h3>{tx('Free 免费版', 'Free')}</h3>
-          <div className="pricing-price">$0</div>
-          <p>{tx('10 MiB 存储', '10 MiB storage')}</p>
-        </article>
-        <article className="pricing-public-card featured">
-          <span className="recommended-chip">{tx('推荐', 'Recommended')}</span>
-          <h3>{tx('Pro 年付', 'Pro Yearly')}</h3>
-          <div className="pricing-price">{tx('$60 / 年', '$60 / year')}</div>
-          <p>{tx('1 GiB 存储 · 托管同步 · Git 备份 · 优先导入', '1 GiB storage · Hosted sync · Git backup · Priority import')}</p>
-          <Link to="/signup?plan=pro_yearly" className="btn btn-primary">{tx('年付 Pro', 'Start Pro yearly')}</Link>
-        </article>
-        <article className="pricing-public-card">
-          <h3>{tx('Pro 月付', 'Pro Monthly')}</h3>
-          <div className="pricing-price">{tx('$10 / 月', '$10 / month')}</div>
-          <p>{tx('按月灵活使用 Pro 能力。', 'Use Pro month to month.')}</p>
-          <Link to="/signup?plan=pro_monthly" className="btn btn-outline">{tx('月付 Pro', 'Start Pro monthly')}</Link>
-        </article>
-      </div>
-    </section>
-  )
-}
-
-export function PricingPage() {
-  const { tx } = useI18n()
-  useDocumentTitle(
-    tx('价格 — neuDrive', 'Pricing — neuDrive'),
-    tx('比较 neuDrive Free 和 Pro 方案，了解存储空间、同步、备份和 AI 工具连接能力。', 'Compare neuDrive Free and Pro plans for storage, sync, backup, and AI tool connections.'),
-  )
-  const comparisonRows = [
-    [tx('存储空间', 'Storage'), '10 MiB', '1 GiB', '1 GiB'],
-    [tx('AI 工具连接', 'AI connections'), tx('不限连接', 'Unlimited'), tx('不限连接', 'Unlimited'), tx('不限连接', 'Unlimited')],
-    [tx('同步方式', 'Sync'), tx('手动同步', 'Manual sync'), tx('托管同步', 'Hosted sync'), tx('托管同步', 'Hosted sync')],
-    [tx('备份', 'Backup'), tx('ZIP 导出', 'ZIP export'), tx('ZIP + Git backup', 'ZIP + Git backup'), tx('ZIP + Git backup', 'ZIP + Git backup')],
-    [tx('导入', 'Import'), tx('基础导入', 'Basic import'), tx('优先导入大批量会话', 'Priority large conversation import'), tx('优先导入大批量会话', 'Priority large conversation import')],
-    [tx('私密数据控制', 'Private data controls'), tx('基础控制', 'Basic controls'), tx('完整控制', 'Full controls'), tx('完整控制', 'Full controls')],
-  ]
-  const faqItems = [
-    {
-      question: tx('我的数据属于谁？', 'Who owns my data?'),
-      answer: tx(
-        '你的记忆、文件、会话和技能属于你。neuDrive 负责存放和连接，你可以随时导出或删除。',
-        'Your memory, files, conversations, and skills belong to you. neuDrive stores and connects them, and you can export or delete them anytime.',
-      ),
-    },
-    {
-      question: tx('存储空间满了会怎样？', 'What happens when storage is full?'),
-      answer: tx(
-        '导入和同步会停止写入新数据，已有数据仍可读取。你可以清理数据、导出备份，或升级到 Pro 获得 1 GiB 存储。',
-        'Imports and sync stop writing new data, while existing data remains readable. You can clean up data, export a backup, or upgrade to Pro for 1 GiB storage.',
-      ),
-    },
-    {
-      question: tx('是否支持团队？', 'Do you support teams?'),
-      answer: tx(
-        '当前公开价格面向个人工作流。Team Library 可用于小团队共享 Skill、MCP 配置说明、提示词和 AI 使用技巧；企业级组织管理、审计、SSO 和审批流需要单独评估。',
-        'The public plans are designed for individual workflows. Team Library can be used for small-team shared skills, MCP configuration notes, prompts, and AI playbooks; enterprise org management, audit, SSO, and approval workflows require a separate review.',
-      ),
-    },
-    {
-      question: tx('可以自托管吗？', 'Can I self-host?'),
-      answer: tx(
-        '可以。neuDrive Core 是开源核心能力，自托管适合需要完全控制基础设施的团队；Hosted Pro 适合希望直接使用托管同步、备份和升级路径的用户。',
-        'Yes. neuDrive Core is open-source and fits teams that want full infrastructure control; Hosted Pro is for users who want managed sync, backup, and an upgrade path.',
-      ),
-    },
-    {
-      question: tx('有试用或退款政策吗？', 'Is there a trial or refund policy?'),
-      answer: tx(
-        '你可以先用 Free 验证接入路径。若出现重复扣费、误购或账单异常，请联系 support@neudrive.ai，我们会根据实际情况处理。',
-        'You can validate the setup path on Free first. For duplicate charges, accidental purchases, or billing issues, contact support@neudrive.ai and we will review the case.',
-      ),
-    },
-  ]
-  return (
-    <PublicShell>
-      <main className="public-simple">
-        <PricingSection />
-        <section className="public-band pricing-roi-section">
-          <div className="pricing-roi-panel">
-            <div>
-              <p className="public-kicker">{tx('年付价值', 'Yearly value')}</p>
-              <h2>{tx('年付 Pro 相当于每月 $5。', 'Pro Yearly is effectively $5 per month.')}</h2>
-              <p>{tx('按月一年是 $120，年付是 $60。省下来的 $60 可以覆盖一整年的托管同步、自动备份和更大的 AI 工作记忆空间。', 'Monthly for a full year is $120; yearly is $60. The $60 saved covers a year of managed sync, scheduled backup, and a larger AI working-memory space.')}</p>
-            </div>
-            <div className="pricing-roi-metrics" aria-label={tx('年付节省', 'Yearly savings')}>
-              <span>
-                <strong>$60</strong>
-                {tx('每年节省', 'saved yearly')}
-              </span>
-              <span>
-                <strong>1 GiB</strong>
-                {tx('托管存储', 'managed storage')}
-              </span>
-              <span>
-                <strong>{tx('自动', 'Auto')}</strong>
-                {tx('托管同步与自动备份', 'hosted sync and scheduled backup')}
-              </span>
-            </div>
-          </div>
-        </section>
-        <section className="public-band pricing-compare-section">
-          <div className="public-section-head">
-            <div>
-              <p className="public-kicker">{tx('套餐比较', 'Plan comparison')}</p>
-              <h2>{tx('选择适合你的使用方式。', 'Choose the plan that fits how you work.')}</h2>
-            </div>
-          </div>
-          <div className="pricing-compare-table-wrap">
-            <table className="pricing-compare-table">
-              <thead>
-                <tr>
-                  <th>{tx('能力', 'Capability')}</th>
-                  <th>{tx('Free 免费版', 'Free')}</th>
-                  <th>{tx('Pro 年付', 'Pro Yearly')}</th>
-                  <th>{tx('Pro 月付', 'Pro Monthly')}</th>
-                </tr>
-              </thead>
-              <tbody>
-                {comparisonRows.map(([feature, free, yearly, monthly]) => (
-                  <tr key={feature}>
-                    <th>{feature}</th>
-                    <td>{free}</td>
-                    <td>{yearly}</td>
-                    <td>{monthly}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </section>
-        <section className="public-band pricing-team-section">
-          <article className="pricing-team-card">
-            <div>
-              <p className="public-kicker">{tx('团队与企业', 'Team and Enterprise')}</p>
-              <h2>{tx('需要团队资料库或更高存储？', 'Need a team library or higher storage?')}</h2>
-              <p>{tx('当前团队能力适合共享 Skill、MCP 配置说明、提示词和 AI 使用技巧。企业级组织管理、审计、SSO 和审批流需要单独评估。', 'The current team capability fits shared skills, MCP configuration notes, prompts, and AI playbooks. Enterprise org management, audit, SSO, and approval workflows require a separate review.')}</p>
-            </div>
-            <a className="btn btn-primary" href="mailto:support@neudrive.ai?subject=neuDrive%20Team%20or%20Enterprise">{tx('联系团队方案', 'Contact for teams')}</a>
-          </article>
-        </section>
-        <section className="public-band self-host-section">
-          <div className="public-section-head">
-            <div>
-              <p className="public-kicker">{tx('自托管', 'Self-hosting')}</p>
-              <h2>{tx('开源核心可以自托管。', 'The open-source core can be self-hosted.')}</h2>
-              <p>{tx('如果你只需要核心资料中枢、MCP 接入和本地控制，可以部署 neuDrive Core。Hosted Pro 则适合想减少运维、直接使用托管同步和备份的个人用户。', 'If you only need the core data layer, MCP access, and local control, you can deploy neuDrive Core. Hosted Pro is for individual users who want less operations work and managed sync and backup.')}</p>
-            </div>
-            <Link to="/docs" className="btn btn-outline">{tx('查看部署文档', 'View deployment docs')}</Link>
-          </div>
-        </section>
-        <section className="public-band pricing-faq-section">
-          <div className="public-section-head">
-            <div>
-              <p className="public-kicker">FAQ</p>
-              <h2>{tx('购买前常见问题', 'Questions before you buy')}</h2>
-            </div>
-          </div>
-          <div className="public-faq-grid">
-            {faqItems.map((item) => (
-              <article key={item.question} className="public-faq-item">
-                <h3>{item.question}</h3>
-                <p>{item.answer}</p>
-              </article>
-            ))}
-          </div>
-        </section>
-      </main>
-    </PublicShell>
-  )
+export function HiddenSubscriptionPage() {
+  return <Navigate to="/" replace />
 }
 
 export function IntegrationsPage() {
   const { tx } = useI18n()
   useDocumentTitle(
-    tx('集成 — neuDrive', 'Integrations — neuDrive'),
-    tx('连接 Claude、ChatGPT、Cursor、Windsurf、命令行 AI 工具、MCP 和 REST API。', 'Connect neuDrive to Claude, ChatGPT, Cursor, Windsurf, CLI agents, MCP, and REST API.'),
+    tx('集成 — Vola', 'Integrations — Vola'),
+    tx('连接 Claude、ChatGPT、Cursor、Windsurf、命令行 AI 工具、MCP 和 REST API。', 'Connect Vola to Claude, ChatGPT, Cursor, Windsurf, CLI agents, MCP, and REST API.'),
   )
   return (
     <PublicShell>
       <main className="public-simple">
         <section className="public-band integrations-hero-section">
           <p className="public-kicker">{tx('集成目录', 'Integration catalog')}</p>
-          <h1>{tx('选择你要把 neuDrive 接到哪里。', 'Choose where neuDrive should connect.')}</h1>
+          <h1>{tx('选择你要把 Vola 接到哪里。', 'Choose where Vola should connect.')}</h1>
           <p>{tx('每个平台详情页都会说明适用场景、接入步骤、限制和常见问题。', 'Each platform detail page explains use cases, setup steps, limitations, and common questions.')}</p>
         </section>
         <section className="public-band integration-directory-section">
@@ -1311,11 +1238,11 @@ export function IntegrationDetailPage() {
   const item = getIntegration(platform)
   useDocumentTitle(
     item
-      ? tx(`${item.shortName} 集成 — neuDrive`, `${item.shortName} Integration — neuDrive`)
-      : tx('集成 — neuDrive', 'Integrations — neuDrive'),
+      ? tx(`${item.shortName} 集成 — Vola`, `${item.shortName} Integration — Vola`)
+      : tx('集成 — Vola', 'Integrations — Vola'),
     item
-      ? tx(`了解如何把 ${item.shortName} 连接到 neuDrive，共用记忆、文件和技能。`, `Learn how to connect ${item.shortName} to neuDrive so it can use shared memory, files, and skills.`)
-      : tx('选择 Claude、ChatGPT、Cursor、Windsurf、CLI 或 API 接入 neuDrive。', 'Choose Claude, ChatGPT, Cursor, Windsurf, CLI, or API setup for neuDrive.'),
+      ? tx(`了解如何把 ${item.shortName} 连接到 Vola，共用记忆、文件和技能。`, `Learn how to connect ${item.shortName} to Vola so it can use shared memory, files, and skills.`)
+      : tx('选择 Claude、ChatGPT、Cursor、Windsurf、CLI 或 API 接入 Vola。', 'Choose Claude, ChatGPT, Cursor, Windsurf, CLI, or API setup for Vola.'),
   )
   if (!item) return <Navigate to="/integrations" replace />
   const codeSnippets = item.steps.flatMap((step) => step.codes || [])
@@ -1402,11 +1329,11 @@ export function GuidePage() {
   const guide = getIntegration(platform)
   useDocumentTitle(
     guide
-      ? tx(`${guide.shortName} 接入指南 — neuDrive`, `${guide.shortName} Setup Guide — neuDrive`)
-      : tx('接入指南 — neuDrive', 'Setup Guide — neuDrive'),
+      ? tx(`${guide.shortName} 接入指南 — Vola`, `${guide.shortName} Setup Guide — Vola`)
+      : tx('接入指南 — Vola', 'Setup Guide — Vola'),
     guide
-      ? tx(`${guide.shortName} 接入 neuDrive 的设置步骤、可复制内容、授权流程和测试问题。`, `Follow the neuDrive setup guide for ${guide.shortName}, including copyable URLs, authorization steps, and a test prompt.`)
-      : tx('选择 Claude、ChatGPT、Cursor、Windsurf、CLI 或 API 接入 neuDrive。', 'Choose Claude, ChatGPT, Cursor, Windsurf, CLI, or API setup for neuDrive.'),
+      ? tx(`${guide.shortName} 接入 Vola 的设置步骤、可复制内容、授权流程和测试问题。`, `Follow the Vola setup guide for ${guide.shortName}, including copyable URLs, authorization steps, and a test prompt.`)
+      : tx('选择 Claude、ChatGPT、Cursor、Windsurf、CLI 或 API 接入 Vola。', 'Choose Claude, ChatGPT, Cursor, Windsurf, CLI, or API setup for Vola.'),
   )
   if (!guide) return <Navigate to="/integrations" replace />
   return (
@@ -1454,7 +1381,7 @@ export function GuidePage() {
         <section className="public-band guide-test-section">
           <div className="guide-test-card">
             <p className="public-kicker">{tx('验证连接', 'Verify connection')}</p>
-            <h2>{tx('复制测试问题，让平台读取 neuDrive。', 'Copy the test question and let the platform read neuDrive.')}</h2>
+            <h2>{tx('复制测试问题，让平台读取 Vola。', 'Copy the test question and let the platform read Vola.')}</h2>
             <CopySnippet label={tx('复制测试问题', 'Copy test question')} language="text" value={tr(tx, guide.testPrompt)} />
           </div>
           <div className="guide-after-card">
@@ -1479,8 +1406,8 @@ export function GuidePage() {
 export function DocsLandingPage() {
   const { tx } = useI18n()
   useDocumentTitle(
-    tx('文档 — neuDrive', 'Docs — neuDrive'),
-    tx('neuDrive 文档包含 Claude、ChatGPT、代码编辑器、CLI 和自定义 MCP 客户端接入指南。', 'Setup guides for connecting neuDrive to Claude, ChatGPT, coding editors, CLI agents, and custom MCP clients.'),
+    tx('文档 — Vola', 'Docs — Vola'),
+    tx('Vola 文档包含 Claude、ChatGPT、代码编辑器、CLI 和自定义 MCP 客户端接入指南。', 'Setup guides for connecting Vola to Claude, ChatGPT, coding editors, CLI agents, and custom MCP clients.'),
   )
   const docsGroups = [
     {
@@ -1493,7 +1420,7 @@ export function DocsLandingPage() {
     },
     {
       title: tx('代码工作流', 'Coding workflows'),
-      copy: tx('Cursor、Windsurf 和命令行 AI 工具主要用于读取当前 repo，并把项目上下文写回 neuDrive。', 'Cursor, Windsurf, and CLI agents are best for reading the current repo and writing project context back to neuDrive.'),
+      copy: tx('Cursor、Windsurf 和命令行 AI 工具主要用于读取当前 repo，并把项目上下文写回 Vola。', 'Cursor, Windsurf, and CLI agents are best for reading the current repo and writing project context back to Vola.'),
       links: [
         { label: tx('Cursor / Windsurf 编辑器', 'Cursor / Windsurf'), href: '/guides/editors' },
         { label: tx('Codex / Claude CLI 命令行', 'Codex / Claude CLI'), href: '/guides/cli' },
@@ -1540,8 +1467,8 @@ const legalContent = {
     kicker: { zh: '隐私', en: 'Privacy' },
     title: { zh: '隐私政策', en: 'Privacy Policy' },
     intro: {
-      zh: 'neuDrive 用来保存 AI 工具需要读取的记忆、文件、会话、技能和私密资料。我们的产品原则是：你能看到保存了什么，能导出，能撤销访问，也能删除数据。',
-      en: 'neuDrive stores memory, files, conversations, skills, and private material that your AI tools may need to read. Our product principle is simple: you can see what is stored, export it, revoke access, and delete data.',
+      zh: 'Vola 用来保存 AI 工具需要读取的记忆、文件、会话、技能和私密资料。我们的产品原则是：你能看到保存了什么，能导出，能撤销访问，也能删除数据。',
+      en: 'Vola stores memory, files, conversations, skills, and private material that your AI tools may need to read. Our product principle is simple: you can see what is stored, export it, revoke access, and delete data.',
     },
     sections: [
       {
@@ -1561,8 +1488,8 @@ const legalContent = {
       {
         title: { zh: '联系我们', en: 'Contact us' },
         body: {
-          zh: '隐私、安全或数据删除请求可以发送到 support@neudrive.ai。',
-          en: 'Privacy, security, or data deletion requests can be sent to support@neudrive.ai.',
+          zh: '隐私、安全或数据删除请求请通过部署方提供的支持渠道处理。',
+          en: 'Privacy, security, or data deletion requests should be handled through the support channel provided by the deployment owner.',
         },
       },
     ],
@@ -1571,8 +1498,8 @@ const legalContent = {
     kicker: { zh: '条款', en: 'Terms' },
     title: { zh: '服务条款', en: 'Terms of Service' },
     intro: {
-      zh: '使用 neuDrive 时，你需要确保导入的数据、连接的 AI 工具和创建的 token 符合你的组织规则和适用法律。',
-      en: 'When using neuDrive, you are responsible for ensuring that imported data, connected AI tools, and created tokens comply with your organization’s rules and applicable law.',
+      zh: '使用 Vola 时，你需要确保导入的数据、连接的 AI 工具和创建的 token 符合你的组织规则和适用法律。',
+      en: 'When using Vola, you are responsible for ensuring that imported data, connected AI tools, and created tokens comply with your organization’s rules and applicable law.',
     },
     sections: [
       {
@@ -1585,17 +1512,17 @@ const legalContent = {
       {
         title: { zh: '数据和导出', en: 'Data and export' },
         body: {
-          zh: 'neuDrive 旨在帮助你集中管理 AI 工作数据。你可以导出数据；删除或撤销操作可能影响已连接 AI 工具的可用上下文。',
-          en: 'neuDrive is designed to help you manage AI working data in one place. You can export data; deletion or revocation may affect context available to connected AI tools.',
+          zh: 'Vola 旨在帮助你集中管理 AI 工作数据。你可以导出数据；删除或撤销操作可能影响已连接 AI 工具的可用上下文。',
+          en: 'Vola is designed to help you manage AI working data in one place. You can export data; deletion or revocation may affect context available to connected AI tools.',
         },
       },
-      {
-        title: { zh: '付费和支持', en: 'Billing and support' },
-        body: {
-          zh: '托管版的支付、订阅和存储限制由 neuDrive 的支付网关处理。账单或支持问题可以发送到 support@neudrive.ai。',
-          en: 'Hosted billing, subscriptions, and storage limits are handled by the neuDrive payment gateway. Billing or support questions can be sent to support@neudrive.ai.',
+        {
+          title: { zh: '支持', en: 'Support' },
+          body: {
+          zh: '当前部署的存储限制、账号和数据问题请以部署方配置为准。',
+          en: 'Storage limits, accounts, and data support follow the deployment owner configuration for this deployment.',
+          },
         },
-      },
     ],
   },
 }
@@ -1604,7 +1531,7 @@ export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
   const { tx } = useI18n()
   const page = legalContent[kind]
   useDocumentTitle(
-    kind === 'privacy' ? tx('隐私 — neuDrive', 'Privacy — neuDrive') : tx('条款 — neuDrive', 'Terms — neuDrive'),
+    kind === 'privacy' ? tx('隐私 — Vola', 'Privacy — Vola') : tx('条款 — Vola', 'Terms — Vola'),
     tr(tx, page.intro),
   )
   return (
@@ -1630,10 +1557,14 @@ export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
 
 export function SignupPage() {
   const { tx } = useI18n()
-  useDocumentTitle(tx('注册 — neuDrive', 'Sign up — neuDrive'), DEFAULT_SEO_DESCRIPTION, 'noindex, nofollow')
+  useDocumentTitle(tx('注册 — Vola', 'Sign up — Vola'), DEFAULT_SEO_DESCRIPTION, 'noindex, nofollow')
   const [providers, setProviders] = useState<AuthProvider[]>([])
   const [error, setError] = useState('')
   const [loadingAction, setLoadingAction] = useState('')
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [slug, setSlug] = useState('')
+  const [displayName, setDisplayName] = useState('')
 
   useEffect(() => {
     api.getAuthProviders().then(setProviders).catch(() => setProviders([]))
@@ -1644,14 +1575,43 @@ export function SignupPage() {
   const githubEnabled = !!githubProvider?.enabled
   const pocketEnabled = !!pocketProvider?.enabled
   const busy = loadingAction !== ''
+  const hasProvider = githubEnabled || pocketEnabled
+
+  const handleEmailSignup = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (busy) return
+    setLoadingAction('email')
+    setError('')
+    const accountSlug = (slug.trim() || slugFromEmail(email)).toLowerCase()
+    if (!accountSlug) {
+      setError(tx('请填写账户名。', 'Please enter an account name.'))
+      setLoadingAction('')
+      return
+    }
+    try {
+      const resp = await api.register({
+        email,
+        password,
+        slug: accountSlug,
+        display_name: displayName.trim() || accountSlug,
+      })
+      localStorage.setItem('token', resp.access_token)
+      localStorage.setItem('refresh_token', resp.refresh_token)
+      localStorage.setItem('vola.postSignupIntent', '1')
+      window.location.assign('/onboarding')
+    } catch (err: any) {
+      setError(err?.message || tx('创建账号失败，请检查表单信息。', 'Account creation failed. Check the form fields.'))
+      setLoadingAction('')
+    }
+  }
 
   const beginProviderSignup = async (provider: AuthProvider | undefined, action: 'login' | 'signup', key: string) => {
     if (!provider?.enabled) return
     setLoadingAction(key)
     setError('')
-    localStorage.setItem('neudrive.postSignupIntent', '1')
+    localStorage.setItem('vola.postSignupIntent', '1')
     try {
-      const resp = await api.startAuthProvider(provider.id, `${window.location.origin}/plan`, action)
+      const resp = await api.startAuthProvider(provider.id, '/onboarding', action)
       window.location.assign(resp.authorization_url)
     } catch (err: any) {
       setError(err?.message || tx('启动注册失败', 'Failed to start signup'))
@@ -1664,16 +1624,77 @@ export function SignupPage() {
       <main className="auth-split">
         <section className="auth-copy">
           <p className="public-kicker">{tx('创建账号', 'Create account')}</p>
-          <h1>{tx('3 分钟连接第一个 AI 工具。', 'Connect your first AI tool in 3 minutes.')}</h1>
+          <h1>{tx('先建好你的 AI 工作资料库。', 'Start with your AI work-data library.')}</h1>
+          <p>{tx('邮箱密码注册可以直接进入系统，之后再接入 Claude、ChatGPT、Cursor 或命令行工具。', 'Email and password signup takes you directly into the app; connect Claude, ChatGPT, Cursor, or CLI tools afterwards.')}</p>
         </section>
         <section className="auth-card">
+          <h1 className="login-title">{tx('创建 Vola 账号', 'Create your Vola account')}</h1>
+          <p className="login-desc">{tx('用于保存你的 AI 工作资料、项目上下文和技能资产。', 'Use it to manage your AI work data, project context, and skill assets.')}</p>
           {error && <div className="alert alert-warn">{error}</div>}
-          <button className="btn btn-primary btn-block" disabled={busy || !githubEnabled} onClick={() => { void beginProviderSignup(githubProvider, 'login', 'github') }}>
-            {loadingAction === 'github' ? tx('跳转中...', 'Redirecting...') : tx('使用 GitHub 继续', 'Continue with GitHub')}
-          </button>
-          <button className="btn btn-outline btn-block" disabled={busy || !pocketEnabled} onClick={() => { void beginProviderSignup(pocketProvider, 'signup', 'pocket') }}>
-            {loadingAction === 'pocket' ? tx('跳转中...', 'Redirecting...') : tx('邮箱登录 / 注册', 'Continue with email')}
-          </button>
+          <form className="login-form" onSubmit={handleEmailSignup}>
+            <label className="form-field">
+              <span>{tx('邮箱', 'Email')}</span>
+              <input
+                type="email"
+                autoComplete="email"
+                value={email}
+                onChange={(event) => setEmail(event.target.value)}
+                required
+              />
+            </label>
+            <label className="form-field">
+              <span>{tx('密码', 'Password')}</span>
+              <input
+                type="password"
+                autoComplete="new-password"
+                value={password}
+                onChange={(event) => setPassword(event.target.value)}
+                minLength={8}
+                required
+              />
+            </label>
+            <label className="form-field">
+              <span>{tx('账户名', 'Account name')}</span>
+              <input
+                type="text"
+                autoComplete="username"
+                value={slug}
+                onChange={(event) => setSlug(event.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                placeholder={slugFromEmail(email) || 'xlz'}
+                minLength={3}
+              />
+            </label>
+            <label className="form-field">
+              <span>{tx('显示名称', 'Display name')}</span>
+              <input
+                type="text"
+                autoComplete="name"
+                value={displayName}
+                onChange={(event) => setDisplayName(event.target.value)}
+                placeholder={tx('可稍后修改', 'Can be changed later')}
+              />
+            </label>
+            <button className="btn btn-primary btn-block" type="submit" disabled={busy}>
+              {loadingAction === 'email' ? tx('创建中...', 'Creating...') : tx('创建账号', 'Create account')}
+            </button>
+          </form>
+          {hasProvider && (
+            <>
+              <div className="auth-divider"><span>{tx('或使用第三方账号', 'Or continue with a provider')}</span></div>
+              <div className="login-actions">
+                {githubEnabled && (
+                  <button className="btn btn-outline btn-block" type="button" disabled={busy} onClick={() => { void beginProviderSignup(githubProvider, 'login', 'github') }}>
+                    {loadingAction === 'github' ? tx('跳转中...', 'Redirecting...') : tx('使用 GitHub 继续', 'Continue with GitHub')}
+                  </button>
+                )}
+                {pocketEnabled && (
+                  <button className="btn btn-outline btn-block" type="button" disabled={busy} onClick={() => { void beginProviderSignup(pocketProvider, 'signup', 'pocket') }}>
+                    {loadingAction === 'pocket' ? tx('跳转中...', 'Redirecting...') : tx('使用邮箱身份服务继续', 'Continue with email provider')}
+                  </button>
+                )}
+              </div>
+            </>
+          )}
           <p className="login-note">
             {tx('已有账户？', 'Already have an account?')} <Link to="/login">{tx('登录', 'Log in')}</Link>
           </p>
@@ -1681,4 +1702,9 @@ export function SignupPage() {
       </main>
     </PublicShell>
   )
+}
+
+function slugFromEmail(value: string) {
+  const prefix = value.trim().toLowerCase().split('@')[0] || ''
+  return prefix.replace(/[^a-z0-9_-]/g, '').slice(0, 32)
 }

@@ -5,15 +5,15 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/config"
+	"github.com/agi-bar/vola/internal/config"
 )
 
 func TestBaseURLUsesConfiguredPublicBaseURL(t *testing.T) {
-	s := &Server{Config: &config.Config{PublicBaseURL: "https://neudrive.ai"}}
+	s := &Server{Config: &config.Config{PublicBaseURL: "https://vola.ai"}}
 	req := httptest.NewRequest("GET", "http://internal/.well-known/oauth-protected-resource", nil)
 	req.Host = "internal.service"
 
-	if got := s.baseURL(req); got != "https://neudrive.ai" {
+	if got := s.baseURL(req); got != "https://vola.ai" {
 		t.Fatalf("expected configured public base URL, got %q", got)
 	}
 }
@@ -21,17 +21,17 @@ func TestBaseURLUsesConfiguredPublicBaseURL(t *testing.T) {
 func TestBaseURLFallsBackToForwardedHTTPS(t *testing.T) {
 	s := &Server{}
 	req := httptest.NewRequest("GET", "http://internal/.well-known/oauth-protected-resource", nil)
-	req.Host = "neudrive.ai"
+	req.Host = "vola.ai"
 	req.Header.Set("X-Forwarded-Proto", "https")
 
-	if got := s.baseURL(req); got != "https://neudrive.ai" {
+	if got := s.baseURL(req); got != "https://vola.ai" {
 		t.Fatalf("expected forwarded https base URL, got %q", got)
 	}
 }
 
 func TestAuthorizationServerMetadataIncludesClientSecretBasic(t *testing.T) {
-	s := &Server{Config: &config.Config{PublicBaseURL: "https://neudrive.ai"}}
-	req := httptest.NewRequest("GET", "https://neudrive.ai/.well-known/oauth-authorization-server", nil)
+	s := &Server{Config: &config.Config{PublicBaseURL: "https://vola.ai"}}
+	req := httptest.NewRequest("GET", "https://vola.ai/.well-known/oauth-authorization-server", nil)
 	rec := httptest.NewRecorder()
 
 	s.handleAuthorizationServerMetadata(rec, req)

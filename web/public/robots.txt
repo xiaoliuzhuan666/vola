@@ -17,4 +17,4 @@ Disallow: /cli
 Disallow: /login
 Disallow: /signup
 
-Sitemap: https://www.neudrive.ai/sitemap.xml
+Sitemap: https://www.vola.ai/sitemap.xml

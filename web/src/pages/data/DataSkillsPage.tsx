@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, type FileNode, type LocalSkillSyncResponse, type SkillAgentAssignment, type SkillAssignmentsState, type SkillConversionRequest, type SkillConversionResponse, type SkillSummary, type Team } from '../../api'
+import { api, type FileNode, type LocalSkillSyncResponse, type SkillAgentAssignment, type SkillAssignmentsState, type SkillConversionRequest, type SkillConversionResponse, type SkillLearningNote, type SkillLearningSummary, type SkillSummary, type Team } from '../../api'
 import GitHubTreeList from '../../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../../components/MaterialsSectionToolbar'
 import FileMaterialsTile from '../../components/FileMaterialsTile'
@@ -10,6 +10,7 @@ import SourceFilterBar from '../../components/SourceFilterBar'
 import useResourceCardMenu from '../../hooks/useResourceCardMenu'
 import useTreeDeleteDialog from '../../hooks/useTreeDeleteDialog'
 import { useI18n } from '../../i18n'
+import CustomSelect from '../../components/CustomSelect'
 import {
   getMaterialsSortOptions,
   buildFileTileModel,
@@ -20,9 +21,11 @@ import {
   dataFileEditorRoute,
   dataSkillBundleRoute,
   fileNodeSource,
+  formatDateTime,
   isTextLikeFile,
   matchesSourceFilter,
   normalizeBundleRelativeDir,
+  normalizeHubPath,
   sourceLabel,
   skillSource,
   sortMaterialsItems,
@@ -40,8 +43,13 @@ type SkillBundle = SkillSummary & {
 
 type SkillScope = 'personal' | 'team'
 
-const TEAM_SELECTION_KEY = 'neudrive:selected-team-id'
-const SKILL_SCOPE_KEY = 'neudrive:skills-scope'
+const TEAM_SELECTION_KEY = 'vola:selected-team-id'
+const SKILL_SCOPE_KEY = 'vola:skills-scope'
+
+function titleFromPath(path: string) {
+  const name = path.split('/').filter(Boolean).pop() || path
+  return name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ')
+}
 
 function bundleIdFromSkillPath(path: string) {
   return skillBundlePathFromSkillPath(path).replace(/^\/skills\/?/, '')
@@ -134,13 +142,13 @@ function syncActionLabel(action: string, tx: (zh: string, en: string) => string)
 function syncAgentSummaryText(agent: LocalSkillSyncResponse['agents'][number], tx: (zh: string, en: string) => string) {
   const summary = agent.summary
   return tx(
-    `新增 ${summary.add} / 更新 ${summary.update} / 冲突 ${summary.conflict} / 可清理 ${summary.removable} / 可导出 ${summary.export}`,
-    `add ${summary.add} / update ${summary.update} / conflicts ${summary.conflict} / removable ${summary.removable} / export ${summary.export}`,
+    `新增 ${summary.add} / 更新 ${summary.update} / 冲突 ${summary.conflict} / 需验证 ${summary.sync_risk || 0} / 可清理 ${summary.removable} / 可导出 ${summary.export}`,
+    `add ${summary.add} / update ${summary.update} / conflicts ${summary.conflict} / verify ${summary.sync_risk || 0} / removable ${summary.removable} / export ${summary.export}`,
   )
 }
 
 function syncResponseTotal(response: LocalSkillSyncResponse | null) {
-  if (!response) return { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, deleted: 0 }
+  if (!response) return { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, deleted: 0, syncRisk: 0, blocked: 0, manual: 0 }
   return response.agents.reduce((acc, agent) => {
     acc.add += agent.summary.add
     acc.update += agent.summary.update
@@ -149,8 +157,33 @@ function syncResponseTotal(response: LocalSkillSyncResponse | null) {
     acc.export += agent.summary.export
     acc.written += agent.summary.written
     acc.deleted += agent.summary.deleted
+    acc.syncRisk += agent.summary.sync_risk || 0
+    acc.blocked += agent.summary.blocked || 0
+    acc.manual += agent.summary.manual_required || 0
     return acc
-  }, { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, deleted: 0 })
+  }, { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, deleted: 0, syncRisk: 0, blocked: 0, manual: 0 })
+}
+
+function learningStatusLabel(status: string, tx: (zh: string, en: string) => string) {
+  if (status === 'needs_summary') return tx('缺用途说明', 'Needs summary')
+  if (status === 'needs_validation') return tx('需验证', 'Needs validation')
+  if (status === 'ready') return tx('可用', 'Ready')
+  return status
+}
+
+function qualityStatusLabel(status: string | undefined, tx: (zh: string, en: string) => string) {
+  if (status === 'blocked') return tx('阻断', 'Blocked')
+  if (status === 'manual_required') return tx('需审查', 'Review')
+  if (status === 'warning') return tx('提醒', 'Warning')
+  if (status === 'passed') return tx('通过', 'Passed')
+  return tx('未评估', 'Unknown')
+}
+
+function learningRunStatusLabel(status: string, tx: (zh: string, en: string) => string) {
+  if (status === 'completed') return tx('已完成', 'Completed')
+  if (status === 'running') return tx('生成中', 'Running')
+  if (status === 'failed') return tx('失败', 'Failed')
+  return status
 }
 
 function conversionActionClass(action: string) {
@@ -230,6 +263,16 @@ export default function DataSkillsPage() {
   })
   const [assignmentState, setAssignmentState] = useState<SkillAssignmentsState | null>(null)
   const [assignmentDraft, setAssignmentDraft] = useState<SkillAgentAssignment[]>([])
+  const [learningSummary, setLearningSummary] = useState<SkillLearningSummary | null>(null)
+  const [learningNotes, setLearningNotes] = useState<SkillLearningNote[]>([])
+  const [learningRunBusy, setLearningRunBusy] = useState(false)
+  const [learningRunMessage, setLearningRunMessage] = useState('')
+  const [learningRunError, setLearningRunError] = useState('')
+  const [pendingGrowthProposalCount, setPendingGrowthProposalCount] = useState(0)
+  const [recommendQuery, setRecommendQuery] = useState('')
+  const [recommendResult, setRecommendResult] = useState<SkillLearningSummary | null>(null)
+  const [recommendBusy, setRecommendBusy] = useState(false)
+  const [recommendError, setRecommendError] = useState('')
   const [assignmentSaving, setAssignmentSaving] = useState(false)
   const [assignmentMessage, setAssignmentMessage] = useState('')
   const [assignmentError, setAssignmentError] = useState('')
@@ -239,6 +282,7 @@ export default function DataSkillsPage() {
   const [skillExportBusy, setSkillExportBusy] = useState('')
   const [skillSyncMessage, setSkillSyncMessage] = useState('')
   const [skillSyncError, setSkillSyncError] = useState('')
+  const [qualityReviewAcknowledged, setQualityReviewAcknowledged] = useState(false)
   const [scopeMessage, setScopeMessage] = useState('')
   const [copyingSkillPath, setCopyingSkillPath] = useState('')
   const [conversionSourcePath, setConversionSourcePath] = useState('')
@@ -251,6 +295,7 @@ export default function DataSkillsPage() {
   const [conversionMessage, setConversionMessage] = useState('')
   const [conversionError, setConversionError] = useState('')
   const { activeMenuId, closeMenu, isMenuOpen, toggleMenu } = useResourceCardMenu()
+  const [activeTab, setActiveTab] = useState<'library' | 'learning' | 'assignments'>('library')
 
   const selectedTeam = useMemo(
     () => teams.find((team) => teamMatches(team, selectedTeamID)) || null,
@@ -290,15 +335,19 @@ export default function DataSkillsPage() {
         setSkills([])
         setAssignmentState(null)
         setAssignmentDraft([])
+        setLearningSummary(null)
         closeMenu()
         setSelectedEntryPath(null)
         return
       }
 
-      const [skillData, skillsRootResult, assignments, publicConfig] = await Promise.all([
+      const [skillData, skillsRootResult, assignments, learning, notes, growthProposals, publicConfig] = await Promise.all([
         teamID ? api.getTeamSkills(teamID) : api.getSkills(),
         (teamID ? api.getTeamTree(teamID, '/skills') : api.getTree('/skills')).catch(() => emptyTreeNode('/skills')),
         api.getSkillAssignments(teamID || undefined),
+        api.getSkillLearningSummary(teamID || undefined),
+        api.getSkillLearningNotes(teamID || undefined, 14).catch(() => ({ notes: [] })),
+        api.getGrowthProposals(teamID || undefined, 'pending_review').catch(() => ({ proposals: [] })),
         api.getPublicConfig(),
       ])
       const skillsRoot = skillsRootResult || emptyTreeNode('/skills')
@@ -327,16 +376,24 @@ export default function DataSkillsPage() {
       setSkills(bundles)
       setLocalMode(Boolean(publicConfig.local_mode))
       setAssignmentState(assignments)
+      setLearningSummary(learning)
+      setLearningNotes(notes.notes || [])
+      setPendingGrowthProposalCount(growthProposals.proposals?.length || 0)
+      setLearningRunMessage('')
+      setLearningRunError('')
+      setRecommendResult(null)
+      setRecommendError('')
       setAssignmentDraft(normalizeAssignments(assignments.assignments || [], (assignments.agents || []).map((agent) => agent.id)))
       setConversionSourcePath((value) => value || firstBundlePath)
       setConversionTargetPath((value) => value || (firstBundlePath ? defaultConversionTargetPath(firstBundlePath, 'codex') : ''))
       setAssignmentMessage('')
       setAssignmentError('')
-    setSkillSyncPreview(null)
-    setSkillSyncMessage('')
-    setSkillSyncError('')
-    setScopeMessage('')
-    setBundleNode(null)
+      setSkillSyncPreview(null)
+      setSkillSyncMessage('')
+      setSkillSyncError('')
+      setQualityReviewAcknowledged(false)
+      setScopeMessage('')
+      setBundleNode(null)
       closeMenu()
       setSelectedBundlePath(null)
     } catch (err: any) {
@@ -361,10 +418,15 @@ export default function DataSkillsPage() {
     setSkillSyncPreview(null)
     setSkillSyncMessage('')
     setSkillSyncError('')
+    setQualityReviewAcknowledged(false)
     setScopeMessage('')
     setConversionPreview(null)
     setConversionMessage('')
     setConversionError('')
+    setRecommendResult(null)
+    setRecommendError('')
+    setLearningRunMessage('')
+    setLearningRunError('')
     closeMenu()
   }, [closeMenu])
 
@@ -615,6 +677,50 @@ export default function DataSkillsPage() {
     setSkillSyncError('')
   }
 
+  const runSkillRecommendation = async (event: FormEvent) => {
+    event.preventDefault()
+    const queryText = recommendQuery.trim()
+    if (!queryText) return
+    setRecommendBusy(true)
+    setRecommendError('')
+    try {
+      const result = await api.recommendSkills(queryText, activeTeamID || undefined)
+      setRecommendResult(result)
+    } catch (err: any) {
+      setRecommendError(err.message || tx('推荐 Skill 失败', 'Failed to recommend skills'))
+    } finally {
+      setRecommendBusy(false)
+    }
+  }
+
+  const createLearningRun = async () => {
+    if (learningRunBusy) return
+    setLearningRunBusy(true)
+    setLearningRunError('')
+    setLearningRunMessage('')
+    try {
+      const response = await api.createSkillLearningRun(activeTeamID || undefined)
+      setLearningSummary((current) => ({
+        version: response.version,
+        scope: response.scope,
+        team: response.team,
+        stats: response.summary.stats,
+        items: response.summary.items,
+        actions: response.summary.actions,
+        latest_run: response.run,
+      }))
+      const notes = await api.getSkillLearningNotes(activeTeamID || undefined, 14).catch(() => ({ notes: [] }))
+      const growthProposals = await api.getGrowthProposals(activeTeamID || undefined, 'pending_review').catch(() => ({ proposals: [] }))
+      setLearningNotes(notes.notes || [])
+      setPendingGrowthProposalCount(growthProposals.proposals?.length || 0)
+      setLearningRunMessage(tx('学习报告已生成。', 'Learning report created.'))
+    } catch (err: any) {
+      setLearningRunError(err.message || tx('生成学习报告失败', 'Failed to create learning report'))
+    } finally {
+      setLearningRunBusy(false)
+    }
+  }
+
   const saveSkillAssignments = async () => {
     if (!assignmentState || assignmentSaving) return
     setAssignmentSaving(true)
@@ -629,6 +735,7 @@ export default function DataSkillsPage() {
       setSkillSyncPreview(null)
       setSkillSyncMessage('')
       setSkillSyncError('')
+      setQualityReviewAcknowledged(false)
     } catch (err: any) {
       setAssignmentError(err.message || tx('保存分配失败', 'Failed to save assignments'))
     } finally {
@@ -638,6 +745,22 @@ export default function DataSkillsPage() {
 
   const runLocalSkillSync = async (mode: 'preview' | 'apply' | 'cleanup') => {
     if (assignmentChanged || skillSyncBusy) return
+    const previewTotal = syncResponseTotal(skillSyncPreview)
+    if (mode === 'apply' && previewTotal.blocked > 0) {
+      setSkillSyncError(tx(
+        `有 ${previewTotal.blocked} 个阻断项，处理后再应用到本地。`,
+        `${previewTotal.blocked} blocked quality findings must be fixed before applying locally.`,
+      ))
+      return
+    }
+    if (mode === 'apply' && previewTotal.manual > 0 && !qualityReviewAcknowledged) {
+      const confirmed = window.confirm(tx(
+        `有 ${previewTotal.manual} 个需审查项。确认你已经看过同步预览和质量提示，再继续应用？`,
+        `${previewTotal.manual} items require manual review. Confirm that you reviewed the preview and quality notes before applying?`,
+      ))
+      if (!confirmed) return
+      setQualityReviewAcknowledged(true)
+    }
     setSkillSyncBusy(mode)
     setSkillSyncError('')
     setSkillSyncMessage('')
@@ -645,24 +768,32 @@ export default function DataSkillsPage() {
       const response = mode === 'preview'
         ? await api.previewLocalSkillSync(activeTeamID || undefined)
         : mode === 'apply'
-          ? await api.applyLocalSkillSync(activeTeamID || undefined)
+          ? await api.applyLocalSkillSync(activeTeamID || undefined, qualityReviewAcknowledged || previewTotal.manual > 0)
           : await api.cleanupLocalSkillSync(activeTeamID || undefined)
       setSkillSyncPreview(response)
       const total = syncResponseTotal(response)
       if (mode === 'preview') {
+        setQualityReviewAcknowledged(false)
         setSkillSyncMessage(tx(
           `已生成预览：新增 ${total.add}，更新 ${total.update}，冲突 ${total.conflict}，可清理 ${total.removable}，可导出 ${total.export}。`,
           `Preview ready: ${total.add} add, ${total.update} update, ${total.conflict} conflicts, ${total.removable} removable, ${total.export} export.`,
         ))
       } else if (mode === 'apply') {
-        setSkillSyncMessage(tx(
-          `已应用到本地：写入 ${total.written} 个文件。`,
-          `Applied locally: ${total.written} files written.`,
-        ))
+        if (response.blocked || total.written === 0 && (total.blocked > 0 || total.manual > 0)) {
+          setSkillSyncError(tx(
+            `未应用到本地：阻断 ${total.blocked}，需审查 ${total.manual}。`,
+            `Not applied locally: ${total.blocked} blocked, ${total.manual} manual review.`,
+          ))
+        } else {
+          setSkillSyncMessage(tx(
+            `已应用到本地：写入 ${total.written} 个文件。`,
+            `Applied locally: ${total.written} files written.`,
+          ))
+        }
       } else {
         setSkillSyncMessage(tx(
-          `已清理 neuDrive 管理的未分配 Skill：${total.deleted} 个目录。`,
-          `Cleaned ${total.deleted} neuDrive-managed unassigned skill folders.`,
+          `已清理 Vola 管理的未分配 Skill：${total.deleted} 个目录。`,
+          `Cleaned ${total.deleted} Vola-managed unassigned skill folders.`,
         ))
       }
     } catch (err: any) {
@@ -748,16 +879,15 @@ export default function DataSkillsPage() {
         </button>
       </div>
       {skillScope === 'team' && teams.length > 0 ? (
-        <select
-          className="input skill-team-select"
+        <CustomSelect
           value={selectedTeam?.id || ''}
-          onChange={(event) => selectTeamScope(event.target.value)}
-          aria-label={tx('选择团队', 'Select team')}
-        >
-          {teams.map((team) => (
-            <option key={team.id} value={team.id}>{team.name} / {team.slug}</option>
-          ))}
-        </select>
+          onChange={(val) => selectTeamScope(val)}
+          options={teams.map((team) => ({
+            value: team.id,
+            label: `${team.name} / ${team.slug}`
+          }))}
+          ariaLabel={tx('选择团队', 'Select team')}
+        />
       ) : null}
       <span className="materials-tile-pill skill-scope-pill">{skillScopeLabel}</span>
     </div>
@@ -837,7 +967,7 @@ export default function DataSkillsPage() {
                 )
               })}
             </nav>
-            <div className="materials-kicker">neuDrive Data</div>
+            <div className="materials-kicker">Vola Data</div>
             <h2 className="materials-title">{currentBundleContext?.name || bundleKey}</h2>
             <p className="materials-subtitle">
               {tx('在技能包内继续下钻时，顶部会持续显示该技能包的上下文。', 'The bundle context stays visible while you browse deeper inside this skill bundle.')}
@@ -1026,19 +1156,295 @@ export default function DataSkillsPage() {
       {error && <div className="alert alert-warn">{error}</div>}
       {scopeMessage && <div className="alert alert-success">{scopeMessage}</div>}
 
-      <GitHubTreeList
-        key={activeTeamID || 'personal'}
-        rootPath="/skills"
-        rootLabel={tx('技能', 'Skills')}
-        title={tx('技能文件', 'Skill files')}
-        description={tx('按文件夹层级浏览所有技能包。', 'Browse all skill bundles by folder.')}
-        actionHref="/?type=Skill"
-        actionLabel={tx('在首页查看', 'View on Home')}
-        loadNode={scopedGetNode}
-        fileRoute={(path) => dataFileEditorRoute(path, activeTeamID)}
-      />
+      {!isBundleView && (
+        <div className="tab-strip" style={{ marginTop: '8px', marginBottom: '24px' }}>
+          <button
+            type="button"
+            className={activeTab === 'library' ? 'active' : ''}
+            onClick={() => setActiveTab('library')}
+          >
+            {tx('技能库', 'Skills Library')}
+          </button>
+          <button
+            type="button"
+            className={activeTab === 'learning' ? 'active' : ''}
+            onClick={() => setActiveTab('learning')}
+          >
+            {tx('学习与自进化', 'Insights & Learning')}
+            {pendingGrowthProposalCount > 0 && (
+              <span style={{ marginLeft: 6, display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: '#dc2626' }} />
+            )}
+          </button>
+          <button
+            type="button"
+            className={activeTab === 'assignments' ? 'active' : ''}
+            onClick={() => setActiveTab('assignments')}
+          >
+            {tx('Agent 分配与同步', 'Agent Assignments')}
+          </button>
+        </div>
+      )}
 
-      {assignmentState && (
+      {!isBundleView && activeTab === 'learning' && learningSummary && (
+        <section className="materials-section skill-learning-section">
+          <div className="materials-section-head">
+            <div>
+              <h3 className="materials-section-title">{tx('学习摘要', 'Learning summary')}</h3>
+              <p className="materials-section-copy">{tx('根据用途说明、manifest、资产完整度、分配状态和验证风险，整理当前 Skill 库。', 'Summarizes the current skill library from metadata, manifests, assets, assignments, and validation risk.')}</p>
+            </div>
+            <div className="materials-actions">
+              {learningSummary.latest_run?.outputs?.report_path ? (
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  onClick={() => navigate(dataFileEditorRoute(learningSummary.latest_run?.outputs.report_path || '', activeTeamID))}
+                >
+                  {tx('查看报告', 'View report')}
+                </button>
+              ) : null}
+              <button
+                type="button"
+                className="btn btn-sm btn-primary"
+                disabled={learningRunBusy}
+                onClick={() => { void createLearningRun() }}
+              >
+                {learningRunBusy ? tx('生成中...', 'Creating...') : tx('生成学习报告', 'Create report')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-sm"
+                onClick={() => navigate(activeTeamID ? `/growth-proposals?team=${encodeURIComponent(activeTeamID)}` : '/growth-proposals')}
+              >
+                {tx(`待审提案 ${pendingGrowthProposalCount}`, `Pending ${pendingGrowthProposalCount}`)}
+              </button>
+              <div className="skill-learning-score">
+                <strong>{learningSummary.stats.ready}</strong>
+                <span>{tx('可直接使用', 'ready')}</span>
+              </div>
+            </div>
+          </div>
+          {learningRunError && <div className="alert alert-warn">{learningRunError}</div>}
+          {learningRunMessage && <div className="alert alert-success">{learningRunMessage}</div>}
+          {learningSummary.latest_run ? (
+            <div className={`skill-learning-run is-${learningSummary.latest_run.status}`}>
+              <div>
+                <strong>{learningRunStatusLabel(learningSummary.latest_run.status, tx)}</strong>
+                <span>{formatDateTime(learningSummary.latest_run.finished_at || learningSummary.latest_run.started_at, locale)}</span>
+              </div>
+              <div>
+                {learningSummary.latest_run.model
+                  ? <span>{learningSummary.latest_run.model.provider_id}{learningSummary.latest_run.model.model ? ` / ${learningSummary.latest_run.model.model}` : ''}</span>
+                  : <span>{tx('未配置模型，已生成结构化报告', 'No model configured, structured report created')}</span>}
+                {learningSummary.latest_run.steps?.some((step) => step.error) ? (
+                  <em>{tx('部分步骤有错误，报告仍已保留', 'Some steps had errors, report was still kept')}</em>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+          <div className="skill-learning-stats">
+            <div>
+              <strong>{learningSummary.stats.skills}</strong>
+              <span>{tx('Skill 总数', 'Skills')}</span>
+            </div>
+            <div>
+              <strong>{learningSummary.stats.needs_summary}</strong>
+              <span>{tx('缺用途说明', 'Need summary')}</span>
+            </div>
+            <div>
+              <strong>{learningSummary.stats.needs_validation}</strong>
+              <span>{tx('需预览验证', 'Need validation')}</span>
+            </div>
+            <div>
+              <strong>{learningSummary.stats.rich_assets}</strong>
+              <span>{tx('含脚本/依赖', 'Rich assets')}</span>
+            </div>
+            <div>
+              <strong>{learningSummary.stats.assigned}</strong>
+              <span>{tx('已分配', 'Assigned')}</span>
+            </div>
+            <div>
+              <strong>{learningSummary.stats.quality_blocked || 0}</strong>
+              <span>{tx('阻断项', 'Blocked')}</span>
+            </div>
+            <div>
+              <strong>{learningSummary.stats.quality_manual_required || 0}</strong>
+              <span>{tx('需审查', 'Review')}</span>
+            </div>
+            <div>
+              <strong>{learningSummary.stats.quality_warnings || 0}</strong>
+              <span>{tx('提醒', 'Warnings')}</span>
+            </div>
+          </div>
+          <div className="skill-learning-actions">
+            {learningSummary.actions.map((action) => (
+              <div key={action.code} className="skill-learning-action">
+                <strong>{action.label}</strong>
+                <span>{tx(`${action.count} 项`, `${action.count}`)}</span>
+                <p>{action.message}</p>
+              </div>
+            ))}
+          </div>
+          <form className="skill-learning-recommend" onSubmit={runSkillRecommendation}>
+            <input
+              className="input"
+              value={recommendQuery}
+              onChange={(event) => setRecommendQuery(event.target.value)}
+              placeholder={tx('输入新需求，例如：部署 Docker、分析 PDF、生成 PPT', 'Enter a request, for example: deploy Docker, analyze PDF, create slides')}
+            />
+            <button className="btn btn-primary" disabled={recommendBusy || !recommendQuery.trim()}>
+              {recommendBusy ? tx('查找中...', 'Searching...') : tx('找相关 Skill', 'Find skills')}
+            </button>
+          </form>
+          {recommendError && <div className="alert alert-warn">{recommendError}</div>}
+          {recommendResult && (
+            <div className="skill-learning-list">
+              {(recommendResult.items || []).slice(0, 5).map((item) => (
+                <div key={`recommend-${item.path}`} className={`skill-learning-item is-${item.status}`}>
+                  <div className="skill-learning-item-head">
+                    <div>
+                      <strong>{item.name}</strong>
+                      <small>{item.path}</small>
+                    </div>
+                    <em>{tx('匹配', 'match')} {item.match_score || item.score}</em>
+                  </div>
+                  <div className="skill-learning-badges">
+                    {(item.match_reasons || []).slice(0, 3).map((reason) => <span key={reason}>{reason}</span>)}
+                    {item.assigned_agents?.length ? <span>{item.assigned_agents.join(' / ')}</span> : <span>{tx('未分配', 'unassigned')}</span>}
+                    <span>{qualityStatusLabel(item.quality_status, tx)}</span>
+                  </div>
+                  <p>{(item.quality_findings || []).slice(0, 2).map((finding) => `${finding.title}: ${finding.message}`).join('；') || item.recommendations?.slice(0, 2).join('；') || tx('可以作为这个需求的候选 Skill。', 'Candidate skill for this request.')}</p>
+                </div>
+              ))}
+              {recommendResult.items.length === 0 && (
+                <div className="empty-action-state"><p>{tx('没找到明显匹配的 Skill。', 'No strong matching skill found.')}</p></div>
+              )}
+              {recommendResult.candidate_proposal ? (
+                <div className="skill-learning-item is-needs_summary">
+                  <div className="skill-learning-item-head">
+                    <div>
+                      <strong>{tx('建议新建候选 Skill', 'Suggested candidate Skill')}</strong>
+                      <small>{recommendResult.candidate_proposal.target_path}</small>
+                    </div>
+                    <em>{tx('待审提案', 'proposal')}</em>
+                  </div>
+                  <p>{recommendResult.candidate_proposal.reason}</p>
+                  <div className="materials-actions">
+                    <button
+                      type="button"
+                      className="btn btn-sm"
+                      onClick={() => navigate(activeTeamID ? `/growth-proposals?team=${encodeURIComponent(activeTeamID)}&status=pending_review` : '/growth-proposals?status=pending_review')}
+                    >
+                      {tx('查看提案', 'Review proposal')}
+                    </button>
+                  </div>
+                </div>
+              ) : null}
+            </div>
+          )}
+          {learningNotes.length > 0 && (
+            <div className="skill-learning-notes">
+              <h4>{tx('最近学习记录', 'Recent learning notes')}</h4>
+              {learningNotes.slice(0, 3).map((note) => (
+                <button key={note.path} type="button" className="skill-learning-note" onClick={() => navigate(dataFileEditorRoute(note.path, activeTeamID))}>
+                  <strong>{note.title || titleFromPath(note.path)}</strong>
+                  <span>{formatDateTime(note.updated_at, locale)}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          {learningSummary.items.filter(item => item.quality_findings && item.quality_findings.length > 0).length > 0 && (
+            <div className="skill-learning-reflexions" style={{ marginTop: '24px', marginBottom: '24px' }}>
+              <h4 style={{ marginBottom: '12px', fontSize: '15px', color: '#27335f', fontWeight: 'bold' }}>
+                {tx('质量改进反思建议', 'Quality reflexions & recommendations')}
+              </h4>
+              <div className="growth-proposal-list" style={{ display: 'grid', gap: '12px' }}>
+                {learningSummary.items.filter(item => item.quality_findings && item.quality_findings.length > 0).slice(0, 3).map((item) => (
+                  <div key={`reflexion-${item.path}`} className="materials-panel" style={{ padding: '16px', borderLeft: '4px solid #ef4444' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                      <strong style={{ color: '#27335f', fontSize: '14px' }}>{item.name}</strong>
+                      <span className="materials-tile-pill skill-score-pill poor">{tx('健康度：', 'Health: ')}{item.score}%</span>
+                    </div>
+                    <p style={{ fontSize: '13px', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+                      {tx('AI 质量门岗检测到以下问题：', 'The AI quality gate detected the following issues:')}
+                    </p>
+                    <div style={{ background: '#fef2f2', padding: '10px', borderRadius: '8px', border: '1px solid #fee2e2' }}>
+                      {item.quality_findings?.map((f, i) => (
+                        <div key={i} style={{ fontSize: '12px', color: '#b91c1c', marginBottom: i < item.quality_findings!.length - 1 ? '6px' : '0' }}>
+                          <strong>• {f.title}:</strong> {f.message} {f.path ? ` (${f.path})` : ''}
+                        </div>
+                      ))}
+                    </div>
+                    <div style={{ marginTop: '12px', display: 'flex', gap: '8px' }}>
+                      {item.primary_path && (
+                        <button
+                          type="button"
+                          className="btn btn-sm"
+                          onClick={() => navigate(dataFileEditorRoute(item.primary_path || '', activeTeamID))}
+                        >
+                          {tx('前往编辑 SKILL.md', 'Edit SKILL.md')}
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        className="btn btn-sm"
+                        onClick={() => openBundleDetail(item.path.replace(/^\/skills\/?/, ''))}
+                      >
+                        {tx('查看包文件夹', 'View bundle folder')}
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          {learningSummary.items.length > 0 && (
+            <div className="skill-learning-list">
+              {learningSummary.items.slice(0, 8).map((item) => (
+                <div key={item.path} className={`skill-learning-item is-${item.status}`}>
+                  <div className="skill-learning-item-head">
+                    <div>
+                      <strong>{item.name}</strong>
+                      <small>{item.path}</small>
+                    </div>
+                    <em>{learningStatusLabel(item.status, tx)} · {item.score}</em>
+                  </div>
+                  <div className="skill-learning-badges">
+                    {item.has_manifest && <span>{tx('有 manifest', 'manifest')}</span>}
+                    {item.has_scripts && <span>{tx('脚本', 'scripts')}</span>}
+                    {item.has_dependencies && <span>{tx('依赖', 'deps')}</span>}
+                    {item.has_external_refs && <span>{tx('外部引用', 'external refs')}</span>}
+                    {item.assigned_agents?.length ? <span>{item.assigned_agents.join(' / ')}</span> : <span>{tx('未分配', 'unassigned')}</span>}
+                    <span>{qualityStatusLabel(item.quality_status, tx)}</span>
+                  </div>
+                  {item.quality_findings?.length ? (
+                    <p>{item.quality_findings.slice(0, 2).map((finding) => `${finding.title}: ${finding.message}`).join('；')}</p>
+                  ) : item.recommendations?.length ? (
+                    <p>{item.recommendations.slice(0, 2).join('；')}</p>
+                  ) : (
+                    <p>{tx('元数据和分配状态较完整。', 'Metadata and assignment state look complete.')}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
+
+      {(isBundleView || activeTab === 'library') && (
+        <GitHubTreeList
+          key={activeTeamID || 'personal'}
+          rootPath="/skills"
+          rootLabel={tx('技能', 'Skills')}
+          title={tx('技能文件', 'Skill files')}
+          description={tx('按文件夹层级浏览所有技能包。', 'Browse all skill bundles by folder.')}
+          actionHref="/?type=Skill"
+          actionLabel={tx('在首页查看', 'View on Home')}
+          loadNode={scopedGetNode}
+          fileRoute={(path) => dataFileEditorRoute(path, activeTeamID)}
+        />
+      )}
+
+      {!isBundleView && activeTab === 'assignments' && assignmentState && (
         <section className="materials-section">
           <div className="materials-section-head">
             <div>
@@ -1125,7 +1531,7 @@ export default function DataSkillsPage() {
               <div className="materials-section-head">
                 <div>
                   <h3 className="materials-section-title">{tx('本地同步', 'Local sync')}</h3>
-                  <p className="materials-section-copy">{tx('预览会列出新增、更新、冲突和导出项。只有 Claude Code 与 Codex 会写本地目录，且只更新带 .neudrive-managed.json 的 Skill；Cursor / Gemini CLI 只导出包。', 'Preview lists additions, updates, conflicts, and export items. Only Claude Code and Codex write local folders, and only .neudrive-managed.json skills are updated; Cursor / Gemini CLI export packages only.')}</p>
+                  <p className="materials-section-copy">{tx('预览会列出新增、更新、冲突和导出项。只有 Claude Code 与 Codex 会写本地目录，且只更新由 Vola 管理的 Skill；Cursor / Gemini CLI 只导出包。', 'Preview lists additions, updates, conflicts, and export items. Only Claude Code and Codex write local folders, and only Vola-managed skills are updated; Cursor / Gemini CLI export packages only.')}</p>
                 </div>
                 <div className="materials-actions">
                   <button
@@ -1200,7 +1606,15 @@ export default function DataSkillsPage() {
                         ) : null}
                         {agent.summary.conflict > 0 ? (
                           <div className="alert alert-warn">
-                            {tx('有同名本地目录或文件冲突。应用时 neuDrive 不会覆盖没有 .neudrive-managed.json 标记的内容。', 'Conflicts detected. neuDrive will not overwrite local content without a .neudrive-managed.json marker.')}
+                            {tx('有同名本地目录或文件冲突。应用时 Vola 不会覆盖未由它管理的内容。', 'Conflicts detected. Vola will not overwrite content it does not manage.')}
+                          </div>
+                        ) : null}
+                        {(agent.summary.sync_risk || 0) > 0 ? (
+                          <div className="alert alert-warn">
+                            {tx(
+                              `有 ${agent.summary.sync_risk} 个 Skill 未通过质量门槛，其中阻断 ${agent.summary.blocked || 0}，需审查 ${agent.summary.manual_required || 0}。`,
+                              `${agent.summary.sync_risk} skills need quality review: ${agent.summary.blocked || 0} blocked, ${agent.summary.manual_required || 0} manual review.`,
+                            )}
                           </div>
                         ) : null}
                         {agent.changes.length === 0 ? (
@@ -1211,6 +1625,7 @@ export default function DataSkillsPage() {
                               <div key={`${agent.agent_id}-${change.target_path}-${index}`} className={`data-sync-preview-entry ${change.action === 'conflict' ? 'is-danger' : ''}`}>
                                 <span className={syncActionClass(change.action)}>{syncActionLabel(change.action, tx)}</span>
                                 <span className="skill-local-sync-path">{change.skill_path}{change.rel_path ? `/${change.rel_path}` : ''}</span>
+                                {change.verification_required ? <small>{change.verification_message || tx(`需验证：${change.verification_status || 'required'}`, `verification: ${change.verification_status || 'required'}`)}</small> : null}
                                 {change.reason ? <small>{change.reason}</small> : null}
                               </div>
                             ))}
@@ -1269,48 +1684,47 @@ export default function DataSkillsPage() {
             <div className="skill-conversion-grid">
               <div className="form-group">
                 <label htmlFor="skill-conversion-source">{tx('源 Skill', 'Source skill')}</label>
-                <select
-                  id="skill-conversion-source"
+                <CustomSelect
                   value={conversionSourcePath}
-                  onChange={(event) => {
-                    const next = event.target.value
+                  onChange={(val) => {
+                    const next = val
                     setConversionSourcePath(next)
                     setConversionTargetPath(defaultConversionTargetPath(next, conversionTargetPlatform))
                     setConversionPreview(null)
                     setConversionMessage('')
                     setConversionError('')
                   }}
-                >
-                  {sortedSkills.map((skill) => {
+                  options={sortedSkills.map((skill) => {
                     const skillPath = normalizeSkillPath(skill.bundlePath || skill.path)
-                    return <option key={skillPath} value={skillPath}>{skill.name}</option>
+                    return { value: skillPath, label: skill.name }
                   })}
-                </select>
+                  ariaLabel={tx('源 Skill', 'Source skill')}
+                />
               </div>
               <div className="form-group">
                 <label htmlFor="skill-conversion-source-platform">{tx('源平台', 'Source platform')}</label>
-                <select
-                  id="skill-conversion-source-platform"
+                <CustomSelect
                   value={conversionSourcePlatform}
-                  onChange={(event) => {
-                    const next = event.target.value as 'claude-code' | 'codex'
+                  onChange={(val) => {
+                    const next = val as 'claude-code' | 'codex'
                     setConversionSourcePlatform(next)
                     setConversionTargetPlatform(next === 'claude-code' ? 'codex' : 'claude-code')
                     setConversionTargetPath(defaultConversionTargetPath(conversionSourcePath, next === 'claude-code' ? 'codex' : 'claude-code'))
                     setConversionPreview(null)
                   }}
-                >
-                  <option value="claude-code">Claude Code</option>
-                  <option value="codex">Codex</option>
-                </select>
+                  options={[
+                    { value: 'claude-code', label: 'Claude Code' },
+                    { value: 'codex', label: 'Codex' },
+                  ]}
+                  ariaLabel={tx('源平台', 'Source platform')}
+                />
               </div>
               <div className="form-group">
                 <label htmlFor="skill-conversion-target-platform">{tx('目标平台', 'Target platform')}</label>
-                <select
-                  id="skill-conversion-target-platform"
+                <CustomSelect
                   value={conversionTargetPlatform}
-                  onChange={(event) => {
-                    const next = event.target.value as 'claude-code' | 'codex'
+                  onChange={(val) => {
+                    const next = val as 'claude-code' | 'codex'
                     setConversionTargetPlatform(next)
                     if (next === conversionSourcePlatform) {
                       setConversionSourcePlatform(next === 'claude-code' ? 'codex' : 'claude-code')
@@ -1318,10 +1732,12 @@ export default function DataSkillsPage() {
                     setConversionTargetPath(defaultConversionTargetPath(conversionSourcePath, next))
                     setConversionPreview(null)
                   }}
-                >
-                  <option value="codex">Codex</option>
-                  <option value="claude-code">Claude Code</option>
-                </select>
+                  options={[
+                    { value: 'codex', label: 'Codex' },
+                    { value: 'claude-code', label: 'Claude Code' },
+                  ]}
+                  ariaLabel={tx('目标平台', 'Target platform')}
+                />
               </div>
               <div className="form-group skill-conversion-grid-wide">
                 <label htmlFor="skill-conversion-target-path">{tx('目标路径', 'Target path')}</label>
@@ -1485,14 +1901,78 @@ export default function DataSkillsPage() {
         ) : (
           <div className="materials-grid">
             {filteredSkills.map((skill) => {
-              const tile = buildSkillBundleTileModel(skill, locale)
+              const bundlePath = normalizeHubPath(skill.bundlePath)
+              const learningItem = learningSummary?.items?.find(
+                (item) => normalizeHubPath(item.path) === bundlePath
+              )
+              const tile = buildSkillBundleTileModel(skill, locale, learningItem)
+
+              // 构造状态 Pill
+              const statusPill = tile.learningStatus ? (
+                <span className={`materials-tile-pill skill-status-${tile.learningStatus}`}>
+                  {learningStatusLabel(tile.learningStatus, tx)}
+                </span>
+              ) : null
+
+              // 构造健康评分 Pill
+              const scoreClass = tile.learningScore !== undefined
+                ? (tile.learningScore >= 80 ? 'good' : tile.learningScore >= 60 ? 'medium' : 'poor')
+                : ''
+              const scorePill = tile.learningScore !== undefined ? (
+                <span className={`materials-tile-pill skill-score-pill ${scoreClass}`}>
+                  {tx('健康度: ', 'Health: ')}{tile.learningScore}%
+                </span>
+              ) : null
+
+              // 构造已分配 Agent 标签
+              const agentPills = tile.assignedAgents?.map((agentId) => (
+                <span key={agentId} className="materials-tile-pill skill-agents-pill">
+                  {agentId}
+                </span>
+              ))
+
+              // 组合额外的徽标信息
+              const customExtraPills = (
+                <>
+                  {tile.source ? <span className="materials-tile-pill materials-source-pill">{sourceLabel(tile.source, locale)}</span> : null}
+                  {statusPill}
+                  {scorePill}
+                  {agentPills}
+                </>
+              )
+
+              // 构造质量状态 Subtitle
+              const qualityClass = tile.qualityStatus
+                ? `skill-quality-${tile.qualityStatus}`
+                : ''
+              const customSubtitle = tile.qualityStatus ? (
+                <div className="skill-tile-subtitle">
+                  <span className={qualityClass}>
+                    {tx('质量评级: ', 'Quality: ')}{qualityStatusLabel(tile.qualityStatus, tx)}
+                  </span>
+                </div>
+              ) : tile.subtitle
+
+              // 构造包含质量 Findings 的自定义描述
+              const customDescription = (
+                <div>
+                  <div style={{ wordBreak: 'break-all' }}>{tile.description}</div>
+                  {tile.qualityFindings && tile.qualityFindings.length > 0 && (
+                    <div className="skill-tile-warnings">
+                      ⚠️ {tile.qualityFindings[0].title}: {tile.qualityFindings[0].message}
+                      {tile.qualityFindings.length > 1 && ` (+${tile.qualityFindings.length - 1} ${tx('更多问题', 'more issues')})`}
+                    </div>
+                  )}
+                </div>
+              )
+
               return (
                 <FileMaterialsTile
                   key={skill.path}
                   node={tile.node}
-                  subtitle={tile.subtitle}
-                  description={tile.description}
-                  extraPills={tile.source ? <span className="materials-tile-pill materials-source-pill">{sourceLabel(tile.source, locale)}</span> : undefined}
+                  subtitle={customSubtitle}
+                  description={customDescription}
+                  extraPills={customExtraPills}
                   path={tile.path}
                   footerStart={tile.footerStart}
                   footerEnd={tile.footerEnd}

@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/app/appcore"
-	"github.com/agi-bar/neudrive/internal/jobs"
-	"github.com/agi-bar/neudrive/internal/logger"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/app/appcore"
+	"github.com/agi-bar/vola/internal/jobs"
+	"github.com/agi-bar/vola/internal/logger"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/services"
 )
 
 type Options struct {
@@ -37,7 +37,7 @@ type Options struct {
 }
 
 func Run(ctx context.Context, opts Options) error {
-	if !opts.LocalMode && strings.TrimSpace(os.Getenv("NEUDRIVE_LOCAL_MODE")) == "1" {
+	if !opts.LocalMode && strings.TrimSpace(os.Getenv("VOLA_LOCAL_MODE")) == "1" {
 		opts.LocalMode = true
 	}
 	storage := appcore.ResolveStorageBackend(opts.Storage, opts.SQLitePath, opts.DatabaseURL, appcore.DefaultServerStorage)
@@ -78,6 +78,13 @@ func Run(ctx context.Context, opts Options) error {
 	}
 	defer func() { _ = app.Close() }()
 
+	if app.MCPGateway != nil {
+		if err := app.MCPGateway.Start(ctx); err != nil {
+			slog.Warn("Failed to start MCP Gateway", "error", err)
+		}
+		defer app.MCPGateway.Stop()
+	}
+
 	cfg := app.Config
 	if cfg != nil && opts.ListenAddr == "" {
 		listenAddr = ":" + cfg.Port
@@ -94,7 +101,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 	logger.Init(logLevel, logFormat)
-	slog.Info("starting neuDrive server...", "listen", listenAddr)
+	slog.Info("starting Vola server...", "listen", listenAddr)
 	if cfg != nil && cfg.CaptureOAuth {
 		slog.Info("oauth capture enabled", "dir", cfg.CaptureDir)
 	}
@@ -124,7 +131,7 @@ func Run(ctx context.Context, opts Options) error {
 	}()
 
 	if tokenSvc, schedulerCfg, ok := schedulerConfigForApp(app); ok {
-		scheduler := jobs.NewSchedulerWithConfig(app.MemoryService, tokenSvc, app.InboxService, app.SyncService, app.GitMirrorService, app.BackupService, slog.Default(), schedulerCfg)
+		scheduler := jobs.NewSchedulerWithConfig(app.MemoryService, tokenSvc, app.UserService, app.InboxService, app.SyncService, app.SkillLearningService, app.GitMirrorService, app.BackupService, slog.Default(), schedulerCfg)
 		scheduler.Start(context.Background())
 		defer scheduler.Stop()
 	}
@@ -153,7 +160,6 @@ func schedulerConfigForApp(app *appcore.App) (*services.TokenService, jobs.Sched
 	}
 	if !app.MemoryService.SupportsScratchMaintenance() {
 		cfg.CleanExpiredScratch.Enabled = false
-		cfg.GenerateDailyScratch.Enabled = false
 	}
 	return tokenSvc, cfg, true
 }

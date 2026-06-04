@@ -12,8 +12,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
 	"gopkg.in/yaml.v3"
 )
 
@@ -156,7 +156,7 @@ func InferSourceFromTokenName(name string) string {
 
 func IsGenericSource(source string) bool {
 	switch NormalizeSource(source) {
-	case "", "manual", "upload", "import", "mcp", "agent", "summary", "scheduler", "system", "neudrive", "roles", "inbox":
+	case "", "manual", "upload", "import", "mcp", "agent", "summary", "scheduler", "system", "vola", "roles", "inbox":
 		return true
 	default:
 		return false

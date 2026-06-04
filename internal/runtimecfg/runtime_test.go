@@ -16,9 +16,9 @@ func TestSaveAndLoadConfigRoundTrip(t *testing.T) {
 		t.Fatalf("LoadConfig: %v", err)
 	}
 	cfg.CurrentTarget = ProfileTarget("official")
-	cfg.Profiles["official"] = SyncProfile{APIBase: "https://neudrive.ai", Token: "ndt_test"}
-	cfg.Local.DatabaseURL = "postgres://neudrive:test@localhost:5432/neudrive?sslmode=disable"
-	cfg.Local.GitMirrorPath = "~/neudrive-mirror"
+	cfg.Profiles["official"] = SyncProfile{APIBase: "https://vola.ai", Token: "ndt_test"}
+	cfg.Local.DatabaseURL = "postgres://vola:test@localhost:5432/vola?sslmode=disable"
+	cfg.Local.GitMirrorPath = "~/vola-mirror"
 	if err := SaveConfig(path, cfg); err != nil {
 		t.Fatalf("SaveConfig: %v", err)
 	}
@@ -38,7 +38,7 @@ func TestSaveAndLoadConfigRoundTrip(t *testing.T) {
 	if loaded.Local.DatabaseURL == "" {
 		t.Fatal("expected local database url to round-trip")
 	}
-	if loaded.Local.GitMirrorPath != "~/neudrive-mirror" {
+	if loaded.Local.GitMirrorPath != "~/vola-mirror" {
 		t.Fatalf("git_mirror_path mismatch: got %q", loaded.Local.GitMirrorPath)
 	}
 }

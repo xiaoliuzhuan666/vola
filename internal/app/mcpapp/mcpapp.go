@@ -7,12 +7,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/agi-bar/neudrive/internal/app/appcore"
-	"github.com/agi-bar/neudrive/internal/mcp"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/app/appcore"
+	"github.com/agi-bar/vola/internal/mcp"
+	"github.com/agi-bar/vola/internal/runtimecfg"
 )
 
-const DefaultTokenEnvVar = "NEUDRIVE_TOKEN"
+const DefaultTokenEnvVar = "VOLA_TOKEN"
 
 type Options struct {
 	Storage        string
@@ -72,9 +72,9 @@ func RunStdio(ctx context.Context, opts Options) error {
 		baseURL = app.Config.PublicBaseURL
 	}
 	if baseURL != "" {
-		fmt.Fprintf(os.Stderr, "neudrive mcp stdio: storage=%s base_url=%s, waiting for requests...\n", app.Storage, baseURL)
+		fmt.Fprintf(os.Stderr, "vola mcp stdio: storage=%s base_url=%s, waiting for requests...\n", app.Storage, baseURL)
 	} else {
-		fmt.Fprintf(os.Stderr, "neudrive mcp stdio: storage=%s, waiting for requests...\n", app.Storage)
+		fmt.Fprintf(os.Stderr, "vola mcp stdio: storage=%s, waiting for requests...\n", app.Storage)
 	}
 	if runner, ok := handler.(interface {
 		RunStdio(in *os.File, out *os.File) error

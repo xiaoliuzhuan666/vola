@@ -11,10 +11,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/database"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
-	"github.com/agi-bar/neudrive/internal/vault"
+	"github.com/agi-bar/vola/internal/database"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
+	"github.com/agi-bar/vola/internal/vault"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -28,19 +28,19 @@ var (
 // MCP integration tests against a real database.
 //
 // Run with:
-//   NEUDRIVE_TEST_DB="postgres://neudrive:neudrive_dev@localhost:5434/neudrive?sslmode=disable" \
-//   NEUDRIVE_VAULT_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" \
+//   VOLA_TEST_DB="postgres://vola:vola_dev@localhost:5434/vola?sslmode=disable" \
+//   VOLA_VAULT_KEY="0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef" \
 //   go test ./internal/mcp/ -run TestMCPInteg -v -count=1
 // ---------------------------------------------------------------------------
 
 func setupIntegrationMCP(t *testing.T) *MCPServer {
 	t.Helper()
 
-	dbURL := os.Getenv("NEUDRIVE_TEST_DB")
+	dbURL := os.Getenv("VOLA_TEST_DB")
 	if dbURL == "" {
-		t.Skip("NEUDRIVE_TEST_DB not set; skipping MCP integration test")
+		t.Skip("VOLA_TEST_DB not set; skipping MCP integration test")
 	}
-	vaultKey := os.Getenv("NEUDRIVE_VAULT_KEY")
+	vaultKey := os.Getenv("VOLA_VAULT_KEY")
 	if vaultKey == "" {
 		vaultKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 	}

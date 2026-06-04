@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -541,7 +541,7 @@ func mirrorSummaryMessage(mirror models.LocalGitMirror, commitCreated, pushAttem
 		}
 	}
 	if mirror.RemoteConflict {
-		return "远端仓库有 neuDrive 之外的新提交。普通同步已停止，确认后可用 neuDrive 覆盖远端。"
+		return "远端仓库有 Vola 之外的新提交。普通同步已停止，确认后可用 Vola 覆盖远端。"
 	}
 	base := "Git Mirror 已同步。"
 	if strings.TrimSpace(mirror.RootPath) != "" {
@@ -575,8 +575,8 @@ func friendlyPushError(raw string) string {
 		strings.Contains(lower, "could not read username") ||
 		strings.Contains(lower, "permission denied"):
 		return "GitHub 认证失败。请确认当前认证方式可访问这个仓库，或改用 GitHub App user 授权"
-	case strings.Contains(lower, "remote has commits that are not in this neudrive mirror"):
-		return "远端仓库有 neuDrive 之外的新提交。确认后可用 neuDrive 覆盖远端"
+	case strings.Contains(lower, "remote has commits that are not in this vola mirror"):
+		return "远端仓库有 Vola 之外的新提交。确认后可用 Vola 覆盖远端"
 	case message == "":
 		return "请检查仓库地址和 GitHub 权限"
 	default:

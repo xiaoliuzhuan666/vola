@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -249,7 +249,7 @@ func (s *ProjectService) AppendLog(ctx context.Context, projectID uuid.UUID, log
 	log.ProjectID = projectID
 	log.CreatedAt = now
 	if strings.TrimSpace(log.Source) == "" {
-		log.Source = SourceOrDefault(ctx, "neudrive")
+		log.Source = SourceOrDefault(ctx, "vola")
 	}
 
 	if s.fileTree != nil {

@@ -18,7 +18,7 @@ func TestCOSStoreVirtualHostedRequests(t *testing.T) {
 		Endpoint:  "https://cos.ap-guangzhou.myqcloud.com",
 		SecretID:  "secret-id",
 		SecretKey: "secret-key",
-		Prefix:    "neudrive",
+		Prefix:    "vola",
 		Client:    &http.Client{Transport: transport},
 		RequestTimeFunc: func() time.Time {
 			return time.Date(2026, 5, 14, 10, 0, 0, 0, time.UTC)
@@ -35,7 +35,7 @@ func TestCOSStoreVirtualHostedRequests(t *testing.T) {
 	if transport.request.Host != "demo-1250000000.cos.ap-guangzhou.myqcloud.com" {
 		t.Fatalf("host = %q", transport.request.Host)
 	}
-	if transport.request.URL.EscapedPath() != "/neudrive/users/u1/hello%20world.txt" {
+	if transport.request.URL.EscapedPath() != "/vola/users/u1/hello%20world.txt" {
 		t.Fatalf("path = %q", transport.request.URL.EscapedPath())
 	}
 	if !strings.Contains(transport.request.Header.Get("Authorization"), "Credential=secret-id/20260514/ap-guangzhou/s3/aws4_request") {
@@ -51,7 +51,7 @@ func TestCOSStorePathStyleRequests(t *testing.T) {
 		Endpoint:  "https://cos.ap-guangzhou.myqcloud.com",
 		SecretID:  "secret-id",
 		SecretKey: "secret-key",
-		Prefix:    "neudrive",
+		Prefix:    "vola",
 		PathStyle: true,
 		Client:    &http.Client{Transport: transport},
 	})
@@ -62,7 +62,7 @@ func TestCOSStorePathStyleRequests(t *testing.T) {
 	if err := store.Delete(context.Background(), store.Key("entry")); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if transport.request.URL.EscapedPath() != "/demo-1250000000/neudrive/entry" {
+	if transport.request.URL.EscapedPath() != "/demo-1250000000/vola/entry" {
 		t.Fatalf("path = %q", transport.request.URL.EscapedPath())
 	}
 }

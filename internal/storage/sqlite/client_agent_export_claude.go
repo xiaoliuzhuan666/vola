@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/skillsarchive"
 )
 
 func (c *Client) importClaudeInventory(ctx context.Context, platform string, inventory ClaudeInventory, result *AgentImportResult) error {
@@ -518,7 +518,7 @@ func buildNormalizedConversationFromClaudeConversation(convo ClaudeConversation,
 		})
 	}
 	return NormalizedConversation{
-		Version:              "neudrive.conversation/v1",
+		Version:              "vola.conversation/v1",
 		SourcePlatform:       platform,
 		SourceConversationID: strings.TrimSpace(convo.SessionID),
 		Title:                title,

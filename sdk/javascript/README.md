@@ -1,6 +1,6 @@
-# @neudrive/sdk
+# @vola/sdk
 
-neuDrive SDK for JavaScript/TypeScript.
+Vola SDK for JavaScript/TypeScript.
 
 The SDK targets the scoped-token `/agent/*` surface and supports both typed APIs
 and the canonical virtual tree sync primitives (`snapshot` / `changes`).
@@ -9,10 +9,10 @@ and the canonical virtual tree sync primitives (`snapshot` / `changes`).
 
 ### With Scoped Token (Agent/MCP use)
 ```typescript
-import { NeuDrive } from '@neudrive/sdk'
+import { Vola } from '@vola/sdk'
 
-const hub = new NeuDrive({
-  baseURL: 'https://www.neudrive.ai',
+const hub = new Vola({
+  baseURL: 'https://www.vola.ai',
   token: 'ndt_xxxxx'
 })
 
@@ -29,10 +29,10 @@ const delta = await hub.changes(snapshot.cursor, '/projects/my-project')
 
 ### With OAuth (Third-party app)
 ```typescript
-import { NeuDriveAuth } from '@neudrive/sdk'
+import { VolaAuth } from '@vola/sdk'
 
-const auth = new NeuDriveAuth({
-  baseURL: 'https://www.neudrive.ai',
+const auth = new VolaAuth({
+  baseURL: 'https://www.vola.ai',
   clientId: 'your-client-id',
   clientSecret: 'your-client-secret'
 })
@@ -47,12 +47,14 @@ const { access_token, user } = await auth.exchangeCode(code, 'https://yourapp.co
 ## Installation
 
 ```bash
-npm install @neudrive/sdk
+npm install @vola/sdk
 ```
 
 ## API Reference
 
-### `NeuDrive` (scoped token client)
+Legacy `NeuDrive` / `NeuDriveAuth` exports remain available for existing integrations.
+
+### `Vola` (scoped token client)
 
 | Method | Description |
 |--------|-------------|
@@ -88,10 +90,10 @@ npm install @neudrive/sdk
 ### Bundle Sync Example
 
 ```typescript
-import { NeuDrive } from '@neudrive/sdk'
+import { Vola } from '@vola/sdk'
 
-const hub = new NeuDrive({
-  baseURL: 'https://www.neudrive.ai',
+const hub = new Vola({
+  baseURL: 'https://www.vola.ai',
   token: 'ndt_xxxxx',
 })
 
@@ -122,7 +124,7 @@ await hub.commitSession(session.session_id, preview.fingerprint)
 
 For CLI login/profile setup and operational guidance, see [`docs/sync.md`](../../docs/sync.md).
 
-### `NeuDriveAuth` (OAuth helper)
+### `VolaAuth` (OAuth helper)
 
 | Method | Description |
 |--------|-------------|

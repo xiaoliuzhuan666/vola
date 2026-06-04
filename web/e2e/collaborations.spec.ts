@@ -7,6 +7,6 @@ test.describe('Collaborations Route', () => {
     await page.goto('/collaborations')
     await expect(page).toHaveURL(/\/$/)
     await expect(page.getByRole('heading', { name: '概览' })).toBeVisible()
-    await expect(page.locator('.sidebar-brand h1')).toHaveText('neuDrive')
+    await expect(page.locator('.sidebar-brand h1')).toHaveText('Vola')
   })
 })

@@ -1,7 +1,7 @@
 import type { User, AuthTokenResponse } from './types'
 
 export interface NeuDriveAuthConfig {
-  /** Base URL of the neuDrive instance */
+  /** Base URL of the Vola instance */
   baseURL: string
   /** OAuth client ID */
   clientId: string
@@ -9,13 +9,15 @@ export interface NeuDriveAuthConfig {
   clientSecret: string
 }
 
+export type VolaAuthConfig = NeuDriveAuthConfig
+
 /**
- * OAuth helper for third-party applications integrating with neuDrive.
+ * OAuth helper for third-party applications integrating with Vola.
  *
  * @example
  * ```ts
- * const auth = new NeuDriveAuth({
- *   baseURL: 'https://neudrive.ai',
+ * const auth = new VolaAuth({
+ *   baseURL: 'https://vola.ai',
  *   clientId: 'your-client-id',
  *   clientSecret: 'your-client-secret',
  * })
@@ -27,16 +29,16 @@ export interface NeuDriveAuthConfig {
  * const { access_token, user } = await auth.exchangeCode(code, 'https://yourapp.com/callback')
  * ```
  */
-export class NeuDriveAuth {
+export class VolaAuth {
   private readonly baseURL: string
   private readonly clientId: string
   private readonly clientSecret: string
 
-  constructor(config: NeuDriveAuthConfig) {
-    if (!config.baseURL) throw new Error('NeuDriveAuth: baseURL is required')
-    if (!config.clientId) throw new Error('NeuDriveAuth: clientId is required')
+  constructor(config: VolaAuthConfig) {
+    if (!config.baseURL) throw new Error('VolaAuth: baseURL is required')
+    if (!config.clientId) throw new Error('VolaAuth: clientId is required')
     if (!config.clientSecret)
-      throw new Error('NeuDriveAuth: clientSecret is required')
+      throw new Error('VolaAuth: clientSecret is required')
     this.baseURL = config.baseURL.replace(/\/+$/, '')
     this.clientId = config.clientId
     this.clientSecret = config.clientSecret
@@ -45,7 +47,7 @@ export class NeuDriveAuth {
   /**
    * Build the authorization URL that the user should be redirected to.
    *
-   * @param redirectURI - Where neuDrive should redirect after the user authorises.
+   * @param redirectURI - Where Vola should redirect after the user authorises.
    * @param scopes      - Requested permission scopes (e.g. ["read:profile", "read:memory"]).
    * @returns A fully-qualified URL string.
    */
@@ -92,7 +94,7 @@ export class NeuDriveAuth {
         typeof body === 'object' && body !== null && 'error' in body
           ? (body as { error: string }).error
           : `HTTP ${res.status}`
-      throw new Error(`NeuDriveAuth: token exchange failed: ${msg}`)
+      throw new Error(`VolaAuth: token exchange failed: ${msg}`)
     }
 
     return (await res.json()) as AuthTokenResponse
@@ -123,9 +125,11 @@ export class NeuDriveAuth {
         typeof body === 'object' && body !== null && 'error' in body
           ? (body as { error: string }).error
           : `HTTP ${res.status}`
-      throw new Error(`NeuDriveAuth: getUserInfo failed: ${msg}`)
+      throw new Error(`VolaAuth: getUserInfo failed: ${msg}`)
     }
 
     return (await res.json()) as User
   }
 }
+
+export { VolaAuth as NeuDriveAuth }

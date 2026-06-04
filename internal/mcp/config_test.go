@@ -3,16 +3,16 @@ package mcp
 import "testing"
 
 func TestGenerateStdioEnvConfig(t *testing.T) {
-	cfg := GenerateStdioEnvConfig("neudrive-mcp", "")
+	cfg := GenerateStdioEnvConfig("vola-mcp", "")
 
 	mcpServers, ok := cfg["mcpServers"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected mcpServers map, got %T", cfg["mcpServers"])
 	}
 
-	server, ok := mcpServers["neudrive"].(map[string]interface{})
+	server, ok := mcpServers["vola"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected neudrive server map, got %T", mcpServers["neudrive"])
+		t.Fatalf("expected vola server map, got %T", mcpServers["vola"])
 	}
 
 	args, ok := server["args"].([]string)
@@ -25,22 +25,22 @@ func TestGenerateStdioEnvConfig(t *testing.T) {
 }
 
 func TestGenerateHTTPOAuthConfig(t *testing.T) {
-	cfg := GenerateHTTPOAuthConfig("https://neudrive.ai")
+	cfg := GenerateHTTPOAuthConfig("https://vola.ai")
 
 	mcpServers, ok := cfg["mcpServers"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected mcpServers map, got %T", cfg["mcpServers"])
 	}
 
-	server, ok := mcpServers["neudrive"].(map[string]interface{})
+	server, ok := mcpServers["vola"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected neudrive server map, got %T", mcpServers["neudrive"])
+		t.Fatalf("expected vola server map, got %T", mcpServers["vola"])
 	}
 
 	if server["type"] != "http" {
 		t.Fatalf("expected type=http, got %v", server["type"])
 	}
-	if server["url"] != "https://neudrive.ai/mcp" {
+	if server["url"] != "https://vola.ai/mcp" {
 		t.Fatalf("unexpected url: %v", server["url"])
 	}
 	if _, exists := server["headers"]; exists {
@@ -49,16 +49,16 @@ func TestGenerateHTTPOAuthConfig(t *testing.T) {
 }
 
 func TestGenerateHTTPBearerConfig(t *testing.T) {
-	cfg := GenerateHTTPBearerConfig("https://neudrive.ai", "ndt_test")
+	cfg := GenerateHTTPBearerConfig("https://vola.ai", "ndt_test")
 
 	mcpServers, ok := cfg["mcpServers"].(map[string]interface{})
 	if !ok {
 		t.Fatalf("expected mcpServers map, got %T", cfg["mcpServers"])
 	}
 
-	server, ok := mcpServers["neudrive"].(map[string]interface{})
+	server, ok := mcpServers["vola"].(map[string]interface{})
 	if !ok {
-		t.Fatalf("expected neudrive server map, got %T", mcpServers["neudrive"])
+		t.Fatalf("expected vola server map, got %T", mcpServers["vola"])
 	}
 
 	headers, ok := server["headers"].(map[string]string)
@@ -72,10 +72,10 @@ func TestGenerateHTTPBearerConfig(t *testing.T) {
 }
 
 func TestGenerateHTTPConfigAlias(t *testing.T) {
-	cfg := GenerateHTTPConfig("https://neudrive.ai", "ndt_alias")
+	cfg := GenerateHTTPConfig("https://vola.ai", "ndt_alias")
 
 	mcpServers := cfg["mcpServers"].(map[string]interface{})
-	server := mcpServers["neudrive"].(map[string]interface{})
+	server := mcpServers["vola"].(map[string]interface{})
 	headers := server["headers"].(map[string]string)
 
 	if headers["Authorization"] != "Bearer ndt_alias" {

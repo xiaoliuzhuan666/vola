@@ -4,10 +4,14 @@ import {
   type GitMirrorGitHubTestResult,
   type GitMirrorSettings,
   type LocalConfigFile,
+  type ModelProviderSaveRequest,
+  type ModelProviderTestResult,
+  type ModelProvidersResponse,
   type UpdateGitMirrorRequest,
 } from '../api'
 import { useI18n } from '../i18n'
 import { formatDateTime, localizeGitHubAccessMessage } from './data/DataShared'
+import CustomSelect from '../components/CustomSelect'
 
 type ConfigViewMode = 'settings' | 'raw'
 
@@ -25,9 +29,13 @@ type LocalSettingsDraft = {
   connectionsJson: string
 }
 
+type ModelProviderDraft = ModelProviderSaveRequest & {
+  apiKeyConfigured?: boolean
+}
+
 const REMOTE_PROFILES_EXAMPLE = `${JSON.stringify({
   official: {
-    api_base: 'https://neudrive.ai',
+    api_base: 'https://your-vola.example',
     token: 'eyJhbGciOi...',
     refresh_token: 'ndr_refresh_xxxxxxxx',
     expires_at: '2026-12-31T23:59:59Z',
@@ -40,11 +48,27 @@ const LOCAL_CONNECTIONS_EXAMPLE = `${JSON.stringify({
   'codex-local': {
     transport: 'stdio',
     entrypoint_type: 'binary',
-    entrypoint_path: '/Users/you/.local/bin/neudrive-mcp',
+    entrypoint_path: '/Users/you/.local/bin/vola',
     managed_paths: ['/skills', '/memory', '/projects'],
     chat_usage: ['codex'],
   },
 }, null, 2)}\n`
+
+const EMPTY_MODEL_PROVIDER: ModelProviderDraft = {
+  id: 'local-ollama',
+  type: 'ollama',
+  name: 'Local Ollama',
+  base_url: 'http://localhost:11434',
+  api_key: '',
+  api_key_ref: '',
+  models: {
+    summary: '',
+    proposal: '',
+    json: '',
+  },
+  enabled: true,
+  apiKeyConfigured: false,
+}
 
 function EyeIcon({ visible }: { visible: boolean }) {
   if (visible) {
@@ -206,6 +230,42 @@ function buildConfigFromDraft(baseRaw: string, draft: LocalSettingsDraft): { val
   return { value: next, error: '' }
 }
 
+function modelProviderDraftFromResponse(response: ModelProvidersResponse | null): ModelProviderDraft[] {
+  return (response?.providers || []).map((provider) => ({
+    id: provider.id,
+    type: provider.type,
+    name: provider.name,
+    base_url: provider.base_url || '',
+    api_key: '',
+    api_key_ref: provider.api_key_ref || '',
+    models: {
+      summary: provider.models?.summary || '',
+      proposal: provider.models?.proposal || '',
+      json: provider.models?.json || '',
+    },
+    enabled: provider.enabled,
+    apiKeyConfigured: !!provider.api_key_ref,
+  }))
+}
+
+function cloneModelProviderDraft(provider: ModelProviderDraft): ModelProviderDraft {
+  return {
+    ...provider,
+    models: { ...(provider.models || {}) },
+  }
+}
+
+function nextModelProviderID(existing: ModelProviderDraft[]) {
+  const used = new Set(existing.map((provider) => provider.id))
+  let index = existing.length + 1
+  let candidate = `provider-${index}`
+  while (used.has(candidate)) {
+    index += 1
+    candidate = `provider-${index}`
+  }
+  return candidate
+}
+
 export default function SystemSettingsPage() {
   const { locale, tx } = useI18n()
   const [configViewMode, setConfigViewMode] = useState<ConfigViewMode>('settings')
@@ -225,6 +285,16 @@ export default function SystemSettingsPage() {
   const [gitMirrorMessage, setGitMirrorMessage] = useState('')
   const [gitMirrorTokenInput, setGitMirrorTokenInput] = useState('')
   const [gitMirrorTokenTest, setGitMirrorTokenTest] = useState<GitMirrorGitHubTestResult | null>(null)
+  const [modelProviders, setModelProviders] = useState<ModelProvidersResponse | null>(null)
+  const [modelProviderDrafts, setModelProviderDrafts] = useState<ModelProviderDraft[]>([])
+  const [modelProvidersBusy, setModelProvidersBusy] = useState(false)
+  const [modelProvidersSaving, setModelProvidersSaving] = useState(false)
+  const [modelProviderTestingID, setModelProviderTestingID] = useState('')
+  const [modelProvidersError, setModelProvidersError] = useState('')
+  const [modelProvidersMessage, setModelProvidersMessage] = useState('')
+  const [modelProviderTestResults, setModelProviderTestResults] = useState<Record<string, ModelProviderTestResult>>({})
+  const [defaultSummaryProviderID, setDefaultSummaryProviderID] = useState('')
+  const [defaultProposalProviderID, setDefaultProposalProviderID] = useState('')
   const [gitMirrorDraft, setGitMirrorDraft] = useState<UpdateGitMirrorRequest>({
     auto_commit_enabled: false,
     auto_push_enabled: false,
@@ -233,6 +303,17 @@ export default function SystemSettingsPage() {
     remote_url: '',
     remote_branch: 'main',
   })
+
+  const modelOptions = useMemo(() => {
+    const list = [{ value: '', label: tx('自动选择', 'Auto select') }]
+    modelProviderDrafts.forEach((provider) => {
+      list.push({
+        value: provider.id,
+        label: provider.name || provider.id,
+      })
+    })
+    return list
+  }, [modelProviderDrafts, tx])
 
   const syncLocalConfig = (config: LocalConfigFile) => {
     setLocalConfig(config)
@@ -267,6 +348,14 @@ export default function SystemSettingsPage() {
     setGitMirrorTokenTest(null)
   }
 
+  const syncModelProviderDrafts = (response: ModelProvidersResponse) => {
+    setModelProviders(response)
+    setModelProviderDrafts(modelProviderDraftFromResponse(response))
+    setDefaultSummaryProviderID(response.default_summary_provider_id || '')
+    setDefaultProposalProviderID(response.default_proposal_provider_id || '')
+    setModelProviderTestResults({})
+  }
+
   const loadGitMirror = async () => {
     setGitMirrorBusy(true)
     setGitMirrorError('')
@@ -280,9 +369,23 @@ export default function SystemSettingsPage() {
     }
   }
 
+  const loadModelProviders = async () => {
+    setModelProvidersBusy(true)
+    setModelProvidersError('')
+    try {
+      const response = await api.getModelProviders()
+      syncModelProviderDrafts(response)
+    } catch (err: any) {
+      setModelProvidersError(err.message || tx('加载模型提供方失败', 'Failed to load model providers'))
+    } finally {
+      setModelProvidersBusy(false)
+    }
+  }
+
   useEffect(() => {
     void loadLocalConfig()
     void loadGitMirror()
+    void loadModelProviders()
   }, [])
 
   const localConfigRawValidationError = useMemo(() => {
@@ -325,6 +428,41 @@ export default function SystemSettingsPage() {
     setGitMirrorError('')
     setGitMirrorMessage('')
     setGitMirrorTokenTest(null)
+  }
+
+  const updateModelProviderDraft = (index: number, patch: Partial<ModelProviderDraft>) => {
+    setModelProviderDrafts((prev) => prev.map((provider, providerIndex) => {
+      if (providerIndex !== index) return provider
+      const next = cloneModelProviderDraft(provider)
+      Object.assign(next, patch)
+      if (patch.models) {
+        next.models = { ...(provider.models || {}), ...patch.models }
+      }
+      const typeInfo = modelProviders?.supported_types?.find((item) => item.type === next.type)
+      if (patch.type && typeInfo?.default_base_url && !next.base_url) {
+        next.base_url = typeInfo.default_base_url
+      }
+      return next
+    }))
+    setModelProvidersError('')
+    setModelProvidersMessage('')
+  }
+
+  const addModelProviderDraft = () => {
+    setModelProviderDrafts((prev) => {
+      const next = cloneModelProviderDraft(EMPTY_MODEL_PROVIDER)
+      next.id = nextModelProviderID(prev)
+      next.name = `Provider ${prev.length + 1}`
+      return [...prev, next]
+    })
+    setModelProvidersError('')
+    setModelProvidersMessage('')
+  }
+
+  const removeModelProviderDraft = (index: number) => {
+    setModelProviderDrafts((prev) => prev.filter((_, providerIndex) => providerIndex !== index))
+    setModelProvidersError('')
+    setModelProvidersMessage('')
   }
 
   const toggleSecretVisibility = (key: string) => {
@@ -448,6 +586,71 @@ export default function SystemSettingsPage() {
     }
   }
 
+  const buildModelProviderSaveRequest = () => ({
+    default_summary_provider_id: defaultSummaryProviderID || undefined,
+    default_proposal_provider_id: defaultProposalProviderID || undefined,
+    providers: modelProviderDrafts.map((provider) => ({
+      id: provider.id.trim(),
+      type: provider.type,
+      name: provider.name.trim(),
+      base_url: (provider.base_url || '').trim(),
+      api_key: (provider.api_key || '').trim() || undefined,
+      api_key_ref: provider.api_key_ref || undefined,
+      models: {
+        summary: provider.models?.summary?.trim() || undefined,
+        proposal: provider.models?.proposal?.trim() || undefined,
+        json: provider.models?.json?.trim() || undefined,
+      },
+      enabled: provider.enabled,
+    })),
+  })
+
+  const handleModelProvidersSave = async () => {
+    setModelProvidersSaving(true)
+    setModelProvidersError('')
+    setModelProvidersMessage('')
+    try {
+      const result = await api.saveModelProviders(buildModelProviderSaveRequest())
+      syncModelProviderDrafts(result.data)
+      setModelProvidersMessage(tx('模型提供方已保存', 'Model providers saved'))
+    } catch (err: any) {
+      setModelProvidersError(err.message || tx('保存模型提供方失败', 'Failed to save model providers'))
+    } finally {
+      setModelProvidersSaving(false)
+    }
+  }
+
+  const handleModelProviderTest = async (provider: ModelProviderDraft) => {
+    const testID = provider.id || provider.name
+    setModelProviderTestingID(testID)
+    setModelProvidersError('')
+    setModelProvidersMessage('')
+    try {
+      const result = await api.testModelProvider({
+        provider: {
+          id: provider.id.trim(),
+          type: provider.type,
+          name: provider.name.trim(),
+          base_url: (provider.base_url || '').trim(),
+          api_key: (provider.api_key || '').trim() || undefined,
+          api_key_ref: provider.api_key_ref || undefined,
+          models: provider.models,
+          enabled: provider.enabled,
+        },
+      })
+      setModelProviderTestResults((prev) => ({ ...prev, [provider.id]: result }))
+      if (result.ok) {
+        setModelProvidersMessage(result.message || tx('模型提供方连接正常', 'Model provider connection works'))
+      } else {
+        setModelProvidersError(result.message || tx('模型提供方连接失败', 'Model provider connection failed'))
+      }
+    } catch (err: any) {
+      setModelProvidersError(err.message || tx('测试模型提供方失败', 'Failed to test model provider'))
+    } finally {
+      setModelProviderTestingID('')
+    }
+  }
+
   const renderSensitiveInput = (
     id: string,
     value: string,
@@ -484,8 +687,172 @@ export default function SystemSettingsPage() {
     )
   }
 
+  const renderModelProvidersPanel = () => (
+    <div className="materials-panel data-sync-card">
+      <div className="card-header">
+        <h3 className="card-title">{tx('模型提供方', 'Model Providers')}</h3>
+      </div>
+      <p className="data-record-secondary">
+        {tx('每日学习、Skill 总结和改进提案会使用这里配置的模型。API Key 会存入 Vault，配置文件只保存引用。', 'Daily learning, skill summaries, and improvement proposals use the models configured here. API keys are stored in Vault; the config file only keeps references.')}
+      </p>
+
+      {modelProvidersBusy && <div className="page-loading">{tx('加载中...', 'Loading...')}</div>}
+      {!modelProvidersBusy && (
+        <>
+          <div className="data-sync-settings-shell">
+            <section className="data-sync-settings-section">
+              <h4 className="data-sync-section-title">{tx('默认用途', 'Defaults')}</h4>
+              <div className="data-sync-settings-grid">
+                <div className="form-group">
+                  <label htmlFor="model-default-summary">{tx('总结模型', 'Summary model')}</label>
+                  <CustomSelect
+                    value={defaultSummaryProviderID}
+                    onChange={(val) => setDefaultSummaryProviderID(val)}
+                    options={modelOptions}
+                    ariaLabel={tx('总结模型', 'Summary model')}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="model-default-proposal">{tx('提案模型', 'Proposal model')}</label>
+                  <CustomSelect
+                    value={defaultProposalProviderID}
+                    onChange={(val) => setDefaultProposalProviderID(val)}
+                    options={modelOptions}
+                    ariaLabel={tx('提案模型', 'Proposal model')}
+                  />
+                </div>
+              </div>
+            </section>
+
+            <section className="data-sync-settings-section">
+              <div className="data-sync-section-row">
+                <h4 className="data-sync-section-title">{tx('提供方列表', 'Providers')}</h4>
+                <button type="button" className="btn" onClick={addModelProviderDraft}>{tx('添加提供方', 'Add provider')}</button>
+              </div>
+
+              {modelProviderDrafts.length === 0 && (
+                <div className="alert alert-warn">{tx('还没有模型提供方。可以先添加本地 Ollama，或添加 OpenAI-compatible 服务。', 'No model provider yet. Add local Ollama or an OpenAI-compatible service first.')}</div>
+              )}
+
+              <div className="model-provider-list">
+                {modelProviderDrafts.map((provider, index) => {
+                  const typeInfo = modelProviders?.supported_types?.find((item) => item.type === provider.type)
+                  const requiresAPIKey = typeInfo?.requires_api_key !== false
+                  const testResult = modelProviderTestResults[provider.id]
+                  return (
+                    <div className="model-provider-card" key={`${provider.id}-${index}`}>
+                      <div className="model-provider-card-header">
+                        <label className="data-sync-toggle-card model-provider-enabled">
+                          <div className="data-sync-toggle-copy">
+                            <div className="data-sync-toggle-title">{provider.name || provider.id || tx('未命名提供方', 'Untitled provider')}</div>
+                            <div className="data-sync-field-note">
+                              {provider.apiKeyConfigured ? tx('已保存 API Key', 'API key saved') : tx('API Key 未保存', 'API key not saved')}
+                            </div>
+                          </div>
+                          <input
+                            type="checkbox"
+                            checked={provider.enabled}
+                            onChange={(e) => updateModelProviderDraft(index, { enabled: e.target.checked })}
+                          />
+                        </label>
+                        <button type="button" className="btn" onClick={() => removeModelProviderDraft(index)}>{tx('移除', 'Remove')}</button>
+                      </div>
+
+                      <div className="data-sync-settings-grid">
+                        <div className="form-group">
+                          <label htmlFor={`model-provider-id-${index}`}>ID</label>
+                          <input id={`model-provider-id-${index}`} value={provider.id} onChange={(e) => updateModelProviderDraft(index, { id: e.target.value })} placeholder="openai-main" />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor={`model-provider-name-${index}`}>{tx('名称', 'Name')}</label>
+                          <input id={`model-provider-name-${index}`} value={provider.name} onChange={(e) => updateModelProviderDraft(index, { name: e.target.value })} placeholder="OpenAI Main" />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor={`model-provider-type-${index}`}>{tx('类型', 'Type')}</label>
+                          <CustomSelect
+                            value={provider.type}
+                            onChange={(val) => updateModelProviderDraft(index, { type: val })}
+                            options={(modelProviders?.supported_types || []).map((item) => ({
+                              value: item.type,
+                              label: item.name,
+                            }))}
+                            ariaLabel={tx('类型', 'Type')}
+                          />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor={`model-provider-base-url-${index}`}>Base URL</label>
+                          <input id={`model-provider-base-url-${index}`} value={provider.base_url || ''} onChange={(e) => updateModelProviderDraft(index, { base_url: e.target.value })} placeholder={typeInfo?.default_base_url || 'https://api.example.com/v1'} />
+                        </div>
+                        {requiresAPIKey && (
+                          <div className="form-group data-sync-settings-span-wide">
+                            <label htmlFor={`model-provider-api-key-${index}`}>API Key</label>
+                            <div className="data-sync-field-note">
+                              {provider.apiKeyConfigured
+                                ? tx('已保存过密钥；留空会继续使用原密钥，填写新值会替换。', 'A key is saved; leave blank to keep it, or enter a new value to replace it.')
+                                : tx('保存后密钥会进入 Vault，不会写进模型配置文件。', 'After saving, the key goes into Vault and is not written into the model config file.')}
+                            </div>
+                            <input
+                              id={`model-provider-api-key-${index}`}
+                              type={visibleSecrets[`model-provider-${index}`] ? 'text' : 'password'}
+                              value={provider.api_key || ''}
+                              onChange={(e) => updateModelProviderDraft(index, { api_key: e.target.value })}
+                              placeholder={provider.apiKeyConfigured ? tx('留空以继续使用已保存的密钥', 'Leave blank to keep the saved key') : 'sk-...'}
+                            />
+                          </div>
+                        )}
+                        <div className="form-group">
+                          <label htmlFor={`model-provider-summary-${index}`}>{tx('总结模型名', 'Summary model name')}</label>
+                          <input id={`model-provider-summary-${index}`} value={provider.models?.summary || ''} onChange={(e) => updateModelProviderDraft(index, { models: { summary: e.target.value } })} placeholder="gpt-4o-mini" />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor={`model-provider-proposal-${index}`}>{tx('提案模型名', 'Proposal model name')}</label>
+                          <input id={`model-provider-proposal-${index}`} value={provider.models?.proposal || ''} onChange={(e) => updateModelProviderDraft(index, { models: { proposal: e.target.value } })} placeholder="gpt-4o" />
+                        </div>
+                        <div className="form-group">
+                          <label htmlFor={`model-provider-json-${index}`}>JSON model</label>
+                          <input id={`model-provider-json-${index}`} value={provider.models?.json || ''} onChange={(e) => updateModelProviderDraft(index, { models: { json: e.target.value } })} placeholder="gpt-4o-mini" />
+                        </div>
+                      </div>
+
+                      <div className="data-sync-actions data-sync-actions-compact">
+                        <button type="button" className="btn" disabled={!!modelProviderTestingID || !provider.id || !provider.type} onClick={() => handleModelProviderTest(provider)}>
+                          {modelProviderTestingID === (provider.id || provider.name) ? tx('测试中...', 'Testing...') : tx('测试连接', 'Test connection')}
+                        </button>
+                        {!typeInfo?.live_test_supported && (
+                          <span className="data-record-secondary">{tx('当前版本还没有连接测试', 'Live test is not available yet')}</span>
+                        )}
+                      </div>
+                      {testResult && (
+                        <div className={testResult.ok ? 'alert alert-ok' : 'alert alert-warn'} style={{ marginTop: 12 }}>
+                          {testResult.message}
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </section>
+          </div>
+
+          {modelProvidersMessage && <div className="alert alert-ok" style={{ marginTop: 12 }}>{modelProvidersMessage}</div>}
+          {modelProvidersError && <div className="alert alert-warn" style={{ marginTop: 12 }}>{modelProvidersError}</div>}
+          <div className="data-sync-actions">
+            <button type="button" className="btn btn-primary" disabled={modelProvidersSaving} onClick={handleModelProvidersSave}>
+              {modelProvidersSaving ? tx('保存中...', 'Saving...') : tx('保存模型提供方', 'Save model providers')}
+            </button>
+            <button type="button" className="btn" onClick={() => { void loadModelProviders() }} disabled={modelProvidersBusy || modelProvidersSaving}>
+              {tx('重新加载', 'Reload')}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  )
+
   return (
     <div className="page materials-page">
+      {renderModelProvidersPanel()}
+
       <div className="materials-panel data-sync-card">
         <div className="card-header">
           <h3 className="card-title">{tx('本地配置', 'Local Configuration')}</h3>
@@ -524,17 +891,17 @@ export default function SystemSettingsPage() {
                     <div className="form-group">
                       <label htmlFor="config-sqlite-path">SQLite path</label>
                       <div className="data-sync-field-note">{tx('当 local.storage=sqlite 时使用的数据库文件位置。', 'The SQLite database file used when local.storage=sqlite.')}</div>
-                      <input id="config-sqlite-path" value={settingsDraft.sqlitePath} onChange={(e) => updateSettingsDraft({ sqlitePath: e.target.value })} placeholder="~/.local/share/neudrive/neudrive.db" />
+                      <input id="config-sqlite-path" value={settingsDraft.sqlitePath} onChange={(e) => updateSettingsDraft({ sqlitePath: e.target.value })} placeholder="~/.local/share/vola/vola.db" />
                     </div>
                     <div className="form-group">
                       <label htmlFor="config-database-url">Database URL</label>
                       <div className="data-sync-field-note">{tx('当 local.storage=postgres 时使用的数据库连接串。', 'The database connection string used when local.storage=postgres.')}</div>
-                      {renderSensitiveInput('config-database-url', settingsDraft.databaseURL, (value) => updateSettingsDraft({ databaseURL: value }), 'database-url', 'postgres://localhost:5432/neudrive?sslmode=disable')}
+                      {renderSensitiveInput('config-database-url', settingsDraft.databaseURL, (value) => updateSettingsDraft({ databaseURL: value }), 'database-url', 'postgres://localhost:5432/vola?sslmode=disable')}
                     </div>
                     <div className="form-group">
                       <label htmlFor="config-git-mirror-path">{tx('Git Mirror 默认目录', 'Default Git Mirror path')}</label>
-                      <div className="data-sync-field-note">{tx('首次初始化本地 Git Mirror 时，neuDrive 会优先使用这里的目录。', 'When neuDrive initializes the local Git Mirror for the first time, it uses this directory first.')}</div>
-                      <input id="config-git-mirror-path" value={settingsDraft.gitMirrorPath} onChange={(e) => updateSettingsDraft({ gitMirrorPath: e.target.value })} placeholder="./neudrive-export/git-mirror" />
+                      <div className="data-sync-field-note">{tx('首次初始化本地 Git Mirror 时，Vola 会优先使用这里的目录。', 'When Vola initializes the local Git Mirror for the first time, it uses this directory first.')}</div>
+                      <input id="config-git-mirror-path" value={settingsDraft.gitMirrorPath} onChange={(e) => updateSettingsDraft({ gitMirrorPath: e.target.value })} placeholder="./vola-export/git-mirror" />
                     </div>
                     <div className="form-group">
                       <label htmlFor="config-public-base-url">Public base URL</label>
@@ -673,15 +1040,16 @@ export default function SystemSettingsPage() {
                 <div className="data-sync-settings-grid">
                   <div className="form-group">
                     <label htmlFor="settings-git-mirror-auth-mode">{tx('认证方式', 'Auth mode')}</label>
-                    <select
-                      id="settings-git-mirror-auth-mode"
-                      value={gitMirrorDraft.auth_mode}
-                      onChange={(e) => updateGitMirrorDraft({ auth_mode: e.target.value as UpdateGitMirrorRequest['auth_mode'] })}
-                    >
-                      <option value="local_credentials">{tx('本机 Git 凭证', 'Local Git credentials')}</option>
-                      <option value="github_token">{tx('GitHub Token', 'GitHub token')}</option>
-                      <option value="github_app_user">{tx('GitHub App 用户', 'GitHub App user')}</option>
-                    </select>
+                    <CustomSelect
+                      value={gitMirrorDraft.auth_mode || ''}
+                      onChange={(val) => updateGitMirrorDraft({ auth_mode: val as UpdateGitMirrorRequest['auth_mode'] })}
+                      options={[
+                        { value: 'local_credentials', label: tx('本机 Git 凭证', 'Local Git credentials') },
+                        { value: 'github_token', label: tx('GitHub Token', 'GitHub token') },
+                        { value: 'github_app_user', label: tx('GitHub App 用户', 'GitHub App user') },
+                      ]}
+                      ariaLabel={tx('认证方式', 'Auth mode')}
+                    />
                   </div>
                   <div className="form-group data-sync-settings-span-wide">
                     <label htmlFor="settings-git-mirror-remote-url">{tx('仓库 URL', 'Repository URL')}</label>
@@ -689,7 +1057,7 @@ export default function SystemSettingsPage() {
                       id="settings-git-mirror-remote-url"
                       value={gitMirrorDraft.remote_url || ''}
                       onChange={(e) => updateGitMirrorDraft({ remote_url: e.target.value })}
-                      placeholder="https://github.com/owner/neudrive-backup.git"
+                      placeholder="https://github.com/owner/vola-backup.git"
                     />
                   </div>
                 </div>

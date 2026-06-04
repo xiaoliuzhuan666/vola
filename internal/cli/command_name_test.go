@@ -17,8 +17,8 @@ func TestUsageLineUsesInvokedCommandName(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 
-	os.Args = []string{"neudrive"}
-	if got := usageLine("connect <platform>"); got != "usage: neudrive connect <platform>" {
+	os.Args = []string{"vola"}
+	if got := usageLine("connect <platform>"); got != "usage: vola connect <platform>" {
 		t.Fatalf("got %q", got)
 	}
 }
@@ -39,7 +39,7 @@ func TestRootUsageRendersShortCommandWhenInvokedAsNeu(t *testing.T) {
 	if !strings.Contains(stdout, "neu status") {
 		t.Fatalf("expected short command in help output: %q", stdout)
 	}
-	if strings.Contains(stdout, "neudrive status") {
+	if strings.Contains(stdout, "vola status") {
 		t.Fatalf("did not expect canonical command in short help output: %q", stdout)
 	}
 }

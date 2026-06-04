@@ -2,11 +2,13 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/systemskills"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/systemskills"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -173,4 +175,65 @@ func (s *DashboardService) GetStats(ctx context.Context, userID uuid.UUID) (*mod
 	}
 
 	return stats, nil
+}
+
+func (s *DashboardService) LogActivity(ctx context.Context, userID uuid.UUID, connectionID *uuid.UUID, action, path string, metadata map[string]interface{}) error {
+	id := uuid.New()
+	createdAt := time.Now()
+
+	if s.repo != nil {
+		return s.repo.LogActivity(ctx, id, userID, connectionID, action, path, metadata, createdAt)
+	}
+
+	metadataBytes, err := json.Marshal(metadata)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec(ctx,
+		`INSERT INTO activity_log (id, user_id, connection_id, action, path, metadata, created_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+		id, userID, connectionID, action, path, metadataBytes, createdAt)
+	return err
+}
+
+func (s *DashboardService) GetActivities(ctx context.Context, userID uuid.UUID, limit int) ([]models.ActivityLog, error) {
+	if s.repo != nil {
+		return s.repo.GetActivities(ctx, userID, limit)
+	}
+
+	rows, err := s.db.Query(ctx,
+		`SELECT id, user_id, connection_id, action, path, metadata, created_at
+		 FROM activity_log
+		 WHERE user_id = $1
+		 ORDER BY created_at DESC
+		 LIMIT $2`,
+		userID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	activities := make([]models.ActivityLog, 0)
+	for rows.Next() {
+		var act models.ActivityLog
+		var metadataBytes []byte
+		var connID *uuid.UUID
+
+		err := rows.Scan(&act.ID, &act.UserID, &connID, &act.Action, &act.Path, &metadataBytes, &act.CreatedAt)
+		if err != nil {
+			return nil, err
+		}
+
+		if connID != nil {
+			act.ConnectionID = *connID
+		}
+
+		if len(metadataBytes) > 0 {
+			_ = json.Unmarshal(metadataBytes, &act.Metadata)
+		}
+
+		activities = append(activities, act)
+	}
+	return activities, nil
 }

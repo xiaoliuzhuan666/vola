@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -79,7 +79,7 @@ func (s *MemoryService) UpsertProfile(ctx context.Context, userID uuid.UUID, cat
 		source = SourceFromContext(ctx)
 	}
 	if source == "" {
-		source = "neudrive"
+		source = "vola"
 	}
 
 	if s.db != nil {
@@ -218,7 +218,7 @@ func (s *MemoryService) ImportScratch(ctx context.Context, userID uuid.UUID, con
 }
 
 func importedScratchLegacyID(source, title string, createdAt time.Time) uuid.UUID {
-	key := fmt.Sprintf("neudrive/imported-scratch/%s/%s/%s", source, title, createdAt.UTC().Format(time.RFC3339Nano))
+	key := fmt.Sprintf("vola/imported-scratch/%s/%s/%s", source, title, createdAt.UTC().Format(time.RFC3339Nano))
 	return uuid.NewSHA1(uuid.NameSpaceURL, []byte(key))
 }
 
@@ -230,7 +230,7 @@ func (s *MemoryService) writeScratchEntry(ctx context.Context, userID uuid.UUID,
 		source = SourceFromContext(ctx)
 	}
 	if source == "" {
-		source = "neudrive"
+		source = "vola"
 	}
 
 	if legacyID == uuid.Nil {

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useI18n } from '../i18n'
 import type { MaterialsSortDir } from '../pages/data/DataShared'
+import CustomSelect from './CustomSelect'
 
 type SortOption = {
   value: string
@@ -33,18 +34,12 @@ export default function MaterialsSectionToolbar({
     <div className="materials-compact-toolbar">
       {typeof count === 'number' ? <span className="materials-tile-pill">{tx(`${count} 项`, `${count} items`)}</span> : null}
       {showSort ? (
-        <select
-          className="materials-toolbar-control"
-          aria-label={tx('排序字段', 'Sort field')}
-          value={sortKey}
-          onChange={(event) => onSortKeyChange?.(event.target.value)}
-        >
-          {sortOptions?.map((option) => (
-            <option key={option.value} value={option.value}>
-              {option.label}
-            </option>
-          ))}
-        </select>
+        <CustomSelect
+          value={sortKey || ''}
+          onChange={(val) => onSortKeyChange?.(val)}
+          options={sortOptions || []}
+          ariaLabel={tx('排序字段', 'Sort field')}
+        />
       ) : null}
       {showSort && onSortDirToggle ? (
         <button type="button" className="btn btn-sm materials-toolbar-control" onClick={onSortDirToggle}>

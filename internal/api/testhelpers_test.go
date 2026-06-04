@@ -9,9 +9,9 @@ import (
 	"net/http/httptest"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/auth"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/auth"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )

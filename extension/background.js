@@ -1,13 +1,13 @@
 /**
- * neuDrive - Background Service Worker
+ * Vola - Background Service Worker
  * Manages API connection, token storage, profile caching,
  * and message handling for content scripts and popup.
  */
 
-importScripts('lib/neudrive-client.js');
+importScripts('lib/vola-client.js');
 
-const client = new NeuDriveClient();
-const OFFICIAL_HUB_URL = 'https://www.neudrive.ai';
+const client = new VolaClient();
+const OFFICIAL_HUB_URL = 'https://www.vola.ai';
 const OFFICIAL_LOGIN_URL = `${OFFICIAL_HUB_URL}/setup/tokens?source=browser-extension`;
 const OFFICIAL_LOGIN_PENDING_KEY = 'officialLoginPending';
 const OFFICIAL_LOGIN_PENDING_TTL_MS = 15 * 60 * 1000;
@@ -31,7 +31,7 @@ let officialLoginInFlight = false;
 
 // Initialize client on startup
 client.init().then(configured => {
-  console.log('[NeuDrive] Background initialized, configured:', configured);
+  console.log('[Vola] Background initialized, configured:', configured);
 });
 
 /**
@@ -585,7 +585,7 @@ function buildNormalizedConversationFromPayload(payload, defaults) {
     : buildLegacyNormalizedTurns(payload?.turns);
 
   return {
-    version: 'neudrive.conversation/v1',
+    version: 'vola.conversation/v1',
     source_platform: sanitizeLine(normalized.source_platform || defaults.sourcePlatform || ''),
     source_url: sanitizeLine(normalized.source_url || defaults.url || ''),
     source_conversation_id: sanitizeLine(normalized.source_conversation_id || defaults.conversationId || ''),
@@ -934,7 +934,7 @@ function isCloudflareBlock(err) {
 function normalizeImportError(err) {
   const message = String(err?.message || err || '');
   if (message.includes('token missing required scope: write:tree')) {
-    return new Error('当前 neuDrive Token 缺少 write:tree，不能导入对话。请在扩展弹窗里重新登录官方版，或改用带 write:tree 的 Token。');
+    return new Error('当前 Vola Token 缺少 write:tree，不能导入对话。请在扩展弹窗里重新登录官方版，或改用带 write:tree 的 Token。');
   }
   return err instanceof Error ? err : new Error(message);
 }
@@ -987,7 +987,7 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo, tab) => {
   const changedUrl = changeInfo.url || tab.url || '';
   if (changedUrl.startsWith(OFFICIAL_HUB_URL)) {
     tryNotifyOfficialSiteSession(changedUrl, tabId).catch(err => {
-      console.error('[NeuDrive] Official login bridge failed:', err);
+      console.error('[Vola] Official login bridge failed:', err);
     });
   }
 

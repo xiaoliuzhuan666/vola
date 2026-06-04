@@ -1,13 +1,13 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: neudrive-server
-  namespace: neudrive
+  name: vola-server
+  namespace: vola
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: neudrive-server
+      app: vola-server
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -16,11 +16,11 @@ spec:
   template:
     metadata:
       labels:
-        app: neudrive-server
+        app: vola-server
     spec:
       containers:
-        - name: neudrive-server
-          image: neudrive:latest
+        - name: vola-server
+          image: vola:latest
           imagePullPolicy: IfNotPresent
           ports:
             - containerPort: 8080
@@ -28,65 +28,65 @@ spec:
             - name: PORT
               valueFrom:
                 configMapKeyRef:
-                  name: neudrive-config
+                  name: vola-config
                   key: PORT
             - name: CORS_ORIGINS
               valueFrom:
                 configMapKeyRef:
-                  name: neudrive-config
+                  name: vola-config
                   key: CORS_ORIGINS
             - name: PUBLIC_BASE_URL
               valueFrom:
                 configMapKeyRef:
-                  name: neudrive-config
+                  name: vola-config
                   key: PUBLIC_BASE_URL
             - name: GIT_MIRROR_HOSTED_ROOT
               valueFrom:
                 configMapKeyRef:
-                  name: neudrive-config
+                  name: vola-config
                   key: GIT_MIRROR_HOSTED_ROOT
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-app
+                  name: vola-app
                   key: DATABASE_URL
             - name: JWT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-app
+                  name: vola-app
                   key: JWT_SECRET
             - name: VAULT_MASTER_KEY
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-app
+                  name: vola-app
                   key: VAULT_MASTER_KEY
             - name: GITHUB_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-app
+                  name: vola-app
                   key: GITHUB_CLIENT_ID
             - name: GITHUB_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-app
+                  name: vola-app
                   key: GITHUB_CLIENT_SECRET
             - name: GITHUB_APP_CLIENT_ID
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-app
+                  name: vola-app
                   key: GITHUB_APP_CLIENT_ID
             - name: GITHUB_APP_CLIENT_SECRET
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-app
+                  name: vola-app
                   key: GITHUB_APP_CLIENT_SECRET
             - name: GITHUB_APP_SLUG
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-app
+                  name: vola-app
                   key: GITHUB_APP_SLUG
           volumeMounts:
-            - name: neudrive-git-mirrors
+            - name: vola-git-mirrors
               mountPath: /data/git-mirrors
           livenessProbe:
             httpGet:
@@ -105,15 +105,15 @@ spec:
             timeoutSeconds: 5
             failureThreshold: 6
       volumes:
-        - name: neudrive-git-mirrors
+        - name: vola-git-mirrors
           persistentVolumeClaim:
-            claimName: neudrive-git-mirrors
+            claimName: vola-git-mirrors
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
-  name: neudrive-git-mirrors
-  namespace: neudrive
+  name: vola-git-mirrors
+  namespace: vola
 spec:
   accessModes:
     - ReadWriteOnce
@@ -124,11 +124,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: neudrive-server
-  namespace: neudrive
+  name: vola-server
+  namespace: vola
 spec:
   selector:
-    app: neudrive-server
+    app: vola-server
   ports:
     - port: 8080
       targetPort: 8080

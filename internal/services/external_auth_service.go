@@ -18,8 +18,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/config"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/config"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"

@@ -1,6 +1,6 @@
 # Bundle Sync 指南
 
-neuDrive 现在有两条并行通道：
+Vola 现在有两条并行通道：
 
 - MCP：适合小而智能的在线操作
 - Bundle Sync：适合迁移、备份、恢复、大体积 skill 和二进制资源
@@ -34,9 +34,9 @@ Bundle Sync 支持两种文件格式：
 
 默认配置文件位置：
 
-- macOS：`~/.config/neudrive/config.json`
-- Linux：`$XDG_CONFIG_HOME/neudrive/config.json`
-- Linux（无 XDG 时）：`~/.config/neudrive/config.json`
+- macOS：`~/.config/vola/config.json`
+- Linux：`$XDG_CONFIG_HOME/vola/config.json`
+- Linux（无 XDG 时）：`~/.config/vola/config.json`
 
 配置里会保存：
 
@@ -56,7 +56,7 @@ Bundle Sync 支持两种文件格式：
 {
   "current_target": "local",
   "local": {
-    "git_mirror_path": "~/neudrive/git-mirror"
+    "git_mirror_path": "~/vola/git-mirror"
   }
 }
 ```
@@ -70,10 +70,10 @@ Bundle Sync 支持两种文件格式：
 
 相关环境变量：
 
-- `NEUDRIVE_SYNC_CONFIG`
-- `NEUDRIVE_SYNC_PROFILE`
-- `NEUDRIVE_SYNC_API_BASE` 或 `NEUDRIVE_API_BASE`
-- `NEUDRIVE_SYNC_TOKEN` 或 `NEUDRIVE_TOKEN`
+- `VOLA_SYNC_CONFIG`
+- `VOLA_SYNC_PROFILE`
+- `VOLA_SYNC_API_BASE` 或 `VOLA_API_BASE`
+- `VOLA_SYNC_TOKEN` 或 `VOLA_TOKEN`
 
 首次登录 hosted 推荐直接走浏览器：
 

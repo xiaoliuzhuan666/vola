@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/vault"
+	"github.com/agi-bar/vola/internal/models"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/vault"
 )
 
 func TestHostedQueuedMirrorSyncProcessesQueuedRows(t *testing.T) {

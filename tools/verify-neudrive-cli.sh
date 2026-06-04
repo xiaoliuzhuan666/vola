@@ -9,12 +9,12 @@ tools/verify-neudrive-cli.sh no longer supports the old heavy verification mode.
 
 Reason:
   The previous full-suite flow could overload local machines by spawning many
-  temporary neuDrive and Go build processes.
+  temporary Vola and Go build processes.
 
 Use instead:
   tools/test-neudrive-cli.sh
 
-This runs the safe smoke suite for the neuDrive CLI without isolated Go caches
+This runs the safe smoke suite for the Vola CLI without isolated Go caches
 or the older heavy platform/import/git stress flow.
 EOF
   exit 2

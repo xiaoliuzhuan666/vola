@@ -36,8 +36,8 @@ function parseCLILoginRequest(search: string, locale: 'zh-CN' | 'en'): { request
     return {
       request: null,
       error: locale === 'zh-CN'
-        ? '这个页面需要由 neuDrive CLI 的浏览器登录流程自动打开。'
-        : 'This page must be opened automatically by the neuDrive CLI browser login flow.',
+        ? '这个页面需要由 Vola CLI 的浏览器登录流程自动打开。'
+        : 'This page must be opened automatically by the Vola CLI browser login flow.',
     }
   }
 
@@ -156,7 +156,7 @@ export default function SyncLoginPage({ systemSettingsEnabled = false }: SyncLog
         <div className="login-card-header">
           <LanguageToggle />
         </div>
-        <div className="sync-login-eyebrow">neuDrive CLI</div>
+        <div className="sync-login-eyebrow">Vola CLI</div>
         <h1 className="login-title">{tx('授权本次 Sync 登录', 'Authorize this Sync sign-in')}</h1>
         <p className="login-desc">
           {tx(
@@ -190,8 +190,8 @@ export default function SyncLoginPage({ systemSettingsEnabled = false }: SyncLog
 
             <div className="sync-login-note">
               {tx(
-                '点击下面的按钮后，neuDrive 会生成一个短效 Sync Token，并自动发送回正在等待的本地 CLI。',
-                'When you continue, neuDrive will create a short-lived Sync token and automatically send it back to the waiting local CLI.',
+                '点击下面的按钮后，Vola 会生成一个短效 Sync Token，并自动发送回正在等待的本地 CLI。',
+                'When you continue, Vola will create a short-lived Sync token and automatically send it back to the waiting local CLI.',
               )}
             </div>
 

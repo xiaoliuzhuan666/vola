@@ -147,10 +147,10 @@ function categoryLabel(name: string, tx: (zh: string, en: string) => string) {
 function displayImportCommand(command: string | undefined, platform: string) {
   const trimmed = (command || "").trim();
   if (!trimmed) return `neu import ${platform}`;
-  const legacyPlatformMatch = trimmed.match(/^neudrive\s+import\s+platform\s+([a-z0-9-]+)(?:\s+--mode\s+\S+)?$/i);
+  const legacyPlatformMatch = trimmed.match(/^vola\s+import\s+platform\s+([a-z0-9-]+)(?:\s+--mode\s+\S+)?$/i);
   if (legacyPlatformMatch?.[1]) return `neu import ${legacyPlatformMatch[1]}`;
   return trimmed
-    .replace(/^neudrive\s+/, "neu ")
+    .replace(/^vola\s+/, "neu ")
     .replace(/\s+--mode\s+\S+/g, "");
 }
 
@@ -295,8 +295,8 @@ export default function ClaudeMigrationPage({
       setSyncInfo(response.localGitSync || null);
       setSuccess(
         tx(
-          `${displayName} 数据已导入到 neuDrive。`,
-          `${displayName} data has been imported into neuDrive.`,
+          `${displayName} 数据已导入到 Vola。`,
+          `${displayName} data has been imported into Vola.`,
         ),
       );
     } catch (err: any) {

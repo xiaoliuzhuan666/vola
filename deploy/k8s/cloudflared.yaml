@@ -1,13 +1,13 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: neudrive-cloudflared
-  namespace: neudrive
+  name: vola-cloudflared
+  namespace: vola
 spec:
   replicas: 2
   selector:
     matchLabels:
-      app: neudrive-cloudflared
+      app: vola-cloudflared
   strategy:
     type: RollingUpdate
     rollingUpdate:
@@ -16,7 +16,7 @@ spec:
   template:
     metadata:
       labels:
-        app: neudrive-cloudflared
+        app: vola-cloudflared
     spec:
       automountServiceAccountToken: false
       affinity:
@@ -26,7 +26,7 @@ spec:
               podAffinityTerm:
                 labelSelector:
                   matchLabels:
-                    app: neudrive-cloudflared
+                    app: vola-cloudflared
                 topologyKey: kubernetes.io/hostname
       containers:
         - name: cloudflared
@@ -48,7 +48,7 @@ spec:
             - name: TUNNEL_TOKEN
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-cloudflared-token
+                  name: vola-cloudflared-token
                   key: TUNNEL_TOKEN
           ports:
             - containerPort: 2000

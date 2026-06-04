@@ -67,7 +67,7 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 	}
 
 	cfg := &Config{
-		DatabaseURL:             envOrOverride("DATABASE_URL", "postgres://localhost:5432/neudrive?sslmode=disable"),
+		DatabaseURL:             envOrOverride("DATABASE_URL", "postgres://localhost:5432/vola?sslmode=disable"),
 		Port:                    envOrOverride("PORT", "8080"),
 		JWTSecret:               envOrOverride("JWT_SECRET", ""),
 		ObjectStorageBackend:    strings.ToLower(strings.TrimSpace(envOrOverride("OBJECT_STORAGE_BACKEND", "db"))),
@@ -76,7 +76,7 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		TencentCOSEndpoint:      strings.TrimSpace(envOrOverride("TENCENT_COS_ENDPOINT", "")),
 		TencentCOSSecretID:      strings.TrimSpace(envOrOverride("TENCENT_COS_SECRET_ID", "")),
 		TencentCOSSecretKey:     strings.TrimSpace(envOrOverride("TENCENT_COS_SECRET_KEY", "")),
-		TencentCOSPrefix:        strings.TrimSpace(envOrOverride("TENCENT_COS_PREFIX", "neudrive")),
+		TencentCOSPrefix:        strings.TrimSpace(envOrOverride("TENCENT_COS_PREFIX", "vola")),
 		TencentCOSPathStyle:     parseBoolString(envOrOverride("TENCENT_COS_PATH_STYLE", "0"), false),
 		GithubClientID:          envOrOverride("GITHUB_CLIENT_ID", ""),
 		GithubClientSecret:      envOrOverride("GITHUB_CLIENT_SECRET", ""),
@@ -101,10 +101,10 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		MaxBodySize:             int64(getEnvInt("MAX_BODY_SIZE", 10*1024*1024)),
 		LogLevel:                envOrOverride("LOG_LEVEL", "info"),
 		LogFormat:               envOrOverride("LOG_FORMAT", "text"),
-		EnableSystemSettings:    getEnvBool("NEUDRIVE_ENABLE_SYSTEM_SETTINGS", true),
-		EnableBilling:           getEnvBool("NEUDRIVE_ENABLE_BILLING", false),
-		CaptureOAuth:            getEnvBool("NEUDRIVE_CAPTURE_OAUTH", false),
-		CaptureDir:              envOrOverride("NEUDRIVE_CAPTURE_DIR", "tmp/oauth-captures"),
+		EnableSystemSettings:    getEnvBool("VOLA_ENABLE_SYSTEM_SETTINGS", true),
+		EnableBilling:           getEnvBool("VOLA_ENABLE_BILLING", false),
+		CaptureOAuth:            getEnvBool("VOLA_CAPTURE_OAUTH", false),
+		CaptureDir:              envOrOverride("VOLA_CAPTURE_DIR", "tmp/oauth-captures"),
 	}
 	if rawCooldown := strings.TrimSpace(envOrOverride("GIT_MIRROR_MANUAL_SYNC_COOLDOWN_SECONDS", "")); rawCooldown != "" {
 		cooldown, err := strconv.Atoi(rawCooldown)

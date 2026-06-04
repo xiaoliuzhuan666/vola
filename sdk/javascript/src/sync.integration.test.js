@@ -7,25 +7,25 @@ const path = require('node:path')
 const { execFileSync } = require('node:child_process')
 const { unzipSync, strFromU8 } = require('fflate')
 
-const BASE_URL = (process.env.NEUDRIVE_TEST_URL || '').replace(/\/+$/, '')
-const DEV_SLUG_CANDIDATES = (process.env.NEUDRIVE_TEST_DEV_SLUGS || 'demo,de,admin')
+const BASE_URL = (process.env.VOLA_TEST_URL || '').replace(/\/+$/, '')
+const DEV_SLUG_CANDIDATES = (process.env.VOLA_TEST_DEV_SLUGS || 'demo,de,admin')
   .split(',')
   .map((value) => value.trim())
   .filter(Boolean)
 const ROOT = path.resolve(__dirname, '../../..')
 const FIXTURE_DIR = path.join(ROOT, 'internal', 'services', 'testdata')
 
-function runNeuDrive(args) {
-  const configured = process.env.NEUDRIVE_CLI
+function runVola(args) {
+  const configured = process.env.VOLA_CLI
   if (configured) {
     execFileSync(configured, args, { stdio: 'inherit' })
     return
   }
-  if (fs.existsSync('/tmp/neudrive')) {
-    execFileSync('/tmp/neudrive', args, { stdio: 'inherit' })
+  if (fs.existsSync('/tmp/vola')) {
+    execFileSync('/tmp/vola', args, { stdio: 'inherit' })
     return
   }
-  execFileSync('go', ['run', './cmd/neudrive', ...args], { cwd: ROOT, stdio: 'inherit' })
+  execFileSync('go', ['run', './cmd/vola', ...args], { cwd: ROOT, stdio: 'inherit' })
 }
 
 function skipIfNoServer() {
@@ -64,7 +64,7 @@ function expandedBinary(base, seed, multiplier) {
 }
 
 function materializeSource(multiplier = 1) {
-  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'neudrive-js-sync-'))
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'vola-js-sync-'))
   const files = loadSkillFixture()
   const plan = loadPlan()
   const binary = fs.readFileSync(path.join(FIXTURE_DIR, 'tiny.png'))
@@ -94,7 +94,7 @@ function materializeSource(multiplier = 1) {
 async function registerUser() {
   const slug = `js-sync-${Date.now()}`
   const email = `${slug}@test.local`
-  const password = 'neudrive-sync-1234'
+  const password = 'vola-sync-1234'
   const registerRes = await fetch(`${BASE_URL}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -147,20 +147,20 @@ function readManifestFromArchive(archivePath) {
   return JSON.parse(strFromU8(files['manifest.json']))
 }
 
-test('NeuDrive JS SDK handles json bundle and archive sessions', { skip: skipIfNoServer() }, async () => {
-  const { NeuDrive } = require('../dist/index.js')
+test('Vola JS SDK handles json bundle and archive sessions', { skip: skipIfNoServer() }, async () => {
+  const { Vola } = require('../dist/index.js')
   const token = await registerUser()
   const sourceDir = materializeSource(2)
-  const bundlePath = path.join(os.tmpdir(), `neudrive-js-${Date.now()}.ndrv`)
-  const archivePath = path.join(os.tmpdir(), `neudrive-js-${Date.now()}.ndrvz`)
+  const bundlePath = path.join(os.tmpdir(), `vola-js-${Date.now()}.ndrv`)
+  const archivePath = path.join(os.tmpdir(), `vola-js-${Date.now()}.ndrvz`)
 
-  runNeuDrive(['sync', 'export', '--source', sourceDir, '-o', bundlePath])
-  runNeuDrive(['sync', 'export', '--source', sourceDir, '--format', 'archive', '-o', archivePath])
+  runVola(['sync', 'export', '--source', sourceDir, '-o', bundlePath])
+  runVola(['sync', 'export', '--source', sourceDir, '--format', 'archive', '-o', archivePath])
 
   const bundle = JSON.parse(fs.readFileSync(bundlePath, 'utf8'))
   const manifest = readManifestFromArchive(archivePath)
   const archiveBytes = new Uint8Array(fs.readFileSync(archivePath))
-  const hub = new NeuDrive({ baseURL: BASE_URL, token })
+  const hub = new Vola({ baseURL: BASE_URL, token })
 
   const authInfo = await hub.getAuthInfo()
   assert.equal(authInfo.api_base, BASE_URL)

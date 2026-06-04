@@ -19,7 +19,7 @@ LAST_STDOUT=""
 LAST_STDERR=""
 LAST_STATUS=0
 
-NEUDRIVE_BIN=""
+VOLA_BIN=""
 OWNER_TOKEN=""
 API_BASE=""
 CONFIG_PATH=""
@@ -29,12 +29,12 @@ usage() {
   cat <<'EOF'
 Usage: tools/test-neudrive-cli.sh [--keep-tmp]
 
-Run a safe smoke suite for the public neuDrive CLI surface.
+Run a safe smoke suite for the public Vola CLI surface.
 
 Safety:
   - Reuses the normal Go build caches and module cache
   - Forces serialized builds to reduce load
-  - Uses an isolated HOME/XDG root only for neuDrive config/data
+  - Uses an isolated HOME/XDG root only for Vola config/data
   - Does not run the older heavy platform/import/git stress flow
 
 Scope:
@@ -73,8 +73,8 @@ while [[ $# -gt 0 ]]; do
 done
 
 cleanup() {
-  if [[ -n "$NEUDRIVE_BIN" && -x "$NEUDRIVE_BIN" ]]; then
-    "$NEUDRIVE_BIN" daemon stop >/dev/null 2>&1 || true
+  if [[ -n "$VOLA_BIN" && -x "$VOLA_BIN" ]]; then
+    "$VOLA_BIN" daemon stop >/dev/null 2>&1 || true
   fi
   if [[ -n "$RUNTIME_PATH" && -f "$RUNTIME_PATH" ]]; then
     local daemon_pid=""
@@ -225,7 +225,7 @@ PY
 }
 
 bootstrap_local_hub() {
-  run_setup "bootstrap local daemon and owner token" "$NEUDRIVE_BIN" ls
+  run_setup "bootstrap local daemon and owner token" "$VOLA_BIN" ls
   OWNER_TOKEN="$(read_json_field "$CONFIG_PATH" "local.owner_token")"
   API_BASE="$(read_json_field "$RUNTIME_PATH" "api_base")"
   if [[ -z "$OWNER_TOKEN" || -z "$API_BASE" ]]; then
@@ -236,19 +236,19 @@ bootstrap_local_hub() {
 
 seed_secret() {
   local payload
-  payload='{"data":"ghp_neudrive_secret_fixture_123","description":"Fixture secret for safe CLI smoke verification"}'
+  payload='{"data":"ghp_vola_secret_fixture_123","description":"Fixture secret for safe CLI smoke verification"}'
   echo
-  echo "-- setup: seed secret via local Agent API --"
+  echo "-- setup: seed secret via local API --"
   LAST_STDOUT="$(curl -fsS \
     -X PUT \
     -H "Authorization: Bearer $OWNER_TOKEN" \
     -H "Content-Type: application/json" \
     -d "$payload" \
-    "$API_BASE/agent/vault/auth.github.test")"
+    "$API_BASE/api/vault/auth.github.test")"
   LAST_STATUS=$?
   LAST_STDERR=""
   if [[ "$LAST_STATUS" -ne 0 || -z "$LAST_STDOUT" ]]; then
-    echo "failed to seed secret via local Agent API" >&2
+    echo "failed to seed secret via local API" >&2
     exit 1
   fi
   printf '%s\n' "$LAST_STDOUT"
@@ -256,28 +256,28 @@ seed_secret() {
 
 test_help_surface() {
   start_test "help surface is clear"
-  run_cmd "$NEUDRIVE_BIN" help
+  run_cmd "$VOLA_BIN" help
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
-  assert_contains "$LAST_STDOUT" "Root-directory command surface for local and remote neuDrive data." "help root output"
+  assert_contains "$LAST_STDOUT" "Root-directory command surface for local and hosted Vola data." "help root output"
   assert_contains "$LAST_STDOUT" "Public roots: profile, memory, project, skill, secret, platform" "help root output"
 
-  run_cmd "$NEUDRIVE_BIN" help write
+  run_cmd "$VOLA_BIN" help write
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Create or update Hub content from literal text, stdin, or a local file path." "help write output"
 
-  run_cmd "$NEUDRIVE_BIN" help project
+  run_cmd "$VOLA_BIN" help project
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
-  assert_contains "$LAST_STDOUT" "neuDrive Path Model" "help project output"
+  assert_contains "$LAST_STDOUT" "Vola Path Model" "help project output"
   assert_contains "$LAST_STDOUT" '`project/<name>` is a summary view.' "help project output"
   finish_test
 }
 
 test_ls_root() {
   start_test "ls root and public categories"
-  run_cmd "$NEUDRIVE_BIN" ls
+  run_cmd "$VOLA_BIN" ls
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   for expected in $'dir\tprofile/' $'dir\tmemory/' $'dir\tproject/' $'dir\tskill/' $'dir\tsecret/' $'dir\tplatform/'; do
@@ -288,12 +288,12 @@ test_ls_root() {
 
 test_profile_read_write() {
   start_test "write and read profile"
-  run_cmd "$NEUDRIVE_BIN" write profile/preferences "Keep responses concise and explicit."
+  run_cmd "$VOLA_BIN" write profile/preferences "Keep responses concise and explicit."
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Updated profile/preferences." "profile write output"
 
-  run_cmd "$NEUDRIVE_BIN" read profile/preferences
+  run_cmd "$VOLA_BIN" read profile/preferences
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Keep responses concise and explicit." "profile read output"
@@ -302,12 +302,12 @@ test_profile_read_write() {
 
 test_memory_write_search() {
   start_test "write memory and search memory"
-  run_cmd "$NEUDRIVE_BIN" write memory "Remember the Alpha milestone for launch review."
+  run_cmd "$VOLA_BIN" write memory "Remember the Alpha milestone for launch review."
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Saved memory note." "memory write output"
 
-  run_cmd "$NEUDRIVE_BIN" search "Alpha milestone" memory
+  run_cmd "$VOLA_BIN" search "Alpha milestone" memory
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Remember the Alpha milestone for launch review." "memory search output"
@@ -316,7 +316,7 @@ test_memory_write_search() {
 
 test_project_create_write_log_read_search() {
   start_test "create project and verify nested project content"
-  run_cmd "$NEUDRIVE_BIN" create project demo
+  run_cmd "$VOLA_BIN" create project demo
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Created project/demo." "create project output"
@@ -327,28 +327,28 @@ Alpha launch checklist from file input.
 Line two keeps the file non-empty.
 EOF
 
-  run_cmd "$NEUDRIVE_BIN" write project/demo/docs/notes/alpha.md "$project_file"
+  run_cmd "$VOLA_BIN" write project/demo/docs/notes/alpha.md "$project_file"
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Wrote project/demo/docs/notes/alpha.md." "project file write output"
 
-  run_cmd "$NEUDRIVE_BIN" read project/demo/docs/notes/alpha.md
+  run_cmd "$VOLA_BIN" read project/demo/docs/notes/alpha.md
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Alpha launch checklist from file input." "project file read output"
 
-  run_cmd "$NEUDRIVE_BIN" log project/demo --action note --summary "Project demo log summary from smoke test."
+  run_cmd "$VOLA_BIN" log project/demo --action note --summary "Project demo log summary from smoke test."
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Logged note on project/demo." "project log output"
 
-  run_cmd "$NEUDRIVE_BIN" read project/demo
+  run_cmd "$VOLA_BIN" read project/demo
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "name: demo" "project summary output"
   assert_contains "$LAST_STDOUT" "Project demo log summary from smoke test." "project summary output"
 
-  run_cmd "$NEUDRIVE_BIN" search "Alpha launch checklist" project/demo
+  run_cmd "$VOLA_BIN" search "Alpha launch checklist" project/demo
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "Alpha launch checklist from file input." "project search output"
@@ -357,21 +357,21 @@ EOF
 
 test_secret_ls_read() {
   start_test "list and read secret"
-  run_cmd "$NEUDRIVE_BIN" ls secret
+  run_cmd "$VOLA_BIN" ls secret
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   assert_contains "$LAST_STDOUT" "secret/auth.github.test" "secret ls output"
 
-  run_cmd "$NEUDRIVE_BIN" read secret/auth.github.test
+  run_cmd "$VOLA_BIN" read secret/auth.github.test
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
-  assert_contains "$LAST_STDOUT" "ghp_neudrive_secret_fixture_123" "secret read output"
+  assert_contains "$LAST_STDOUT" "ghp_vola_secret_fixture_123" "secret read output"
   finish_test
 }
 
 test_stats() {
   start_test "stats summary is non-empty"
-  run_cmd "$NEUDRIVE_BIN" stats
+  run_cmd "$VOLA_BIN" stats
   assert_command_ok
   assert_nonempty "$LAST_STDOUT" "stdout"
   for key in "files:" "memory:" "profile:" "projects:"; do
@@ -406,13 +406,14 @@ main() {
   export XDG_STATE_HOME="$TMP_ROOT/state"
   export XDG_DATA_HOME="$TMP_ROOT/data"
   export XDG_CACHE_HOME="$TMP_ROOT/cache"
-  export NEUDRIVE_CONFIG="$XDG_CONFIG_HOME/neudrive/config.json"
-  export NEUDRIVE_TOKEN=""
-  export NEUDRIVE_SYNC_TOKEN=""
-  export NEUDRIVE_API_BASE=""
-  export NEUDRIVE_SYNC_API_BASE=""
-  export NEUDRIVE_SYNC_PROFILE=""
-  export GOMAXPROCS="${NEUDRIVE_TEST_CLI_GOMAXPROCS:-2}"
+  export VOLA_CONFIG="$XDG_CONFIG_HOME/vola/config.json"
+  export NEUDRIVE_CONFIG="$VOLA_CONFIG"
+  export VOLA_TOKEN=""
+  export VOLA_SYNC_TOKEN=""
+  export VOLA_API_BASE=""
+  export VOLA_SYNC_API_BASE=""
+  export VOLA_SYNC_PROFILE=""
+  export GOMAXPROCS="${VOLA_TEST_CLI_GOMAXPROCS:-${NEUDRIVE_TEST_CLI_GOMAXPROCS:-2}}"
   if [[ -n "${GOFLAGS:-}" ]]; then
     export GOFLAGS="$GOFLAGS -p=1"
   else
@@ -420,11 +421,11 @@ main() {
   fi
 
   mkdir -p "$HOME" "$XDG_CONFIG_HOME" "$XDG_STATE_HOME" "$XDG_DATA_HOME" "$XDG_CACHE_HOME"
-  CONFIG_PATH="$NEUDRIVE_CONFIG"
-  RUNTIME_PATH="$XDG_CONFIG_HOME/neudrive/runtime.json"
+  CONFIG_PATH="$VOLA_CONFIG"
+  RUNTIME_PATH="$XDG_CONFIG_HOME/vola/runtime.json"
 
-  NEUDRIVE_BIN="$TMP_ROOT/neudrive"
-  run_setup "build neudrive binary" go build -o "$NEUDRIVE_BIN" ./cmd/neudrive
+  VOLA_BIN="$TMP_ROOT/vola"
+  run_setup "build vola binary" go build -o "$VOLA_BIN" ./cmd/vola
   bootstrap_local_hub
   seed_secret
 

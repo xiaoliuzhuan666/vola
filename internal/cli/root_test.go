@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/app/appcore"
+	"github.com/agi-bar/vola/internal/app/appcore"
 )
 
 func TestShouldUseLocalSyncDefaults(t *testing.T) {
@@ -36,7 +36,7 @@ func TestChooseStorageBackend(t *testing.T) {
 	})
 
 	t.Run("explicit sqlite path selects sqlite", func(t *testing.T) {
-		if got := chooseStorageBackend(appcore.DefaultServerStorage, "", "/tmp/neudrive.db", ""); got != "sqlite" {
+		if got := chooseStorageBackend(appcore.DefaultServerStorage, "", "/tmp/vola.db", ""); got != "sqlite" {
 			t.Fatalf("got %q want sqlite", got)
 		}
 	})

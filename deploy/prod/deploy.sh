@@ -5,13 +5,14 @@ set -euo pipefail
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 SOURCE_K8S_DIR="${SOURCE_K8S_DIR:-$REPO_ROOT/deploy/k8s}"
 K8S_DIR="${K8S_DIR:-$SOURCE_K8S_DIR}"
-NAMESPACE="${NAMESPACE:-neudrive}"
+NAMESPACE="${NAMESPACE:-vola}"
 MINIKUBE_PROFILE="${MINIKUBE_PROFILE:-minikube}"
-IMAGE_REPO="${IMAGE_REPO:-neudrive}"
+IMAGE_REPO="${IMAGE_REPO:-vola}"
 FULL_SHA="$(git -C "$REPO_ROOT" rev-parse HEAD)"
 SHORT_SHA="${FULL_SHA:0:12}"
 IMAGE_TAG="${IMAGE_TAG:-$SHORT_SHA}"
 APP_HOME="${APP_HOME:-$(cd "$REPO_ROOT/.." && pwd)}"
+VOLA_ENV_FILE="${VOLA_ENV_FILE:-}"
 NEUDRIVE_ENV_FILE="${NEUDRIVE_ENV_FILE:-}"
 APP_HOST="${APP_HOST:-}"
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-}"
@@ -35,11 +36,16 @@ detect_env_file() {
   local candidate
   local candidates=()
 
+  if [[ -n "$VOLA_ENV_FILE" ]]; then
+    candidates+=("$VOLA_ENV_FILE")
+  fi
   if [[ -n "$NEUDRIVE_ENV_FILE" ]]; then
     candidates+=("$NEUDRIVE_ENV_FILE")
   fi
 
   candidates+=(
+    "$APP_HOME/config/vola.env"
+    "$REPO_ROOT/vola.env"
     "$APP_HOME/config/neudrive.env"
     "$REPO_ROOT/neudrive.env"
     "$REPO_ROOT/.env"
@@ -65,7 +71,7 @@ require_env() {
 load_config() {
   local env_file
 
-  env_file="$(detect_env_file)" || die "missing config file; expected one of: $APP_HOME/config/neudrive.env, $REPO_ROOT/neudrive.env, $REPO_ROOT/.env"
+  env_file="$(detect_env_file)" || die "missing config file; expected one of: $APP_HOME/config/vola.env, $REPO_ROOT/vola.env, $APP_HOME/config/neudrive.env, $REPO_ROOT/neudrive.env, $REPO_ROOT/.env"
   log "Loading config from $env_file"
 
   set -a
@@ -73,8 +79,8 @@ load_config() {
   source "$env_file"
   set +a
 
-  POSTGRES_DB="${POSTGRES_DB:-neudrive}"
-  POSTGRES_USER="${POSTGRES_USER:-neudrive}"
+  POSTGRES_DB="${POSTGRES_DB:-vola}"
+  POSTGRES_USER="${POSTGRES_USER:-vola}"
   POSTGRES_PORT="${POSTGRES_PORT:-5432}"
   PORT="${PORT:-8080}"
 
@@ -83,14 +89,14 @@ load_config() {
   require_env VAULT_MASTER_KEY
 
   if [[ -z "${PUBLIC_BASE_URL:-}" ]]; then
-    PUBLIC_BASE_URL="https://neudrive.ai"
+    PUBLIC_BASE_URL="https://vola.ai"
   fi
   if [[ "$PUBLIC_BASE_URL" != http://* && "$PUBLIC_BASE_URL" != https://* ]]; then
     die "PUBLIC_BASE_URL must start with http:// or https://"
   fi
 
   CORS_ORIGINS="${CORS_ORIGINS:-$PUBLIC_BASE_URL,http://localhost:3000,http://localhost:5173}"
-  DATABASE_URL="${DATABASE_URL:-postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@neudrive-postgres.${NAMESPACE}.svc.cluster.local:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable}"
+  DATABASE_URL="${DATABASE_URL:-postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@vola-postgres.${NAMESPACE}.svc.cluster.local:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable}"
   GIT_MIRROR_HOSTED_ROOT="${GIT_MIRROR_HOSTED_ROOT:-/data/git-mirrors}"
 
   if [[ -z "$APP_HOST" ]]; then
@@ -114,7 +120,7 @@ sync_manifest_files() {
 }
 
 sync_config_map() {
-  kubectl -n "$NAMESPACE" create configmap neudrive-config \
+  kubectl -n "$NAMESPACE" create configmap vola-config \
     --from-literal=PORT="$PORT" \
     --from-literal=CORS_ORIGINS="$CORS_ORIGINS" \
     --from-literal=PUBLIC_BASE_URL="$PUBLIC_BASE_URL" \
@@ -131,12 +137,12 @@ sync_secret() {
 }
 
 sync_runtime_secrets() {
-  sync_secret neudrive-postgres \
+  sync_secret vola-postgres \
     --from-literal=POSTGRES_DB="$POSTGRES_DB" \
     --from-literal=POSTGRES_USER="$POSTGRES_USER" \
     --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD"
 
-  sync_secret neudrive-app \
+  sync_secret vola-app \
     --from-literal=DATABASE_URL="$DATABASE_URL" \
     --from-literal=JWT_SECRET="$JWT_SECRET" \
     --from-literal=VAULT_MASTER_KEY="$VAULT_MASTER_KEY" \
@@ -147,7 +153,7 @@ sync_runtime_secrets() {
     --from-literal=GITHUB_APP_SLUG="${GITHUB_APP_SLUG:-}"
 
   if [[ -n "${CLOUDFLARED_TUNNEL_TOKEN:-}" ]]; then
-    sync_secret neudrive-cloudflared-token \
+    sync_secret vola-cloudflared-token \
       --from-literal=TUNNEL_TOKEN="$CLOUDFLARED_TUNNEL_TOKEN"
   fi
 }
@@ -191,15 +197,15 @@ kubectl apply -f "$K8S_DIR/app.yaml"
 kubectl apply -f "$K8S_DIR/ingress.yaml"
 
 log "Updating deployment image to $IMAGE_REPO:$IMAGE_TAG"
-kubectl -n "$NAMESPACE" set image deployment/neudrive-server \
-  neudrive-server="$IMAGE_REPO:$IMAGE_TAG"
-kubectl -n "$NAMESPACE" annotate deployment/neudrive-server \
-  neudrive.ai/deployed-git-sha="$FULL_SHA" \
-  neudrive.ai/deployed-at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
+kubectl -n "$NAMESPACE" set image deployment/vola-server \
+  vola-server="$IMAGE_REPO:$IMAGE_TAG"
+kubectl -n "$NAMESPACE" annotate deployment/vola-server \
+  vola.ai/deployed-git-sha="$FULL_SHA" \
+  vola.ai/deployed-at="$(date -u '+%Y-%m-%dT%H:%M:%SZ')" \
   --overwrite
 
 log "Waiting for rollout"
-kubectl -n "$NAMESPACE" rollout status deployment/neudrive-server --timeout=10m
+kubectl -n "$NAMESPACE" rollout status deployment/vola-server --timeout=10m
 
 log "Waiting for public healthcheck: $HEALTHCHECK_URL"
 if ! wait_for_http "$HEALTHCHECK_URL"; then

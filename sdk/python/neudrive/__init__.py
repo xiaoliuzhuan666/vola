@@ -14,8 +14,11 @@ from .types import (
 
 __all__ = [
     "NeuDrive",
+    "Vola",
     "AsyncNeuDrive",
+    "AsyncVola",
     "NeuDriveAuth",
+    "VolaAuth",
     "BundleFilters",
     "ImportResult",
     "InboxMessage",
@@ -26,3 +29,7 @@ __all__ = [
     "User",
     "VaultScope",
 ]
+
+Vola = NeuDrive
+AsyncVola = AsyncNeuDrive
+VolaAuth = NeuDriveAuth

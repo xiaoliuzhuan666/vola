@@ -6,8 +6,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )

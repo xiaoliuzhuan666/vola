@@ -1,18 +1,18 @@
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
-  name: neudrive-postgres
-  namespace: neudrive
+  name: vola-postgres
+  namespace: vola
 spec:
   replicas: 1
   selector:
     matchLabels:
-      app: neudrive-postgres
-  serviceName: neudrive-postgres
+      app: vola-postgres
+  serviceName: vola-postgres
   template:
     metadata:
       labels:
-        app: neudrive-postgres
+        app: vola-postgres
     spec:
       containers:
         - name: postgres
@@ -23,24 +23,24 @@ spec:
             - name: POSTGRES_DB
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-postgres
+                  name: vola-postgres
                   key: POSTGRES_DB
             - name: POSTGRES_USER
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-postgres
+                  name: vola-postgres
                   key: POSTGRES_USER
             - name: POSTGRES_PASSWORD
               valueFrom:
                 secretKeyRef:
-                  name: neudrive-postgres
+                  name: vola-postgres
                   key: POSTGRES_PASSWORD
           readinessProbe:
             exec:
               command:
                 - sh
                 - -c
-                - pg_isready -U neudrive -d neudrive
+                - pg_isready -U vola -d vola
             initialDelaySeconds: 5
             periodSeconds: 5
             timeoutSeconds: 3
@@ -60,11 +60,11 @@ spec:
 apiVersion: v1
 kind: Service
 metadata:
-  name: neudrive-postgres
-  namespace: neudrive
+  name: vola-postgres
+  namespace: vola
 spec:
   selector:
-    app: neudrive-postgres
+    app: vola-postgres
   ports:
     - name: postgres
       port: 5432

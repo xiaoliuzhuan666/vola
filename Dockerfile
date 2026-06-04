@@ -18,13 +18,14 @@ RUN go mod download
 COPY . .
 # Copy the built frontend into the embed directory
 COPY --from=frontend /app/web/dist/ ./internal/web/dist/
-RUN CGO_ENABLED=0 GOOS=linux go build -o /neudrive ./cmd/neudrive
+RUN CGO_ENABLED=0 GOOS=linux go build -o /vola ./cmd/vola
 
 # ---- Final image: just the binary + migrations ----
 FROM ${RUNTIME_BASE_IMAGE}
 RUN apk add --no-cache ca-certificates git tzdata
 WORKDIR /app
-COPY --from=builder /neudrive .
+COPY --from=builder /vola .
+COPY --from=builder /vola ./vola
 COPY migrations/ ./migrations/
 EXPOSE 8080
-CMD ["./neudrive", "server", "--listen", ":8080"]
+CMD ["./vola", "server", "--listen", ":8080"]

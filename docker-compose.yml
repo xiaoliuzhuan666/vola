@@ -2,26 +2,26 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-neudrive}
-      POSTGRES_USER: ${POSTGRES_USER:-neudrive}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-neudrive_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-vola}
+      POSTGRES_USER: ${POSTGRES_USER:-vola}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vola_dev}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-neudrive} -d ${POSTGRES_DB:-neudrive}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-vola} -d ${POSTGRES_DB:-vola}"]
       interval: 5s
       timeout: 5s
       retries: 5
 
   server:
     build: .
-    command: ["./neudrive", "server", "--listen", ":8080"]
+    command: ["./vola", "server", "--listen", ":8080"]
     ports:
       - "${PORT:-8080}:8080"
     environment:
-      DATABASE_URL: postgres://${POSTGRES_USER:-neudrive}:${POSTGRES_PASSWORD:-neudrive_dev}@db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-neudrive}?sslmode=disable
+      DATABASE_URL: postgres://${POSTGRES_USER:-vola}:${POSTGRES_PASSWORD:-vola_dev}@db:${POSTGRES_PORT:-5432}/${POSTGRES_DB:-vola}?sslmode=disable
       PORT: "${PORT:-8080}"
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
       VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
@@ -32,7 +32,7 @@ services:
       TENCENT_COS_ENDPOINT: ${TENCENT_COS_ENDPOINT:-}
       TENCENT_COS_SECRET_ID: ${TENCENT_COS_SECRET_ID:-}
       TENCENT_COS_SECRET_KEY: ${TENCENT_COS_SECRET_KEY:-}
-      TENCENT_COS_PREFIX: ${TENCENT_COS_PREFIX:-neudrive}
+      TENCENT_COS_PREFIX: ${TENCENT_COS_PREFIX:-vola}
       TENCENT_COS_PATH_STYLE: ${TENCENT_COS_PATH_STYLE:-0}
       GITHUB_CLIENT_ID: ${GITHUB_CLIENT_ID:-}
       GITHUB_CLIENT_SECRET: ${GITHUB_CLIENT_SECRET:-}

@@ -2,10 +2,10 @@ import { test, expect } from '@playwright/test'
 import { registerUser, loginViaUI, setupUser, registerOAuthApp } from './helpers'
 
 test.describe('Dashboard', () => {
-  test('login lands on neuDrive overview', async ({ page, request }) => {
+  test('login lands on Vola overview', async ({ page, request }) => {
     const user = await registerUser(request)
     await loginViaUI(page, user.email, user.password)
-    await expect(page.locator('.sidebar-brand h1')).toHaveText('neuDrive')
+    await expect(page.locator('.sidebar-brand h1')).toHaveText('Vola')
     await expect(page.getByRole('heading', { name: '概览' })).toBeVisible()
   })
 

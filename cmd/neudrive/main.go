@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"github.com/agi-bar/neudrive/internal/cli"
+	"github.com/agi-bar/vola/internal/cli"
 )
 
 func main() {

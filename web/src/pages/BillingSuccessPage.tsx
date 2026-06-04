@@ -1,86 +1,36 @@
-import { useEffect, useState } from 'react'
+import { useEffect } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type BillingStatus } from '../api'
 import { useI18n } from '../i18n'
-import { formatBillingStorage, resolvePlan } from './BillingShared'
 
 export default function BillingSuccessPage() {
-  const { locale, tx } = useI18n()
-  const [status, setStatus] = useState<BillingStatus | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
+  const { tx } = useI18n()
 
   useEffect(() => {
-    localStorage.removeItem('neudrive.postSignupIntent')
-    let cancelled = false
-    const load = async () => {
-      setLoading(true)
-      setError('')
-      try {
-        const nextStatus = await api.getBillingStatus()
-        if (!cancelled) {
-          setStatus(nextStatus)
-        }
-      } catch (err: any) {
-        if (!cancelled) {
-          setError(err?.message || tx('刷新套餐状态失败', 'Failed to refresh billing status'))
-        }
-      } finally {
-        if (!cancelled) {
-          setLoading(false)
-        }
-      }
-    }
-
-    void load()
-    return () => {
-      cancelled = true
-    }
-  }, [tx])
-
-  const currentPlan = resolvePlan(status?.plans || [], status?.current_plan || 'free')
-
-  if (loading) {
-    return <div className="page-loading">{tx('加载中...', 'Loading...')}</div>
-  }
+    localStorage.removeItem('vola.postSignupIntent')
+  }, [])
 
   return (
     <div className="page materials-page">
       <div className="billing-success-card">
         <div className="status-banner">
           <span className="status-icon status-ok">&#10003;</span>
-          <span className="status-text">{tx('升级成功', 'Upgrade confirmed')}</span>
+          <span className="status-text">{tx('已返回 Vola', 'Returned to Vola')}</span>
         </div>
 
-        <h2>{tx('谢谢，你的套餐状态已经刷新。', 'Thanks, your billing status has been refreshed.')}</h2>
+        <h2>{tx('当前部署暂不展示价格和订阅入口。', 'Pricing and subscription entry points are hidden in this deployment.')}</h2>
         <p className="page-subtitle">
           {tx(
-            '如果 Stripe 已经确认付款，你的可用空间会按新套餐显示。',
-            'Once Stripe confirms the payment, your storage allowance will reflect the new plan.',
+            '你可以继续完成 AI 工具接入、资料导入和备份设置。',
+            'You can continue with AI tool setup, data import, and backup configuration.',
           )}
         </p>
-
-        {error && <div className="alert alert-warn">{error}</div>}
-
-        {status && (
-          <div className="sync-login-summary">
-            <div className="sync-login-summary-row">
-              <span>{tx('当前套餐', 'Current plan')}</span>
-              <strong>{currentPlan?.name || status.current_plan}</strong>
-            </div>
-            <div className="sync-login-summary-row">
-              <span>{tx('可用空间', 'Storage limit')}</span>
-              <strong>{formatBillingStorage(status.limit_bytes, locale)}</strong>
-            </div>
-          </div>
-        )}
 
         <div className="billing-actions">
           <Link to="/onboarding" className="btn btn-primary">
             {tx('继续接入向导', 'Continue onboarding')}
           </Link>
-          <Link to="/settings/billing" className="btn">
-            {tx('查看 Billing', 'Open billing')}
+          <Link to="/settings/profile" className="btn">
+            {tx('查看个人资料', 'Open profile')}
           </Link>
         </div>
       </div>

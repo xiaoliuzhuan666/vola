@@ -87,7 +87,7 @@ export default function ClaudeImportPage({ localMode = false }: ClaudeImportPage
             <span>/</span>
             <span>{tx('Claude 官方导出', 'Claude Official Export')}</span>
           </nav>
-          <div className="materials-kicker">neuDrive Import</div>
+          <div className="materials-kicker">Vola Import</div>
           <h2 className="materials-title">{tx('Claude 官方导出', 'Claude Official Export')}</h2>
           <p className="materials-subtitle">
             {tx(

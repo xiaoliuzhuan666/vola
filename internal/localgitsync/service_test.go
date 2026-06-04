@@ -15,7 +15,7 @@ func TestScrubGitEnvRemovesGitScopedVariables(t *testing.T) {
 		"HOME=/tmp/home",
 		"GIT_DIR=/tmp/repo/.git",
 		"GIT_WORK_TREE=/tmp/repo",
-		"GIT_AUTHOR_NAME=NeuDrive",
+		"GIT_AUTHOR_NAME=Vola",
 	}
 
 	got := scrubGitEnv(env)
@@ -50,7 +50,7 @@ func TestEnsureGitRepoIgnoresInheritedGitEnv(t *testing.T) {
 	t.Setenv("GIT_DIR", filepath.Join(outerRoot, ".git"))
 	t.Setenv("GIT_WORK_TREE", outerRoot)
 	t.Setenv("GIT_INDEX_FILE", filepath.Join(outerRoot, ".git", "index"))
-	t.Setenv("GIT_AUTHOR_NAME", "NeuDrive Test")
+	t.Setenv("GIT_AUTHOR_NAME", "Vola Test")
 
 	mirrorRoot := filepath.Join(t.TempDir(), "mirror")
 	if err := os.MkdirAll(mirrorRoot, 0o755); err != nil {

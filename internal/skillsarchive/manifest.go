@@ -11,8 +11,8 @@ import (
 )
 
 const (
-	ManifestVersion = "neudrive.skill-manifest/v1"
-	ManifestFile    = "manifest.neudrive.json"
+	ManifestVersion = "vola.skill-manifest/v1"
+	ManifestFile    = "manifest.vola.json"
 )
 
 type SkillManifest struct {

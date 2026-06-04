@@ -9,12 +9,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
+	"github.com/agi-bar/vola/internal/skillsarchive"
 )
 
-const skillCopyVersion = "neudrive.skill-copy/v1"
+const skillCopyVersion = "vola.skill-copy/v1"
 
 type skillCopyToPersonalRequest struct {
 	TeamID     string `json:"team_id"`

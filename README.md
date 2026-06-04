@@ -1,24 +1,24 @@
 English | [简体中文](README.zh-CN.md)
 
-# neuDrive
+# Vola
 
 <p align="center">
-  <img src="docs/assets/neudrive-logo.png" alt="neuDrive logo" width="320" />
+  <img src="docs/assets/vola-logo.png" alt="Vola logo" width="320" />
 </p>
 
 **A personal data hub for AI agents**
 
 > One place for Claude, ChatGPT, Codex, Cursor, and other agents to use your profile, memory, project context, skills, and access rules.
 
-neuDrive gives one person one agent data hub. Claude, ChatGPT, Codex, Cursor, Gemini, Feishu, and other agents can read authorized profile, memory, projects, conversations, skills, and vault material through that hub instead of rebuilding context on every platform.
+Vola gives one person one agent data hub. Claude, ChatGPT, Codex, Cursor, Gemini, Feishu, and other agents can read authorized profile, memory, projects, conversations, skills, and vault material through that hub instead of rebuilding context on every platform.
 
-You can deploy neuDrive yourself and run your own hub. I also host a ready-to-use version at [https://www.neudrive.ai](https://www.neudrive.ai) if you want to try it right away. Use promotion code `VIVO50` for three free months of service; after that, you can keep subscribing, continue with the available hosted plan, or move to your own self-hosted deployment.
+You can deploy Vola yourself and run your own hub. I also host a ready-to-use version at [https://www.vola.ai](https://www.vola.ai) if you want to try it right away. Use promotion code `VIVO50` for three free months of service; after that, you can keep subscribing, continue with the available hosted plan, or move to your own self-hosted deployment.
 
 ```bash
 neu browse
 ```
 
-![neuDrive dashboard](docs/assets/dashboard.png)
+![Vola dashboard](docs/assets/dashboard.png)
 
 Your profile, memory, projects, skills, and private material follow the person, not the platform.
 
@@ -31,28 +31,28 @@ Your profile, memory, projects, skills, and private material follow the person, 
 - **Secrets and trust controls**: Store secrets in one vault, issue scoped tokens, and control what each agent can access by trust level.
 - **Agent collaboration**: Let agents exchange messages, append project logs, and hand off work without making you copy context between tools.
 - **Developer-friendly data surfaces**: Use a canonical virtual tree, typed HTTP APIs, MCP tools, file-tree read/write, and `snapshot/changes` sync interfaces.
-- **GitHub Backup**: Mirror the visible neuDrive file tree into a private GitHub repository with recoverable version history. [Open guide](docs/github-backup.md)
-- **Hosted or self-hosted**: Use the ready hosted service at [neudrive.ai](https://www.neudrive.ai), or deploy your own hub with local or remote storage.
+- **GitHub Backup**: Mirror the visible Vola file tree into a private GitHub repository with recoverable version history. [Open guide](docs/github-backup.md)
+- **Hosted or self-hosted**: Use the ready hosted service at [vola.ai](https://www.vola.ai), or deploy your own hub with local or remote storage.
 
 ## Current Boundaries
 
 - GitHub Backup mirrors the user-visible file tree. It does not include plaintext secrets and does not replace a Postgres backup.
-- WebDAV / S3-compatible backup uploads neuDrive export zip files for off-server recovery packages. Accounts, connections, billing, sessions, and other internal state still depend on database backup.
-- Automatic local Skill writes currently support Claude Code and Codex. Cursor and Gemini CLI are assignable, previewable, and exportable, but neuDrive does not edit their local configuration automatically.
+- WebDAV / S3-compatible backup uploads Vola export zip files for off-server recovery packages. Accounts, connections, billing, sessions, and other internal state still depend on database backup.
+- Automatic local Skill writes currently support Claude Code and Codex. Cursor and Gemini CLI are assignable, previewable, and exportable, but Vola does not edit their local configuration automatically.
 - Claude / Codex Skill conversion preserves scripts, dependency files, assets, and included external references. MCP, plugin, and hook setup is reported for manual review.
 - Hosted OAuth, ChatGPT Apps, Claude Connectors, and similar platform features depend on each platform's account plan, rollout, and current rules.
 - Team Library is for small-team shared material in this release candidate. It is not an enterprise org-management, audit, SSO, or approval-workflow product yet.
 
 Hosted service examples in this repo use:
 
-- Hub URL: `https://www.neudrive.ai`
-- MCP URL: `https://www.neudrive.ai/mcp`
+- Hub URL: `https://www.vola.ai`
+- MCP URL: `https://www.vola.ai/mcp`
 
 ## Start Here
 
 Choose the first path that matches how you want to connect:
 
-1. **Web / Desktop Apps**: fastest path for Claude, ChatGPT, Cursor, and Windsurf through hosted neuDrive with browser auth. [Open guide](docs/setup.md#web-and-desktop-apps)
+1. **Web / Desktop Apps**: fastest path for Claude, ChatGPT, Cursor, and Windsurf through hosted Vola with browser auth. [Open guide](docs/setup.md#web-and-desktop-apps)
 2. **CLI Apps**: Claude Code, Codex CLI, Gemini CLI, and Cursor Agent with remote HTTP MCP + OAuth. [Open guide](docs/setup.md#cli-apps)
 3. **Local Mode**: repo-first local development, LAN setups, or any environment without a public HTTPS URL yet. [Open guide](docs/setup.md#local-mode)
 4. **Advanced Mode / GPT Actions / Adapters**: generic HTTP MCP clients, custom GPTs, and webhook-style integrations such as Feishu. [Open guide](docs/setup.md#advanced-mode)
@@ -65,23 +65,23 @@ Use this when the connection starts from a graphical interface such as Claude we
 
 1. Sign in to the Claude web app and open `Settings -> Connectors -> Go to Customize`.
 2. Click `Add custom connector`.
-3. Set `Remote MCP Server URL` to `https://www.neudrive.ai/mcp`.
+3. Set `Remote MCP Server URL` to `https://www.vola.ai/mcp`.
 4. Save and click `Connect`.
-5. Your browser will open the neuDrive sign-in and authorization flow; after approval, return to Claude.
+5. Your browser will open the Vola sign-in and authorization flow; after approval, return to Claude.
 
 ### ChatGPT Apps
 
 1. Sign in to ChatGPT and open `Settings -> Apps`.
 2. In `Advanced settings`, click `Create app`.
-3. Set `MCP Server URL` to `https://www.neudrive.ai/mcp`.
-4. Follow the prompts to finish neuDrive sign-in and authorization.
+3. Set `MCP Server URL` to `https://www.vola.ai/mcp`.
+4. Follow the prompts to finish Vola sign-in and authorization.
 
 If you do not see the `Apps` entry yet, your plan or rollout cohort probably does not have access to it yet.
 
 After the connection is authorized, start a **new chat** and give it a direct import instruction such as:
 
-- `Please import my skills, projects, and profile into neuDrive.`
-- `Please read my neuDrive profile, skills, and recent project context, then summarize what is already there.`
+- `Please import my skills, projects, and profile into Vola.`
+- `Please read my Vola profile, skills, and recent project context, then summarize what is already there.`
 
 For Cursor, Windsurf, and the full setup variants, see [Web / Desktop Apps](docs/setup.md#web-and-desktop-apps).
 
@@ -90,12 +90,12 @@ For Cursor, Windsurf, and the full setup variants, see [Web / Desktop Apps](docs
 Install the CLI locally:
 
 ```bash
-git clone https://github.com/agi-bar/neudrive.git
-cd neudrive
-./tools/install-neudrive.sh
+git clone https://github.com/agi-bar/vola.git
+cd vola
+./tools/install-vola.sh
 ```
 
-After install, use `neu`; the `neudrive` compatibility alias still works.
+After install, use `neu`; the `vola` compatibility alias still works.
 
 ```bash
 neu status         # check daemon, storage, and current target readiness
@@ -104,7 +104,7 @@ neu connect claude # install/configure the Claude integration
 neu browse         # open the local Hub in your browser
 ```
 
-Then open a **new chat** in the connected client and say something like `Please import this workspace's useful skills, project context, and profile/preferences into neuDrive.`
+Then open a **new chat** in the connected client and say something like `Please import this workspace's useful skills, project context, and profile/preferences into Vola.`
 
 Detailed CLI usage: [CLI Guide](docs/cli.md)
 
@@ -113,9 +113,9 @@ Detailed CLI usage: [CLI Guide](docs/cli.md)
 Common local development commands:
 
 ```bash
-cp neudrive.env.example neudrive.env
-set -a; source neudrive.env; set +a
-go run ./cmd/neudrive server --listen :8080
+cp vola.env.example vola.env
+set -a; source vola.env; set +a
+go run ./cmd/vola server --listen :8080
 cd web && npm run dev
 ```
 
@@ -129,7 +129,7 @@ cd web && npm run build
 make build
 ```
 
-`make build` rebuilds the embedded frontend and produces `bin/neudrive` and `bin/neu`. Deployment readiness checklist: [Release Readiness](docs/release-readiness.zh-CN.md)
+`make build` rebuilds the embedded frontend and produces `bin/vola` and `bin/neu`. Deployment readiness checklist: [Release Readiness](docs/release-readiness.zh-CN.md)
 
 ## Login To Hosted Cloud
 

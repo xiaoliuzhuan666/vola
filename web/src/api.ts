@@ -1,4 +1,22 @@
-const API_BASE = "/api";
+export let API_BASE = "/api";
+
+export const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__;
+
+export let apiBasePromise: Promise<string> | null = null;
+
+if (isTauri) {
+  apiBasePromise = import('@tauri-apps/api/core').then(({ invoke }) => {
+    return invoke<string>("get_api_base").then(url => {
+      API_BASE = url;
+      console.log("Tauri backend API base initialized:", API_BASE);
+      return url;
+    }).catch(err => {
+      console.error("Failed to get API base from Tauri:", err);
+      return "/api";
+    });
+  });
+}
+
 
 function parseDownloadFilename(
   contentDisposition: string | null,
@@ -224,6 +242,264 @@ export interface SkillSummary {
   min_trust_level?: number;
 }
 
+export interface SkillLearningStats {
+  skills: number;
+  ready: number;
+  needs_summary: number;
+  needs_validation: number;
+  rich_assets: number;
+  assigned: number;
+  sync_risk?: number;
+  quality_blocked?: number;
+  quality_manual_required?: number;
+  quality_warnings?: number;
+}
+
+export interface SkillQualityStats {
+  passed: number;
+  warnings: number;
+  manual_required: number;
+  blocked: number;
+}
+
+export interface SkillQualityFinding {
+  code: string;
+  status: string;
+  severity: string;
+  category: string;
+  title: string;
+  message: string;
+  path?: string;
+  agent_id?: string;
+}
+
+export interface SkillLearningItem {
+  name: string;
+  path: string;
+  primary_path?: string;
+  source: string;
+  status: "ready" | "needs_summary" | "needs_validation" | string;
+  score: number;
+  has_summary: boolean;
+  has_when_to_use: boolean;
+  has_manifest: boolean;
+  has_scripts: boolean;
+  has_dependencies: boolean;
+  has_external_refs: boolean;
+  assigned_agents?: string[];
+  recommendations?: string[];
+  verification_needed: boolean;
+  verification_status?: string;
+  quality_status?: string;
+  quality_stats?: SkillQualityStats;
+  quality_findings?: SkillQualityFinding[];
+  updated_at?: string;
+  match_score?: number;
+  match_reasons?: string[];
+  notes?: SkillLearningNote[];
+}
+
+export interface SkillLearningAction {
+  code: string;
+  label: string;
+  count: number;
+  message: string;
+}
+
+export interface LearningRunStep {
+  name: string;
+  status: string;
+  error?: string;
+}
+
+export interface LearningRunModel {
+  provider_id: string;
+  model?: string;
+  prompt_version: string;
+}
+
+export interface LearningRunOutput {
+  run_path: string;
+  report_path: string;
+  legacy_path?: string;
+  proposal_dir?: string;
+  skill_map_path?: string;
+}
+
+export interface LearningRun {
+  version: string;
+  id: string;
+  status: string;
+  started_at: string;
+  finished_at?: string;
+  steps: LearningRunStep[];
+  input_paths: string[];
+  model?: LearningRunModel;
+  outputs: LearningRunOutput;
+  error?: string;
+}
+
+export interface SkillLearningSummary {
+  version: string;
+  scope?: "personal" | "team";
+  team?: Team;
+  stats: SkillLearningStats;
+  items: SkillLearningItem[];
+  actions: SkillLearningAction[];
+  latest_run?: LearningRun;
+  candidate_proposal?: GrowthProposal;
+}
+
+export interface SkillLearningRunResponse {
+  version: string;
+  scope?: "personal" | "team";
+  team?: Team;
+  run: LearningRun;
+  summary: {
+    stats: SkillLearningStats;
+    items: SkillLearningItem[];
+    actions: SkillLearningAction[];
+  };
+}
+
+export interface GrowthProposalChange {
+  kind: string;
+  heading?: string;
+  content?: string;
+  field?: string;
+  value?: string;
+  path?: string;
+}
+
+export interface GrowthProposalCreator {
+  kind: string;
+  model_provider_id?: string;
+  model?: string;
+  prompt_version: string;
+}
+
+export interface GrowthProposal {
+  version: string;
+  id: string;
+  type: string;
+  status: string;
+  target_path: string;
+  risk: string;
+  reason: string;
+  suggested_changes: GrowthProposalChange[];
+  source_paths: string[];
+  source_run_id?: string;
+  created_by: GrowthProposalCreator;
+  created_at: string;
+  updated_at?: string;
+  applied_at?: string;
+  dismissed_at?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface GrowthProposalsResponse {
+  version: string;
+  scope?: "personal" | "team";
+  team?: Team;
+  proposals: GrowthProposal[];
+}
+
+export interface GrowthProposalResponse {
+  version: string;
+  scope?: "personal" | "team";
+  team?: Team;
+  proposal: GrowthProposal;
+}
+
+export interface SkillLearningNote {
+  path: string;
+  title: string;
+  source: string;
+  content: string;
+  updated_at: string;
+}
+
+export interface SkillLearningNotesResponse {
+  version: string;
+  scope?: "personal" | "team";
+  team?: Team;
+  notes: SkillLearningNote[];
+}
+
+export type ModelProviderType =
+  | "openai-compatible"
+  | "openai"
+  | "ollama"
+  | "anthropic"
+  | "gemini";
+
+export interface ModelProviderModels {
+  summary?: string;
+  proposal?: string;
+  json?: string;
+}
+
+export interface ModelProvider {
+  id: string;
+  type: ModelProviderType | string;
+  name: string;
+  base_url?: string;
+  api_key_ref?: string;
+  models: ModelProviderModels;
+  enabled: boolean;
+  last_verified_at?: string;
+  last_error?: string;
+  metadata?: Record<string, any>;
+}
+
+export interface ModelProviderSaveRequest {
+  id: string;
+  type: ModelProviderType | string;
+  name: string;
+  base_url?: string;
+  api_key?: string;
+  api_key_ref?: string;
+  models: ModelProviderModels;
+  enabled: boolean;
+}
+
+export interface SaveModelProvidersRequest {
+  default_summary_provider_id?: string;
+  default_proposal_provider_id?: string;
+  providers: ModelProviderSaveRequest[];
+}
+
+export interface ModelProviderSupportedType {
+  type: ModelProviderType | string;
+  name: string;
+  requires_api_key: boolean;
+  default_base_url?: string;
+  live_test_supported: boolean;
+}
+
+export interface ModelProvidersResponse {
+  version: string;
+  storage_path: string;
+  updated_at?: string;
+  default_summary_provider_id?: string;
+  default_proposal_provider_id?: string;
+  providers: ModelProvider[];
+  supported_types: ModelProviderSupportedType[];
+}
+
+export interface ModelProviderTestRequest {
+  provider_id?: string;
+  provider?: ModelProviderSaveRequest;
+}
+
+export interface ModelProviderTestResult {
+  ok: boolean;
+  provider_id?: string;
+  type?: string;
+  message: string;
+  tested_at: string;
+}
+
 export type TeamRole = "owner" | "admin" | "member" | "viewer";
 
 export interface Team {
@@ -290,6 +566,9 @@ export interface LocalSkillSyncSummary {
   export: number;
   written: number;
   deleted: number;
+  sync_risk: number;
+  blocked?: number;
+  manual_required?: number;
 }
 
 export interface LocalSkillSyncChange {
@@ -299,6 +578,9 @@ export interface LocalSkillSyncChange {
   target_path?: string;
   reason?: string;
   size_bytes?: number;
+  verification_status?: string;
+  verification_required?: boolean;
+  verification_message?: string;
 }
 
 export interface LocalSkillDetectedRoot {
@@ -340,6 +622,7 @@ export interface LocalSkillSyncResponse {
   cleanup: boolean;
   updated_at: string;
   agents: LocalSkillSyncAgentPlan[];
+  blocked?: boolean;
 }
 
 export interface SkillConversionRequest {
@@ -569,7 +852,7 @@ type APIErrorPayload = {
   retry_after_sec?: number
 }
 
-export const BILLING_REDIRECT_EVENT = 'neudrive:billing-redirect'
+export const BILLING_REDIRECT_EVENT = 'vola:billing-redirect'
 
 export class BillingAPIError extends Error {
   code?: string
@@ -677,6 +960,9 @@ async function requestWithMetadata<T>(
   path: string,
   options?: RequestInit,
 ): Promise<RequestEnvelope<T>> {
+  if (isTauri && apiBasePromise) {
+    await apiBasePromise;
+  }
   const token = localStorage.getItem("token");
   const hasExplicitContentType =
     !!options?.headers &&
@@ -899,6 +1185,9 @@ export const api = {
   getStats: () =>
     request<DashboardStats>("/dashboard/stats").then(normalizeDashboardStats),
 
+  getDashboardActivities: () =>
+    request<any[]>("/dashboard/activities"),
+
   // Billing
   getBillingStatus: () => request<BillingStatus>('/billing/status'),
 
@@ -911,6 +1200,27 @@ export const api = {
   createBillingPortal: () =>
     request<{ ok: true; portal_url: string }>('/billing/portal', {
       method: 'POST',
+    }),
+
+  // Local MCP Clients
+  getLocalMCPClients: (): Promise<Array<{
+    id: string;
+    name: string;
+    installed: boolean;
+    registered: boolean;
+    config_path?: string;
+  }>> => request("/local/mcp/clients"),
+
+  registerLocalMCPClient: (clientId: string): Promise<{ success: boolean }> =>
+    request("/local/mcp/clients/register", {
+      method: "POST",
+      body: JSON.stringify({ client_id: clientId }),
+    }),
+
+  unregisterLocalMCPClient: (clientId: string): Promise<{ success: boolean }> =>
+    request("/local/mcp/clients/unregister", {
+      method: "POST",
+      body: JSON.stringify({ client_id: clientId }),
     }),
 
   // Connections
@@ -977,6 +1287,61 @@ export const api = {
     request<{ skills: SkillSummary[] }>(
       teamID ? `/skills?team_id=${encodeURIComponent(teamID)}` : "/skills",
     ).then((r) => r.skills || []),
+  getSkillLearningSummary: (teamID?: string) =>
+    request<SkillLearningSummary>(
+      teamID ? `/skills/learning-summary?team_id=${encodeURIComponent(teamID)}` : "/skills/learning-summary",
+    ),
+  getSkillLearningNotes: (teamID?: string, days = 14) =>
+    request<SkillLearningNotesResponse>(
+      teamID
+        ? `/skills/learning-notes?team_id=${encodeURIComponent(teamID)}&days=${encodeURIComponent(String(days))}`
+        : `/skills/learning-notes?days=${encodeURIComponent(String(days))}`,
+    ),
+  recommendSkills: (query: string, teamID?: string) => {
+    const params = new URLSearchParams()
+    params.set("q", query)
+    if (teamID) params.set("team_id", teamID)
+    return request<SkillLearningSummary>(`/skills/learning-recommend?${params.toString()}`)
+  },
+  createSkillLearningRun: (teamID?: string) =>
+    request<SkillLearningRunResponse>(
+      teamID ? `/skills/learning-runs?team_id=${encodeURIComponent(teamID)}` : "/skills/learning-runs",
+      { method: "POST" },
+    ),
+  getGrowthProposals: (teamID?: string, status?: string) => {
+    const params = new URLSearchParams()
+    if (teamID) params.set("team_id", teamID)
+    if (status) params.set("status", status)
+    const suffix = params.toString()
+    return request<GrowthProposalsResponse>(`/growth-proposals${suffix ? `?${suffix}` : ""}`)
+  },
+  acceptGrowthProposal: (id: string, teamID?: string) =>
+    request<GrowthProposalResponse>(
+      `/growth-proposals/${encodeURIComponent(id)}/accept${teamID ? `?team_id=${encodeURIComponent(teamID)}` : ""}`,
+      { method: "POST" },
+    ),
+  dismissGrowthProposal: (id: string, teamID?: string) =>
+    request<GrowthProposalResponse>(
+      `/growth-proposals/${encodeURIComponent(id)}/dismiss${teamID ? `?team_id=${encodeURIComponent(teamID)}` : ""}`,
+      { method: "POST" },
+    ),
+  applyGrowthProposal: (id: string, teamID?: string) =>
+    request<GrowthProposalResponse>(
+      `/growth-proposals/${encodeURIComponent(id)}/apply${teamID ? `?team_id=${encodeURIComponent(teamID)}` : ""}`,
+      { method: "POST" },
+    ),
+  getModelProviders: () =>
+    request<ModelProvidersResponse>("/model-providers"),
+  saveModelProviders: (data: SaveModelProvidersRequest) =>
+    requestEnvelope<ModelProvidersResponse>("/model-providers", {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  testModelProvider: (data: ModelProviderTestRequest) =>
+    request<ModelProviderTestResult>("/model-providers/test", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
   getTeams: () =>
     request<{ teams: Team[] }>("/teams").then((r) => r.teams || []),
   createTeam: (params: {
@@ -1026,10 +1391,10 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ team_id: teamID || undefined }),
     }),
-  applyLocalSkillSync: (teamID?: string) =>
+  applyLocalSkillSync: (teamID?: string, ackQualityReview = false) =>
     request<LocalSkillSyncResponse>("/local/skills/sync/apply", {
       method: "POST",
-      body: JSON.stringify({ team_id: teamID || undefined }),
+      body: JSON.stringify({ team_id: teamID || undefined, ack_quality_review: ackQualityReview }),
     }),
   cleanupLocalSkillSync: (teamID?: string) =>
     request<LocalSkillSyncResponse>("/local/skills/sync/cleanup", {
@@ -1054,7 +1419,7 @@ export const api = {
     const blob = await res.blob();
     const filename = parseDownloadFilename(
       res.headers.get("Content-Disposition"),
-      `neudrive-skills-${agentId}.zip`,
+      `vola-skills-${agentId}.zip`,
     );
     triggerBrowserDownload(blob, filename);
   },
@@ -1309,7 +1674,7 @@ export const api = {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `neudrive-export-${new Date().toISOString().slice(0, 10)}.zip`;
+    a.download = `vola-export-${new Date().toISOString().slice(0, 10)}.zip`;
     document.body.appendChild(a);
     a.click();
     document.body.removeChild(a);

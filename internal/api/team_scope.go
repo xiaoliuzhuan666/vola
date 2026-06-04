@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 

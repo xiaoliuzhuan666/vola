@@ -52,21 +52,21 @@ export default function SetupCloudPage() {
       steps: [
         {
           title: tx('添加远程 MCP Server', 'Add remote MCP server'),
-          copy: tx('在终端运行这个命令，neuDrive 会作为全局 MCP Server 出现在 Claude Code 中。', 'Run this command in your terminal. neuDrive will appear as a global MCP server in Claude Code.'),
+          copy: tx('在终端运行这个命令，Vola 会作为全局 MCP Server 出现在 Claude Code 中。', 'Run this command in your terminal. Vola will appear as a global MCP server in Claude Code.'),
           content: claudeCloudCommand,
           copyKey: 'cli-claude-add',
           copyLabel: tx('复制命令', 'Copy command'),
         },
         {
           title: tx('在 Claude Code 中发起授权', 'Start authorization in Claude Code'),
-          copy: tx('打开 Claude Code，运行 /mcp，选择 neudrive，然后开始认证。', 'Open Claude Code, run /mcp, choose neudrive, then start authentication.'),
+          copy: tx('打开 Claude Code，运行 /mcp，选择 vola，然后开始认证。', 'Open Claude Code, run /mcp, choose vola, then start authentication.'),
           content: '/mcp',
           copyKey: 'cli-claude-auth',
           copyLabel: tx('复制 /mcp', 'Copy /mcp'),
         },
         {
           title: tx('完成浏览器授权', 'Finish browser authorization'),
-          copy: tx('浏览器会打开 neuDrive 授权页；完成登录和批准后，Claude Code 会自动保存并刷新凭证。', 'The browser opens neuDrive authorization. After sign-in and approval, Claude Code saves and refreshes credentials automatically.'),
+          copy: tx('浏览器会打开 Vola 授权页；完成登录和批准后，Claude Code 会自动保存并刷新凭证。', 'The browser opens Vola authorization. After sign-in and approval, Claude Code saves and refreshes credentials automatically.'),
         },
       ],
       notes: [
@@ -80,21 +80,21 @@ export default function SetupCloudPage() {
       steps: [
         {
           title: tx('添加远程 MCP Server', 'Add remote MCP server'),
-          copy: tx('运行 add 命令后，neuDrive 会写入 Codex 的用户级 MCP 配置，可在多个工作区复用。', 'After running the add command, neuDrive is written into Codex user-level MCP config and can be reused across workspaces.'),
+          copy: tx('运行 add 命令后，Vola 会写入 Codex 的用户级 MCP 配置，可在多个工作区复用。', 'After running the add command, Vola is written into Codex user-level MCP config and can be reused across workspaces.'),
           content: codexCloudCommand,
           copyKey: 'cli-codex-add',
           copyLabel: tx('复制命令', 'Copy command'),
         },
         {
           title: tx('发起授权', 'Start authorization'),
-          copy: tx('运行 login 命令后，浏览器会打开 neuDrive 授权页面。', 'Run the login command and the browser will open neuDrive authorization.'),
+          copy: tx('运行 login 命令后，浏览器会打开 Vola 授权页面。', 'Run the login command and the browser will open Vola authorization.'),
           content: codexLoginCommand,
           copyKey: 'cli-codex-login',
           copyLabel: tx('复制命令', 'Copy command'),
         },
         {
           title: tx('确认连接状态', 'Confirm connection status'),
-          copy: tx('授权完成后运行 list 命令，确认 neudrive 已连接。', 'After authorization, run the list command to confirm neudrive is connected.'),
+          copy: tx('授权完成后运行 list 命令，确认 vola 已连接。', 'After authorization, run the list command to confirm vola is connected.'),
           content: codexStatusCommand,
           copyKey: 'cli-codex-list',
           copyLabel: tx('复制命令', 'Copy command'),
@@ -117,14 +117,14 @@ export default function SetupCloudPage() {
         },
         {
           title: tx('在 Gemini 中发起授权', 'Start authorization in Gemini'),
-          copy: tx('打开 Gemini，运行授权命令；如果使用了别的 server 名称，把 neudrive 换成你的名称。', 'Open Gemini and run the auth command. If you used a different server name, replace neudrive with your own name.'),
+          copy: tx('打开 Gemini，运行授权命令；如果使用了别的 server 名称，把 vola 换成你的名称。', 'Open Gemini and run the auth command. If you used a different server name, replace vola with your own name.'),
           content: geminiAuthCommand,
           copyKey: 'cli-gemini-auth',
           copyLabel: tx('复制命令', 'Copy command'),
         },
         {
-          title: tx('开始使用 neuDrive 工具', 'Start using neuDrive tools'),
-          copy: tx('授权完成后，可以继续用 /mcp 查看状态，或直接开始调用 neuDrive 工具。', 'After authorization, use /mcp to inspect status, or immediately start calling neuDrive tools.'),
+          title: tx('开始使用 Vola 工具', 'Start using Vola tools'),
+          copy: tx('授权完成后，可以继续用 /mcp 查看状态，或直接开始调用 Vola 工具。', 'After authorization, use /mcp to inspect status, or immediately start calling Vola tools.'),
           content: '/mcp',
           copyKey: 'cli-gemini-status',
           copyLabel: tx('复制 /mcp', 'Copy /mcp'),
@@ -141,13 +141,13 @@ export default function SetupCloudPage() {
         {
           title: tx('配置 MCP JSON', 'Configure MCP JSON'),
           copy: tx('把这个配置加入项目目录的 .cursor/mcp.json，或用户目录的 ~/.cursor/mcp.json。', 'Add this config to .cursor/mcp.json in the project directory, or ~/.cursor/mcp.json in the user directory.'),
-          content: JSON.stringify({ mcpServers: { neudrive: { url: `${baseUrl}/mcp` } } }, null, 2),
+          content: JSON.stringify({ mcpServers: { vola: { url: `${baseUrl}/mcp` } } }, null, 2),
           copyKey: 'cli-cursor-json',
           copyLabel: tx('复制配置', 'Copy config'),
         },
         {
           title: tx('发起授权', 'Start authorization'),
-          copy: tx('运行 login 命令后，Cursor Agent 会读取配置，并在浏览器中打开 neuDrive 授权。', 'Run the login command. Cursor Agent reads the config and opens neuDrive authorization in the browser.'),
+          copy: tx('运行 login 命令后，Cursor Agent 会读取配置，并在浏览器中打开 Vola 授权。', 'Run the login command. Cursor Agent reads the config and opens Vola authorization in the browser.'),
           content: cursorAgentLoginCommand,
           copyKey: 'cli-cursor-login',
           copyLabel: tx('复制命令', 'Copy command'),
@@ -161,7 +161,7 @@ export default function SetupCloudPage() {
         },
       ],
       notes: [
-        tx('需要查看工具时，可以继续运行 cursor-agent mcp list-tools neudrive。', 'To view tools, you can also run cursor-agent mcp list-tools neudrive.'),
+        tx('需要查看工具时，可以继续运行 cursor-agent mcp list-tools vola。', 'To view tools, you can also run cursor-agent mcp list-tools vola.'),
       ],
     },
   ], [

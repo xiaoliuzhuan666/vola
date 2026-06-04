@@ -10,9 +10,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/vault"
+	"github.com/agi-bar/vola/internal/models"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/vault"
 	"github.com/google/uuid"
 )
 
@@ -37,7 +37,7 @@ func TestStartGitHubAppBrowserFlowUsesInstallationURL(t *testing.T) {
 	if err != nil {
 		t.Fatalf("parse authorization URL: %v", err)
 	}
-	if got, want := parsed.Path, "/apps/neudrive/installations/new"; got != want {
+	if got, want := parsed.Path, "/apps/vola/installations/new"; got != want {
 		t.Fatalf("authorization URL path = %q, want %q", got, want)
 	}
 	if parsed.Query().Get("client_id") != "" {
@@ -169,7 +169,7 @@ func TestHostedGitMirrorAuthModesReuseSameRootPath(t *testing.T) {
 		WithHostedRoot(hostedRoot),
 		WithGitHubAPIBaseURL(server.URL),
 		WithGitHubBaseURL(server.URL),
-		WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+		WithGitHubAppConfig("client-id", "client-secret", "vola"),
 		WithStateSigningSecret(strings.Repeat("1", 32)),
 		WithHTTPClient(server.Client()),
 	)
@@ -265,7 +265,7 @@ func newGitHubAppSettingsTestService(t *testing.T, state fakeGitHubAppServerStat
 		v,
 		WithGitHubAPIBaseURL(server.URL),
 		WithGitHubBaseURL(server.URL),
-		WithGitHubAppConfig("client-id", "client-secret", "neudrive"),
+		WithGitHubAppConfig("client-id", "client-secret", "vola"),
 		WithStateSigningSecret(strings.Repeat("1", 32)),
 		WithHTTPClient(server.Client()),
 	)

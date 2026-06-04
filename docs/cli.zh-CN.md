@@ -1,6 +1,6 @@
 [English](cli.md) | 简体中文
 
-# neuDrive CLI 使用手册
+# Vola CLI 使用手册
 
 这份文档是 README 里链接的详细 CLI 手册。逐平台接入方式请看 [接入说明](setup.zh-CN.md)。
 
@@ -9,7 +9,7 @@
 ## 安装
 
 ```bash
-./tools/install-neudrive.sh
+./tools/install-vola.sh
 ```
 
 或者：
@@ -42,7 +42,7 @@ neu help write
 
 ## 核心 Hub 命令
 
-这些命令面向 neuDrive 的公开根目录，例如 `profile`、`memory`、`project`、`skill`、`secret`、`platform`。
+这些命令面向 Vola 的公开根目录，例如 `profile`、`memory`、`project`、`skill`、`secret`、`platform`。
 
 | 命令 | 作用 | 示例 |
 |------|------|------|
@@ -71,7 +71,7 @@ neu help write
 |------|------|------|
 | `neu platform ls` | 列出已发现的平台 adapter 和连接状态 | `neu platform ls` |
 | `neu platform show <platform>` | 查看某个平台 adapter 的路径、入口和使用提示 | `neu platform show claude` |
-| `neu connect <platform>` | 为某个平台安装或刷新 neuDrive 管理的本地入口 | `neu connect claude` |
+| `neu connect <platform>` | 为某个平台安装或刷新 Vola 管理的本地入口 | `neu connect claude` |
 | `neu disconnect <platform>` | 删除某个平台的本地入口和相关元数据 | `neu disconnect claude` |
 | `neu export <platform> [--output DIR]` | 从当前本地 Hub 生成面向某个平台的导出材料 | `neu export claude --output ./claude-export` |
 
@@ -89,7 +89,7 @@ neu help write
 
 | 命令 | 作用 | 示例 |
 |------|------|------|
-| `neu git init [--output DIR]` | 把本地 Hub 的非 secret 数据导出为 Git mirror 并注册 | `neu git init --output ./neudrive-export/git-mirror` |
+| `neu git init [--output DIR]` | 把本地 Hub 的非 secret 数据导出为 Git mirror 并注册 | `neu git init --output ./vola-export/git-mirror` |
 | `neu git pull` | 从当前本地 Hub 刷新 active Git mirror | `neu git pull` |
 | `neu git auth github-app --device` | 为 Git mirror 工作流连接 GitHub App 用户 | `neu git auth github-app --device` |
 
@@ -102,7 +102,7 @@ neu help write
 
 ## 官方云服务与 Hosted Profile
 
-当你希望登录 hosted neuDrive，并在多个已保存 profile 之间切换时，用这一组命令。
+当你希望登录 hosted Vola，并在多个已保存 profile 之间切换时，用这一组命令。
 
 | 命令 | 作用 | 示例 |
 |------|------|------|
@@ -130,8 +130,8 @@ neu help write
 
 | 命令 | 作用 | 示例 |
 |------|------|------|
-| `neu server [flags]` | 启动独立的 neuDrive HTTP 服务 | `neu server --listen 127.0.0.1:42690 --local-mode` |
-| `neu mcp stdio [flags]` | 通过 stdio 启动 neuDrive MCP 服务 | `neu mcp stdio --token-env NEUDRIVE_TOKEN` |
+| `neu server [flags]` | 启动独立的 Vola HTTP 服务 | `neu server --listen 127.0.0.1:42690 --local-mode` |
+| `neu mcp stdio [flags]` | 通过 stdio 启动 Vola MCP 服务 | `neu mcp stdio --token-env VOLA_TOKEN` |
 
 ## 帮助
 

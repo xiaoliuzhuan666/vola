@@ -4,20 +4,26 @@ set -euo pipefail
 
 REPO_ROOT="${REPO_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 APP_HOME="${APP_HOME:-$(cd "$REPO_ROOT/.." && pwd)}"
+VOLA_ENV_FILE="${VOLA_ENV_FILE:-}"
 NEUDRIVE_ENV_FILE="${NEUDRIVE_ENV_FILE:-}"
-NAMESPACE="${NAMESPACE:-neudrive}"
-APP_HOST="${APP_HOST:-neudrive.ai}"
+NAMESPACE="${NAMESPACE:-vola}"
+APP_HOST="${APP_HOST:-vola.ai}"
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-}"
 
 detect_env_file() {
   local candidate
   local candidates=()
 
+  if [[ -n "$VOLA_ENV_FILE" ]]; then
+    candidates+=("$VOLA_ENV_FILE")
+  fi
   if [[ -n "$NEUDRIVE_ENV_FILE" ]]; then
     candidates+=("$NEUDRIVE_ENV_FILE")
   fi
 
   candidates+=(
+    "$APP_HOME/config/vola.env"
+    "$REPO_ROOT/vola.env"
     "$APP_HOME/config/neudrive.env"
     "$REPO_ROOT/neudrive.env"
     "$REPO_ROOT/.env"
@@ -56,7 +62,7 @@ fi
 echo
 kubectl -n "$NAMESPACE" get deploy,po,svc,ingress -o wide
 echo
-kubectl -n "$NAMESPACE" describe deployment neudrive-server | sed -n '1,140p'
+kubectl -n "$NAMESPACE" describe deployment vola-server | sed -n '1,140p'
 echo
 curl -fsS "$HEALTHCHECK_URL"
 echo

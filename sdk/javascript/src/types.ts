@@ -3,7 +3,7 @@
 // ---------------------------------------------------------------------------
 
 export interface NeuDriveConfig {
-  /** Base URL of the neuDrive instance (e.g. "https://neudrive.ai") */
+  /** Base URL of the Vola instance (e.g. "https://vola.ai") */
   baseURL: string
   /** Scoped token (ndt_xxxxx) for agent/MCP authentication */
   token?: string
@@ -12,6 +12,8 @@ export interface NeuDriveConfig {
   /** OAuth client secret for third-party app flow */
   clientSecret?: string
 }
+
+export type VolaConfig = NeuDriveConfig
 
 // ---------------------------------------------------------------------------
 // Core domain types

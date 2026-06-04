@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/runtimecfg"
 	"github.com/google/uuid"
 )
 
@@ -333,7 +333,7 @@ func (s *Server) respondGitHubAppPermissionUpdateRequired(w http.ResponseWriter,
 		w,
 		http.StatusForbidden,
 		ErrCodeGitHubAppPermissionUpdateRequired,
-		"GitHub App permissions changed and need to be approved again. The old GitHub Backup connection was disconnected. Open GitHub to approve Repository Administration read/write access, then reconnect GitHub in neuDrive and create the backup repository again.",
+		"GitHub App permissions changed and need to be approved again. The old GitHub Backup connection was disconnected. Open GitHub to approve Repository Administration read/write access, then reconnect GitHub in Vola and create the backup repository again.",
 	)
 }
 

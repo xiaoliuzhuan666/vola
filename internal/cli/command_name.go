@@ -8,14 +8,16 @@ import (
 )
 
 const (
-	canonicalRootCommand = "neudrive"
-	shortRootCommand     = "neu"
+	canonicalRootCommand = "vola"
+	shortRootCommand     = "vol"
+	legacyRootCommand    = "xlzdrive"
+	neuRootCommand       = "neu"
 )
 
 func rootCommand() string {
 	base := strings.TrimSpace(filepath.Base(os.Args[0]))
 	switch base {
-	case canonicalRootCommand, shortRootCommand:
+	case canonicalRootCommand, shortRootCommand, legacyRootCommand, neuRootCommand:
 		return base
 	default:
 		return canonicalRootCommand
@@ -28,38 +30,39 @@ func usageLine(args string) string {
 
 func renderCLIText(text string) string {
 	cmd := rootCommand()
-	if cmd == canonicalRootCommand {
-		return text
+	pairs := make([]string, 0, 128)
+	for _, source := range []string{canonicalRootCommand, legacyRootCommand} {
+		pairs = append(pairs,
+			"usage: "+source+" ", "usage: "+cmd+" ",
+			"Usage: "+source+" ", "Usage: "+cmd+" ",
+			"\n  "+source+" ", "\n  "+cmd+" ",
+			"\n       "+source+" ", "\n       "+cmd+" ",
+			"\n"+source+" ", "\n"+cmd+" ",
+			"`"+source+" ", "`"+cmd+" ",
+			" "+source+" help", " "+cmd+" help",
+			" "+source+" ls", " "+cmd+" ls",
+			" "+source+" read", " "+cmd+" read",
+			" "+source+" write", " "+cmd+" write",
+			" "+source+" search", " "+cmd+" search",
+			" "+source+" create", " "+cmd+" create",
+			" "+source+" log", " "+cmd+" log",
+			" "+source+" import", " "+cmd+" import",
+			" "+source+" token", " "+cmd+" token",
+			" "+source+" stats", " "+cmd+" stats",
+			" "+source+" platform", " "+cmd+" platform",
+			" "+source+" connect", " "+cmd+" connect",
+			" "+source+" disconnect", " "+cmd+" disconnect",
+			" "+source+" export", " "+cmd+" export",
+			" "+source+" browse", " "+cmd+" browse",
+			" "+source+" status", " "+cmd+" status",
+			" "+source+" doctor", " "+cmd+" doctor",
+			" "+source+" daemon", " "+cmd+" daemon",
+			" "+source+" sync", " "+cmd+" sync",
+			" "+source+" server", " "+cmd+" server",
+			" "+source+" mcp", " "+cmd+" mcp",
+			"with "+source+" ", "with "+cmd+" ",
+		)
 	}
-	replacer := strings.NewReplacer(
-		"usage: "+canonicalRootCommand+" ", "usage: "+cmd+" ",
-		"Usage: "+canonicalRootCommand+" ", "Usage: "+cmd+" ",
-		"\n  "+canonicalRootCommand+" ", "\n  "+cmd+" ",
-		"\n       "+canonicalRootCommand+" ", "\n       "+cmd+" ",
-		"\n"+canonicalRootCommand+" ", "\n"+cmd+" ",
-		"`"+canonicalRootCommand+" ", "`"+cmd+" ",
-		" "+canonicalRootCommand+" help", " "+cmd+" help",
-		" "+canonicalRootCommand+" ls", " "+cmd+" ls",
-		" "+canonicalRootCommand+" read", " "+cmd+" read",
-		" "+canonicalRootCommand+" write", " "+cmd+" write",
-		" "+canonicalRootCommand+" search", " "+cmd+" search",
-		" "+canonicalRootCommand+" create", " "+cmd+" create",
-		" "+canonicalRootCommand+" log", " "+cmd+" log",
-		" "+canonicalRootCommand+" import", " "+cmd+" import",
-		" "+canonicalRootCommand+" token", " "+cmd+" token",
-		" "+canonicalRootCommand+" stats", " "+cmd+" stats",
-		" "+canonicalRootCommand+" platform", " "+cmd+" platform",
-		" "+canonicalRootCommand+" connect", " "+cmd+" connect",
-		" "+canonicalRootCommand+" disconnect", " "+cmd+" disconnect",
-		" "+canonicalRootCommand+" export", " "+cmd+" export",
-		" "+canonicalRootCommand+" browse", " "+cmd+" browse",
-		" "+canonicalRootCommand+" status", " "+cmd+" status",
-		" "+canonicalRootCommand+" doctor", " "+cmd+" doctor",
-		" "+canonicalRootCommand+" daemon", " "+cmd+" daemon",
-		" "+canonicalRootCommand+" sync", " "+cmd+" sync",
-		" "+canonicalRootCommand+" server", " "+cmd+" server",
-		" "+canonicalRootCommand+" mcp", " "+cmd+" mcp",
-		"with "+canonicalRootCommand+" ", "with "+cmd+" ",
-	)
+	replacer := strings.NewReplacer(pairs...)
 	return replacer.Replace(text)
 }

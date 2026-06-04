@@ -15,9 +15,9 @@ import (
 	"strings"
 	"unicode/utf8"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/google/uuid"
 )
 
@@ -193,7 +193,7 @@ func buildBackupRestorePreview(fileName string, payload []byte) (backupRestorePr
 		preview.Warnings = append(preview.Warnings, "ZIP 内没有可恢复文件。")
 	}
 	if !preview.Recognized {
-		preview.Warnings = append(preview.Warnings, "这不像 neuDrive 导出的备份包，建议先人工确认来源。")
+		preview.Warnings = append(preview.Warnings, "这不像 Vola 导出的备份包，建议先人工确认来源。")
 	}
 	if categories["vault"] != nil {
 		preview.Warnings = append(preview.Warnings, "备份包包含 Vault 范围；正式恢复时需要再次确认密钥和权限。")
@@ -216,7 +216,7 @@ func (s *Server) applyBackupRestore(ctx context.Context, userID uuid.UUID, fileN
 	result.Recognized = recognized
 	result.Warnings = append(result.Warnings, warnings...)
 	if !recognized {
-		return result, fmt.Errorf("backup zip file is not recognized as a neuDrive export")
+		return result, fmt.Errorf("backup zip file is not recognized as a Vola export")
 	}
 	for _, warning := range warnings {
 		if strings.Contains(warning, "不安全路径") {

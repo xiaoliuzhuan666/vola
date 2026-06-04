@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/platforms"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/services"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/platforms"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/services"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
 	"github.com/google/uuid"
 )
 
@@ -62,8 +62,8 @@ type localPlatformDashboardImportResponse struct {
 }
 
 const (
-	localPlatformPreviewCacheVersion = "neudrive.local_platform_preview/v1"
-	localPlatformPreviewTaskVersion  = "neudrive.local_platform_preview_task/v1"
+	localPlatformPreviewCacheVersion = "vola.local_platform_preview/v1"
+	localPlatformPreviewTaskVersion  = "vola.local_platform_preview_task/v1"
 
 	localPlatformPreviewTaskStateIdle      = "idle"
 	localPlatformPreviewTaskStateRunning   = "running"

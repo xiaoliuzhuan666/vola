@@ -1,6 +1,6 @@
 English | [简体中文](cli.zh-CN.md)
 
-# neuDrive CLI Guide
+# Vola CLI Guide
 
 This is the detailed CLI guide linked from the README. For platform-by-platform connection setup, see the [Setup Guide](setup.md).
 
@@ -9,7 +9,7 @@ Examples below use `neu`.
 ## Install
 
 ```bash
-./tools/install-neudrive.sh
+./tools/install-vola.sh
 ```
 
 Or:
@@ -42,7 +42,7 @@ neu help write
 
 ## Core Hub Commands
 
-These commands work against the public neuDrive roots such as `profile`, `memory`, `project`, `skill`, `secret`, and `platform`.
+These commands work against the public Vola roots such as `profile`, `memory`, `project`, `skill`, `secret`, and `platform`.
 
 | Command | What it does | Example |
 |---------|---------------|---------|
@@ -71,7 +71,7 @@ These commands work against the public neuDrive roots such as `profile`, `memory
 |---------|---------------|---------|
 | `neu platform ls` | List installed adapters and connection state | `neu platform ls` |
 | `neu platform show <platform>` | Show paths, entrypoints, and usage hints for one adapter | `neu platform show claude` |
-| `neu connect <platform>` | Install or refresh the managed neuDrive entrypoint for a platform | `neu connect claude` |
+| `neu connect <platform>` | Install or refresh the managed Vola entrypoint for a platform | `neu connect claude` |
 | `neu disconnect <platform>` | Remove a managed entrypoint and its local metadata | `neu disconnect claude` |
 | `neu export <platform> [--output DIR]` | Stage platform-shaped export materials from the current local Hub | `neu export claude --output ./claude-export` |
 
@@ -83,13 +83,13 @@ These commands work against the public neuDrive roots such as `profile`, `memory
 | `neu import skill <dir> [--name NAME]` | Import one local skill directory | `neu import skill ./demo-skill` |
 | `neu import profile <file> [--category ...]` | Import one profile document | `neu import profile ./preferences.md --category preferences` |
 | `neu import memory <file-or-dir>` | Import scratch or note-style memory content | `neu import memory ./notes` |
-| `neu import project <file-or-dir> [--name NAME]` | Import project files into a neuDrive project | `neu import project ./demo-project --name demo` |
+| `neu import project <file-or-dir> [--name NAME]` | Import project files into a Vola project | `neu import project ./demo-project --name demo` |
 
 ## Git Mirror Commands
 
 | Command | What it does | Example |
 |---------|---------------|---------|
-| `neu git init [--output DIR]` | Export non-secret local Hub data into a Git mirror and register it | `neu git init --output ./neudrive-export/git-mirror` |
+| `neu git init [--output DIR]` | Export non-secret local Hub data into a Git mirror and register it | `neu git init --output ./vola-export/git-mirror` |
 | `neu git pull` | Refresh the active Git mirror from the current local Hub state | `neu git pull` |
 | `neu git auth github-app --device` | Connect your GitHub App user account for Git mirror workflows | `neu git auth github-app --device` |
 
@@ -102,11 +102,11 @@ These commands work against the public neuDrive roots such as `profile`, `memory
 
 ## Hosted Cloud Profiles
 
-Use these commands when you want to sign in to hosted neuDrive and switch between saved profiles.
+Use these commands when you want to sign in to hosted Vola and switch between saved profiles.
 
 | Command | What it does | Example |
 |---------|---------------|---------|
-| `neu login [--profile NAME] [--api-base URL] [--token TOKEN]` | Open browser login for a hosted profile; default login uses the hosted neuDrive cloud | `neu login` |
+| `neu login [--profile NAME] [--api-base URL] [--token TOKEN]` | Open browser login for a hosted profile; default login uses the hosted Vola cloud | `neu login` |
 | `neu profiles` | List saved hosted profiles and show which target is active | `neu profiles` |
 | `neu use <local\|profile>` | Switch the current default target | `neu use official` |
 | `neu whoami [--local \| --profile NAME \| --api-base URL --token TOKEN]` | Show the active identity for the resolved target | `neu whoami` |
@@ -130,8 +130,8 @@ Use `sync` when you want archive-style import/export flows against the current t
 
 | Command | What it does | Example |
 |---------|---------------|---------|
-| `neu server [flags]` | Run the standalone neuDrive HTTP server | `neu server --listen 127.0.0.1:42690 --local-mode` |
-| `neu mcp stdio [flags]` | Run the neuDrive MCP server over stdio | `neu mcp stdio --token-env NEUDRIVE_TOKEN` |
+| `neu server [flags]` | Run the standalone Vola HTTP server | `neu server --listen 127.0.0.1:42690 --local-mode` |
+| `neu mcp stdio [flags]` | Run the Vola MCP server over stdio | `neu mcp stdio --token-env VOLA_TOKEN` |
 
 ## Help
 

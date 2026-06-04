@@ -2,12 +2,12 @@ import { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type ConnectionResponse, type DashboardStats, type FileNode, type OAuthGrantResponse } from '../api'
 import DashboardFileBrowser from '../components/DashboardFileBrowser'
+import AgentAuditStream from '../components/AgentAuditStream'
 import { useI18n } from '../i18n'
 
 interface DashboardPageProps {
   systemSettingsEnabled?: boolean
   localMode?: boolean
-  billingEnabled?: boolean
 }
 
 const emptyStats: DashboardStats = {
@@ -125,7 +125,7 @@ function latestTimestamp(entries: FileNode[]) {
   return latest
 }
 
-export default function DashboardPage({}: DashboardPageProps) {
+export default function DashboardPage({ localMode = false }: DashboardPageProps) {
   const { locale, tx } = useI18n()
   const [stats, setStats] = useState<DashboardStats>(emptyStats)
   const [connections, setConnections] = useState<ConnectionResponse[]>([])
@@ -166,7 +166,7 @@ export default function DashboardPage({}: DashboardPageProps) {
     {
       id: 'claude',
       name: 'Claude',
-      description: tx('连接 Claude 到 neuDrive', 'Connect Claude to neuDrive'),
+      description: tx('连接 Claude 到 Vola', 'Connect Claude to Vola'),
       to: '/setup/mcp',
       state: { platform: 'claude' },
       aliases: ['claude', 'claude.ai', 'claude.com', 'claude-web', 'claude-desktop', 'claude-connector'],
@@ -291,21 +291,25 @@ export default function DashboardPage({}: DashboardPageProps) {
       </section>
 
       <section className="dashboard-main-grid">
-        <DashboardFileBrowser stats={stats} initialSnapshotEntries={treeEntries} onDataChange={() => { void loadOverview() }} />
+        <DashboardFileBrowser stats={stats} initialSnapshotEntries={treeEntries} localMode={localMode} onDataChange={() => { void loadOverview() }} />
 
-        <aside className="dashboard-summary-panel">
-          <div className="dashboard-section-head compact">
-            <h3>{tx('摘要', 'Summary')}</h3>
-          </div>
-          <div className="dashboard-summary-list">
-            {summaryItems.map((item) => (
-              <div key={item.label} className={item.compact ? 'dashboard-summary-item is-compact' : 'dashboard-summary-item'}>
-                <span>{item.label}</span>
-                <strong>{item.value}</strong>
-              </div>
-            ))}
-          </div>
-        </aside>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0px' }}>
+          <aside className="dashboard-summary-panel">
+            <div className="dashboard-section-head compact">
+              <h3>{tx('摘要', 'Summary')}</h3>
+            </div>
+            <div className="dashboard-summary-list">
+              {summaryItems.map((item) => (
+                <div key={item.label} className={item.compact ? 'dashboard-summary-item is-compact' : 'dashboard-summary-item'}>
+                  <span>{item.label}</span>
+                  <strong>{item.value}</strong>
+                </div>
+              ))}
+            </div>
+          </aside>
+
+          <AgentAuditStream />
+        </div>
       </section>
     </div>
   )

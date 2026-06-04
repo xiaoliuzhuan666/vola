@@ -6,6 +6,7 @@ node_modules
 web/node_modules
 web/dist
 internal/web/dist
+desktop
 
 bin
 tmp
@@ -15,7 +16,7 @@ coverage
 
 .env
 .env.*
-neudrive.env
+vola.env
 
 .pnpm-store
 .npm

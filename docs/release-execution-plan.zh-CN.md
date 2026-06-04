@@ -1,4 +1,4 @@
-# neuDrive 发布执行清单
+# Vola 发布执行清单
 
 更新时间：2026-05-14
 
@@ -15,7 +15,7 @@
 | 多 Agent Skill | Claude Code / Codex 验证自动同步；Cursor / Gemini CLI 验证导出包 | 不承诺全平台自动写入本地配置 |
 | 备份恢复 | 验证 Postgres dump、真实外部备份目标和临时环境恢复 | 不承诺 GitHub Backup 或 ZIP 单独恢复完整服务 |
 
-可执行清单见：[neuDrive 小范围上线测试清单](launch-test-checklist.zh-CN.md)。
+可执行清单见：[Vola 小范围上线测试清单](launch-test-checklist.zh-CN.md)。
 
 ## 当前快照
 
@@ -47,7 +47,7 @@
 | --- | --- |
 | `.playwright-mcp/` | 浏览器验证临时输出，建议放入本地归档或加入忽略规则，不随 release commit |
 | `console-stage4*.txt` | 临时 console 输出，不随 release commit |
-| `neudrive-local-home.png`、`stage3-*.png`、`stage4-*.png`、`sync-backup-*.png` | 可作为演示证据单独归档，不随默认 release commit |
+| `vola-local-home.png`、`stage3-*.png`、`stage4-*.png`、`sync-backup-*.png` | 可作为演示证据单独归档，不随默认 release commit |
 | `stage4-*.md` | 阶段记录可归档；如果要保留，需要放到明确的 docs 目录并说明用途 |
 | 多轮 `internal/web/dist/assets/*` hash 产物 | 最后一次构建后统一确认，不保留中间状态 |
 
@@ -81,8 +81,8 @@
 
 - `go test ./...` 通过。
 - `cd web && npm run build` 通过；Vite 仍提示部分 chunk 超过 500 KB，是体积提醒，不是构建失败。
-- `make build` 通过；已重新生成 `internal/web/dist`，并生成 `bin/neudrive`、`bin/neu`。
-- `docker build -t neudrive:rc .` 通过。
+- `make build` 通过；已重新生成 `internal/web/dist`，并生成 `bin/vola`、`bin/neu`。
+- `docker build -t vola:rc .` 通过。
 - Team Library 核心 API 用例通过：同一用户多团队成员关系、团队 Skill 读取、个人 Skill 隔离、member 写入和 viewer 禁写。
 - 文件树读取行为已覆盖：不存在的文件路径返回 404，不再作为空目录返回。
 - 本地 SQLite 服务启动通过，`/api/health` 返回 `storage: sqlite`。

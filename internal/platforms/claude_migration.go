@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
-	"github.com/agi-bar/neudrive/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/skillsarchive"
+	"github.com/agi-bar/vola/internal/storage/sqlite"
 )
 
 const (
@@ -92,7 +92,7 @@ func PreviewImport(ctx context.Context, cfg *runtimecfg.CLIConfig, platform, raw
 		}
 		payload = mergeCodexScanIntoPayload(payload, scan)
 		preview.Notes = append(preview.Notes, scan.Notes...)
-		preview.Notes = append(preview.Notes, "Codex preview uses neuDrive's deterministic local inventory mapping; live agent semantic scan is skipped by default.")
+		preview.Notes = append(preview.Notes, "Codex preview uses Vola's deterministic local inventory mapping; live agent semantic scan is skipped by default.")
 	}
 	preview.Categories = buildImportPreviewCategories(mode, sources, payload)
 	preview.SensitiveFindings = append(preview.SensitiveFindings, payload.SensitiveFindings...)
@@ -1272,7 +1272,7 @@ func scanClaudeBundleDirectory(inventory *sqlite.ClaudeInventory, dir, kind stri
 		if !entry.IsDir() {
 			continue
 		}
-		if entry.Name() == neudriveSkillName {
+		if entry.Name() == volaSkillName {
 			continue
 		}
 		bundleRoot := filepath.Join(dir, entry.Name())
@@ -1539,7 +1539,7 @@ func scanClaudeMarkdownBundles(inventory *sqlite.ClaudeInventory, dir, kind stri
 		if info.IsDir() {
 			return nil
 		}
-		if strings.EqualFold(filepath.Base(path), "neudrive.md") {
+		if strings.EqualFold(filepath.Base(path), "vola.md") {
 			return nil
 		}
 		if !strings.HasSuffix(strings.ToLower(info.Name()), ".md") {

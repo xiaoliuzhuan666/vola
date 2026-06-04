@@ -1,4 +1,4 @@
-# neuDrive 部署可靠性与恢复手册
+# Vola 部署可靠性与恢复手册
 
 本文面向 hosted / self-hosted 部署，重点说明数据在哪里、备份在哪里、服务异常时怎么确认和恢复。
 
@@ -9,7 +9,7 @@
 | 主存储 | Postgres 或本地 SQLite | profile、memory、projects、skills、vault 元数据、token、连接配置都以主存储为准 |
 | Git mirror 工作目录 | `GIT_MIRROR_HOSTED_ROOT` 或本地配置路径 | 把可见 Hub 文件树转成 Git 历史，用于 GitHub Backup |
 | GitHub 备份仓库 | 用户配置的私有仓库 | 保存可见文件树的版本历史，不包含原始 secret |
-| WebDAV / S3-compatible 目标 | 坚果云 WebDAV、OSS、R2、MinIO、S3 等 | 上传 neuDrive 导出 zip，适合放在服务器之外 |
+| WebDAV / S3-compatible 目标 | 坚果云 WebDAV、OSS、R2、MinIO、S3 等 | 上传 Vola 导出 zip，适合放在服务器之外 |
 | 配置与 secret | `.env`、K8s Secret、Vault 字段 | `JWT_SECRET`、`VAULT_MASTER_KEY`、GitHub OAuth/App secret、备份目标密码必须单独保存 |
 
 单台服务器、单个 PVC、单个数据库实例都不能算高可用备份。生产环境至少需要一个离开当前服务器的备份目标。
@@ -25,9 +25,9 @@
 
 ## K8s 持久化
 
-`deploy/k8s/app.yaml` 已包含 `neudrive-git-mirrors` PVC，并挂载到 `/data/git-mirrors`。
+`deploy/k8s/app.yaml` 已包含 `vola-git-mirrors` PVC，并挂载到 `/data/git-mirrors`。
 
-`deploy/prod/deploy.sh` 会把 `GIT_MIRROR_HOSTED_ROOT` 写入 `neudrive-config`。未显式设置时使用：
+`deploy/prod/deploy.sh` 会把 `GIT_MIRROR_HOSTED_ROOT` 写入 `vola-config`。未显式设置时使用：
 
 ```bash
 GIT_MIRROR_HOSTED_ROOT=/data/git-mirrors
@@ -58,23 +58,23 @@ GIT_MIRROR_HOSTED_ROOT=/data/git-mirrors
 备份命令示例：
 
 ```bash
-mkdir -p ~/apps/neudrive/backups/postgres
+mkdir -p ~/apps/vola/backups/postgres
 pg_dump "$DATABASE_URL" \
   --format=custom \
   --no-owner \
-  --file "~/apps/neudrive/backups/postgres/neudrive-$(date -u +%Y%m%dT%H%M%SZ).dump"
+  --file "~/apps/vola/backups/postgres/vola-$(date -u +%Y%m%dT%H%M%SZ).dump"
 ```
 
 恢复到新库示例：
 
 ```bash
-createdb neudrive_restore
+createdb vola_restore
 pg_restore \
-  --dbname "postgres://USER:PASSWORD@HOST:5432/neudrive_restore?sslmode=disable" \
+  --dbname "postgres://USER:PASSWORD@HOST:5432/vola_restore?sslmode=disable" \
   --clean \
   --if-exists \
   --no-owner \
-  neudrive-YYYYMMDDTHHMMSSZ.dump
+  vola-YYYYMMDDTHHMMSSZ.dump
 ```
 
 恢复演练不要直接对生产库执行。先恢复到临时库，确认服务能启动、用户能登录、Skills / Memory / Projects 能读取，再决定正式迁移。
@@ -89,13 +89,13 @@ pg_restore \
 - WebDAV：适合坚果云、Nextcloud、Synology 等支持 WebDAV 的网盘。
 - S3-compatible：适合 AWS S3、Cloudflare R2、阿里云 OSS、MinIO 等。
 
-WebDAV / S3-compatible 目标上传的是 neuDrive 导出 zip。它适合做离开服务器的恢复包，但它不替代数据库备份，因为账号、token、连接关系、备份目标配置等仍在数据库里。
+WebDAV / S3-compatible 目标上传的是 Vola 导出 zip。它适合做离开服务器的恢复包，但它不替代数据库备份，因为账号、token、连接关系、备份目标配置等仍在数据库里。
 
-外部目标可以开启自动备份计划。每个目标可设置间隔小时数，后台任务默认每小时检查一次到期目标，到期后生成 neuDrive 导出 zip 并上传到对应目标。手动和自动上传都会写入备份历史，记录触发来源、对象名、大小、耗时和错误。
+外部目标可以开启自动备份计划。每个目标可设置间隔小时数，后台任务默认每小时检查一次到期目标，到期后生成 Vola 导出 zip 并上传到对应目标。手动和自动上传都会写入备份历史，记录触发来源、对象名、大小、耗时和错误。
 
-每个外部目标可以设置保留策略：保留最近 N 份、保留 N 天，或者两者都不启用。清理只基于 neuDrive 历史记录里成功上传的 `neudrive-export-*.zip` 对象，不会扫描或删除第三方文件，也不会删除最近一次成功备份。真实 WebDAV / S3 provider 的删除兼容性仍需要在上线前验证。
+每个外部目标可以设置保留策略：保留最近 N 份、保留 N 天，或者两者都不启用。清理只基于 Vola 历史记录里成功上传的 `vola-export-*.zip` 对象，不会扫描或删除第三方文件，也不会删除最近一次成功备份。真实 WebDAV / S3 provider 的删除兼容性仍需要在上线前验证。
 
-恢复入口分两步：在 `GitHub 备份` 页面上传 neuDrive 导出 zip，先查看 Skills、Memory、Projects、Vault、Roles、Inbox 等分类和风险提示；确认后再选择“跳过已有文件”或“覆盖已有文件”应用恢复。恢复应用会拒绝包含路径穿越的 ZIP，并写回 Hub 文件树。Vault 恢复只写回导出包里的范围清单，secret 原值仍需要数据库备份或密钥系统。
+恢复入口分两步：在 `GitHub 备份` 页面上传 Vola 导出 zip，先查看 Skills、Memory、Projects、Vault、Roles、Inbox 等分类和风险提示；确认后再选择“跳过已有文件”或“覆盖已有文件”应用恢复。恢复应用会拒绝包含路径穿越的 ZIP，并写回 Hub 文件树。Vault 恢复只写回导出包里的范围清单，secret 原值仍需要数据库备份或密钥系统。
 
 ## 运维状态接口
 

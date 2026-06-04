@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -55,6 +55,8 @@ type ProjectRepo interface {
 
 type DashboardRepo interface {
 	GetStats(ctx context.Context, userID uuid.UUID) (*models.DashboardStats, error)
+	LogActivity(ctx context.Context, id, userID uuid.UUID, connectionID *uuid.UUID, action, path string, metadata map[string]interface{}, createdAt time.Time) error
+	GetActivities(ctx context.Context, userID uuid.UUID, limit int) ([]models.ActivityLog, error)
 }
 
 type SyncRepo interface {

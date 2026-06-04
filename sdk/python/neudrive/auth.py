@@ -1,4 +1,4 @@
-"""OAuth / authentication helper for third-party apps integrating with neuDrive."""
+"""OAuth / authentication helper for third-party apps integrating with Vola."""
 
 from __future__ import annotations
 
@@ -11,12 +11,12 @@ import httpx
 
 class NeuDriveAuth:
     """OAuth 2.0 helper for applications that need to authenticate users
-    against an neuDrive instance.
+    against a Vola instance.
 
     Typical flow::
 
         auth = NeuDriveAuth(
-            base_url="https://neudrive.ai",
+            base_url="https://www.vola.ai",
             client_id="my-app",
             client_secret="secret",
         )
@@ -100,11 +100,11 @@ class NeuDriveAuth:
     def refresh_token(self, refresh_token: str) -> dict[str, Any]:
         """Use a *refresh_token* to obtain a new access token."""
         raise NotImplementedError(
-            "neuDrive OAuth currently supports authorization_code exchange only."
+            "Vola OAuth currently supports authorization_code exchange only."
         )
 
     def get_user_info(self, access_token: str) -> dict[str, Any]:
-        """Retrieve the authenticated user's profile from neuDrive.
+        """Retrieve the authenticated user's profile from Vola.
 
         Returns a dict with keys like ``slug``, ``display_name``,
         ``timezone``, and ``language``.
@@ -122,7 +122,7 @@ class NeuDriveAuth:
 
     def github_callback(self, code: str) -> dict[str, Any]:
         """Complete a GitHub OAuth flow by forwarding the GitHub *code* to
-        the neuDrive backend which handles the token exchange.
+        the Vola backend which handles the token exchange.
 
         Returns the Hub session tokens.
         """

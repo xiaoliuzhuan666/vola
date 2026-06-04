@@ -11,11 +11,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/logger"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/skillsarchive"
-	"github.com/agi-bar/neudrive/internal/systemskills"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/logger"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/skillsarchive"
+	"github.com/agi-bar/vola/internal/systemskills"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

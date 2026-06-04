@@ -6,7 +6,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
 )

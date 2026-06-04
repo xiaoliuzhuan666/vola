@@ -1,6 +1,6 @@
-# neuDrive Python SDK
+# Vola Python SDK
 
-Python client library for [neuDrive](https://github.com/agi-bar/neudrive) -- AI identity and trust infrastructure.
+Python client library for [Vola](https://github.com/agi-bar/vola) -- AI identity and trust infrastructure.
 
 The client wraps the scoped-token `/agent/*` API surface, including the
 canonical virtual tree sync endpoints.
@@ -8,7 +8,7 @@ canonical virtual tree sync endpoints.
 ## Installation
 
 ```bash
-pip install neudrive-sdk
+pip install vola-sdk
 ```
 
 Or install from source:
@@ -18,12 +18,14 @@ cd sdk/python
 pip install -e .
 ```
 
+Legacy `NeuDrive`, `AsyncNeuDrive`, and `NeuDriveAuth` imports remain available for existing code.
+
 ## Quick Start
 
 ```python
-from neudrive import NeuDrive
+from vola import Vola
 
-with NeuDrive("https://www.neudrive.ai", token="ndt_xxx") as hub:
+with Vola("https://www.vola.ai", token="ndt_xxx") as hub:
     # Read your profile
     profiles = hub.get_profile("preferences")
     for p in profiles:
@@ -41,10 +43,10 @@ with NeuDrive("https://www.neudrive.ai", token="ndt_xxx") as hub:
 
 ```python
 import asyncio
-from neudrive import AsyncNeuDrive
+from vola import AsyncVola
 
 async def main():
-    async with AsyncNeuDrive("https://www.neudrive.ai", token="ndt_xxx") as hub:
+    async with AsyncVola("https://www.vola.ai", token="ndt_xxx") as hub:
         projects = await hub.list_projects()
         stats = await hub.get_stats()
 
@@ -123,9 +125,9 @@ data = hub.export_all()
 ### Bundle Sync
 
 ```python
-from neudrive import NeuDrive
+from vola import Vola
 
-with NeuDrive("https://www.neudrive.ai", token="ndt_xxx") as hub:
+with Vola("https://www.vola.ai", token="ndt_xxx") as hub:
     auth = hub.get_auth_info()
     print(auth["user_slug"], auth["scopes"])
 
@@ -160,10 +162,10 @@ print(stats)  # {"connections": 3, "skills": 12, "projects": 4, ...}
 ## OAuth for Third-Party Apps
 
 ```python
-from neudrive import NeuDriveAuth
+from vola import VolaAuth
 
-auth = NeuDriveAuth(
-    base_url="https://www.neudrive.ai",
+auth = VolaAuth(
+    base_url="https://www.vola.ai",
     client_id="my-app",
     client_secret="secret",
 )

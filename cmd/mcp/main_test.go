@@ -3,7 +3,7 @@ package main
 import (
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/app/mcpapp"
+	"github.com/agi-bar/vola/internal/app/mcpapp"
 )
 
 func TestResolveTokenPrefersExplicitValue(t *testing.T) {
@@ -31,9 +31,9 @@ func TestResolveTokenFallsBackToEnvironment(t *testing.T) {
 }
 
 func TestResolveTokenSupportsCustomEnvironmentVariable(t *testing.T) {
-	t.Setenv("CUSTOM_NEUDRIVE_TOKEN", "ndt_custom")
+	t.Setenv("CUSTOM_VOLA_TOKEN", "ndt_custom")
 
-	token, err := mcpapp.ResolveToken("", "CUSTOM_NEUDRIVE_TOKEN")
+	token, err := mcpapp.ResolveToken("", "CUSTOM_VOLA_TOKEN")
 	if err != nil {
 		t.Fatalf("resolveToken returned error: %v", err)
 	}

@@ -14,8 +14,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -27,18 +27,18 @@ const currentUserSnapshotPlaceholder = "{{CURRENT_USER_SNAPSHOT}}"
 var (
 	systemSkillTimestamp = time.Date(2026, 4, 5, 0, 0, 0, 0, time.UTC)
 	skillsRoot           = "/skills"
-	agentHubRoot         = "/skills/neudrive"
+	agentHubRoot         = "/skills/vola"
 	portabilityRoot      = "/skills/portability"
 	portabilityPlatforms = []string{"general", "claude", "chatgpt", "codex"}
-	systemSkillOrder     = []string{"neudrive", "portability/general", "portability/claude", "portability/chatgpt", "portability/codex"}
-	neudriveManifest     = skillManifest{
-		DisplayName: "neuDrive",
-		SkillName:   "neudrive",
+	systemSkillOrder     = []string{"vola", "portability/general", "portability/claude", "portability/chatgpt", "portability/codex"}
+	volaManifest         = skillManifest{
+		DisplayName: "Vola",
+		SkillName:   "vola",
 		Path:        agentHubRoot,
-		ResourceDir: "resources/neudrive",
-		Description: "Umbrella skill for using the full neuDrive MCP surface from inside supported agent platforms.",
-		WhenToUse:   "Use when the user wants to export into neuDrive, import neuDrive data back into a platform, list syncable data, or check neuDrive platform connectivity.",
-		Tags:        []string{"neudrive", "mcp", "platforms", "sync", "portability"},
+		ResourceDir: "resources/vola",
+		Description: "Umbrella skill for using the full Vola MCP surface from inside supported agent platforms.",
+		WhenToUse:   "Use when the user wants to export into Vola, import Vola data back into a platform, list syncable data, or check Vola platform connectivity.",
+		Tags:        []string{"vola", "mcp", "platforms", "sync", "portability"},
 	}
 	platformManifests = map[string]skillManifest{
 		"general": {
@@ -46,9 +46,9 @@ var (
 			SkillName:   "portability/general",
 			Path:        portabilityRoot + "/general",
 			ResourceDir: "resources/portability/general",
-			Description: "Fallback guide for migrating data from platforms that do not yet have a dedicated NeuDrive portability manual.",
+			Description: "Fallback guide for migrating data from platforms that do not yet have a dedicated Vola portability manual.",
 			WhenToUse:   "Use when the user asks to migrate, back up, restore, import, or export platform data and no dedicated portability/<platform> manual exists, or the dedicated manual does not cover the needed surface.",
-			Tags:        []string{"portability", "migration", "backup", "general", "neudrive"},
+			Tags:        []string{"portability", "migration", "backup", "general", "vola"},
 			Platform:    "general",
 		},
 		"claude": {
@@ -56,9 +56,9 @@ var (
 			SkillName:   "portability/claude",
 			Path:        portabilityRoot + "/claude",
 			ResourceDir: "resources/portability/claude",
-			Description: "Guide for importing Claude data into NeuDrive or restoring NeuDrive data into Claude-compatible structures.",
+			Description: "Guide for importing Claude data into Vola or restoring Vola data into Claude-compatible structures.",
 			WhenToUse:   "Use when the user asks to migrate, back up, restore, import, or export Claude data and skills.",
-			Tags:        []string{"portability", "migration", "backup", "claude", "neudrive"},
+			Tags:        []string{"portability", "migration", "backup", "claude", "vola"},
 			Platform:    "claude",
 		},
 		"chatgpt": {
@@ -66,9 +66,9 @@ var (
 			SkillName:   "portability/chatgpt",
 			Path:        portabilityRoot + "/chatgpt",
 			ResourceDir: "resources/portability/chatgpt",
-			Description: "Guide for importing ChatGPT data into NeuDrive or restoring NeuDrive data into ChatGPT-compatible structures.",
+			Description: "Guide for importing ChatGPT data into Vola or restoring Vola data into ChatGPT-compatible structures.",
 			WhenToUse:   "Use when the user asks to migrate, back up, restore, import, or export ChatGPT data and platform features.",
-			Tags:        []string{"portability", "migration", "backup", "chatgpt", "neudrive"},
+			Tags:        []string{"portability", "migration", "backup", "chatgpt", "vola"},
 			Platform:    "chatgpt",
 		},
 		"codex": {
@@ -76,9 +76,9 @@ var (
 			SkillName:   "portability/codex",
 			Path:        portabilityRoot + "/codex",
 			ResourceDir: "resources/portability/codex",
-			Description: "Guide for importing Codex workspace conventions into NeuDrive or exporting NeuDrive context back into Codex workflows.",
+			Description: "Guide for importing Codex workspace conventions into Vola or exporting Vola context back into Codex workflows.",
 			WhenToUse:   "Use when the user asks to migrate, back up, restore, import, or export Codex projects, prompts, tools, or automations.",
-			Tags:        []string{"portability", "migration", "backup", "codex", "neudrive"},
+			Tags:        []string{"portability", "migration", "backup", "codex", "vola"},
 			Platform:    "codex",
 		},
 	}
@@ -453,8 +453,8 @@ func directoryEntry(publicPath string) models.FileTreeEntry {
 
 func bundleManifestForPath(rawPath string) (skillManifest, bool) {
 	publicPath := strings.TrimSuffix(hubpath.NormalizePublic(rawPath), "/")
-	if publicPath == neudriveManifest.Path {
-		return neudriveManifest, true
+	if publicPath == volaManifest.Path {
+		return volaManifest, true
 	}
 	for _, platform := range portabilityPlatforms {
 		manifest, ok := platformManifests[platform]
@@ -597,10 +597,10 @@ func recommendedNextStep(platform, connected string, profilePresent bool, projec
 	}
 
 	if !profilePresent {
-		return "Migrate profile and memory first so stable preferences land in NeuDrive before project data."
+		return "Migrate profile and memory first so stable preferences land in Vola before project data."
 	}
 	if projectCount == 0 {
-		return "Migrate project context next so workspaces and ongoing tasks have a canonical home in NeuDrive."
+		return "Migrate project context next so workspaces and ongoing tasks have a canonical home in Vola."
 	}
 	return "Migrate knowledge files, tools, and automations next, then review platform-specific portability gaps."
 }
@@ -613,8 +613,8 @@ func displayName(platform string) string {
 }
 
 func systemManifestByKey(key string) (skillManifest, bool) {
-	if key == "neudrive" {
-		return neudriveManifest, true
+	if key == "vola" {
+		return volaManifest, true
 	}
 	if strings.HasPrefix(key, "portability/") {
 		platform := strings.TrimPrefix(key, "portability/")
@@ -627,7 +627,7 @@ func systemManifestByKey(key string) (skillManifest, bool) {
 func resourceRootForPath(publicPath string) (string, string, bool) {
 	publicPath = strings.TrimSuffix(hubpath.NormalizePublic(publicPath), "/")
 	if publicPath == agentHubRoot || strings.HasPrefix(publicPath, agentHubRoot+"/") {
-		return neudriveManifest.ResourceDir, neudriveManifest.Path, true
+		return volaManifest.ResourceDir, volaManifest.Path, true
 	}
 	for _, platform := range portabilityPlatforms {
 		manifest := platformManifests[platform]
@@ -656,7 +656,7 @@ func resourceForFile(publicPath string) (skillManifest, string, bool) {
 
 func manifestForRoot(publicRoot string) (skillManifest, bool) {
 	if publicRoot == agentHubRoot {
-		return neudriveManifest, true
+		return volaManifest, true
 	}
 	for _, platform := range portabilityPlatforms {
 		manifest := platformManifests[platform]
@@ -670,8 +670,8 @@ func manifestForRoot(publicRoot string) (skillManifest, bool) {
 func ExportSkillFiles(skillName string) (map[string]string, error) {
 	var manifest skillManifest
 	switch strings.TrimSpace(skillName) {
-	case neudriveManifest.SkillName:
-		manifest = neudriveManifest
+	case volaManifest.SkillName:
+		manifest = volaManifest
 	default:
 		platform, ok := strings.CutPrefix(strings.TrimSpace(skillName), "portability/")
 		if !ok {

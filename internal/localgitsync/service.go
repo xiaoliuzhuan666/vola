@@ -10,12 +10,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/hubpath"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
-	"github.com/agi-bar/neudrive/internal/services"
-	sqlitestorage "github.com/agi-bar/neudrive/internal/storage/sqlite"
-	"github.com/agi-bar/neudrive/internal/vault"
+	"github.com/agi-bar/vola/internal/hubpath"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/services"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
+	"github.com/agi-bar/vola/internal/vault"
 	"github.com/google/uuid"
 )
 
@@ -387,11 +387,11 @@ func writeBytes(path string, data []byte) error {
 
 func buildREADME(rootPath string) string {
 	lines := []string{
-		"# NeuDrive Local Git Mirror",
+		"# Vola Local Git Mirror",
 		"",
-		"This repository mirrors the user-visible NeuDrive file tree for this account.",
+		"This repository mirrors the user-visible Vola file tree for this account.",
 		"",
-		"- Files are written with the same paths shown in NeuDrive, such as `skills/...` and `memory/...`.",
+		"- Files are written with the same paths shown in Vola, such as `skills/...` and `memory/...`.",
 		"- Internal account metadata, connection records, and vault scopes are not exported here.",
 		"- Secrets are not exported.",
 		"",

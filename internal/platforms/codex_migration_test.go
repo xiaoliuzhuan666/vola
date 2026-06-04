@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/agi-bar/neudrive/internal/runtimecfg"
+	"github.com/agi-bar/vola/internal/runtimecfg"
 )
 
 func TestScanLocalCodexMigrationBuildsStructuredInventory(t *testing.T) {
@@ -49,7 +49,7 @@ func TestScanLocalCodexMigrationBuildsStructuredInventory(t *testing.T) {
 		}
 	}
 	convo := scan.Inventory.Conversations[0]
-	if convo.ProjectName != "neudrive" {
+	if convo.ProjectName != "vola" {
 		t.Fatalf("expected project name derived from workspace, got %+v", convo)
 	}
 	if len(convo.Messages) < 4 {
@@ -82,6 +82,66 @@ func TestPreviewImportCodexIncludesBundlesAndConversations(t *testing.T) {
 		if !names[required] {
 			t.Fatalf("missing preview category %q in %+v", required, preview.Categories)
 		}
+	}
+}
+
+func TestScanCodexJSONLLinesSkipsOversizedLine(t *testing.T) {
+	lines := []string{}
+	input := strings.Join([]string{
+		`{"id":"before"}`,
+		`{"id":"` + strings.Repeat("x", 80) + `"}`,
+		`{"id":"after"}`,
+	}, "\n")
+
+	err := scanCodexJSONLLinesWithMax(strings.NewReader(input), 32, func(line string) error {
+		lines = append(lines, line)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("scanCodexJSONLLinesWithMax: %v", err)
+	}
+	if len(lines) != 2 {
+		t.Fatalf("expected two lines after skipping oversized input, got %d: %+v", len(lines), lines)
+	}
+	if !strings.Contains(lines[0], "before") || !strings.Contains(lines[1], "after") {
+		t.Fatalf("unexpected scanned lines: %+v", lines)
+	}
+}
+
+func TestParseCodexSessionFileSkipsOversizedConversation(t *testing.T) {
+	sessionPath := filepath.Join(t.TempDir(), "oversized-session.jsonl")
+	writeFixtureFile(t, sessionPath, strings.Repeat("x", codexSessionConversationMaxBytes+1))
+
+	scanned, ok, err := parseCodexSessionFile(sessionPath, false, nil)
+	if err != nil {
+		t.Fatalf("parseCodexSessionFile: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected oversized session to remain in inventory")
+	}
+	if scanned.Conversation != nil {
+		t.Fatalf("expected oversized conversation to be skipped, got %+v", scanned.Conversation)
+	}
+	if scanned.Summary.ID != "oversized-session" {
+		t.Fatalf("expected summary id from filename, got %+v", scanned.Summary)
+	}
+	if scanned.SkippedPath != sessionPath {
+		t.Fatalf("expected skipped path, got %q", scanned.SkippedPath)
+	}
+}
+
+func TestSummarizeCodexSkippedSessionsLimitsExamples(t *testing.T) {
+	summary := summarizeCodexSkippedSessions([]string{
+		"skip c",
+		"skip a",
+		"skip b",
+		"skip d",
+	})
+	if !strings.Contains(summary, "Skipped 4 Codex session conversations") {
+		t.Fatalf("expected skipped count in summary, got %q", summary)
+	}
+	if strings.Contains(summary, "skip d") {
+		t.Fatalf("expected only three examples, got %q", summary)
 	}
 }
 
@@ -125,20 +185,20 @@ func createCodexMigrationFixtureTree(t *testing.T) string {
 		`model = "gpt-5.4"`,
 		`approval_policy = "never"`,
 		``,
-		`[projects."/Users/demo/workspace/neudrive"]`,
+		`[projects."/Users/demo/workspace/vola"]`,
 		`trust_level = "trusted"`,
 		``,
-		`[mcp_servers.neudrive-local]`,
+		`[mcp_servers.vola-local]`,
 		`command = "/usr/local/bin/neu"`,
-		`args = ["mcp", "stdio", "--token-env", "NEUDRIVE_TOKEN"]`,
+		`args = ["mcp", "stdio", "--token-env", "VOLA_TOKEN"]`,
 		``,
-		`[mcp_servers.neudrive-local.env]`,
-		`NEUDRIVE_TOKEN = "ndt_test_secret"`,
+		`[mcp_servers.vola-local.env]`,
+		`VOLA_TOKEN = "ndt_test_secret"`,
 	}, "\n")+"\n")
 	writeFixtureFile(t, filepath.Join(home, ".codex", "auth.json"), "{\n  \"auth_mode\": \"chatgpt\",\n  \"tokens\": {\n    \"access_token\": \"secret-access\"\n  }\n}\n")
 	writeFixtureFile(t, filepath.Join(home, ".codex", "session_index.jsonl"), `{"id":"session-001","thread_name":"Inspect import plan","updated_at":"2026-04-16T10:05:00Z"}`+"\n")
 	writeFixtureFile(t, filepath.Join(home, ".codex", "sessions", "2026", "04", "16", "session-001.jsonl"), strings.Join([]string{
-		`{"timestamp":"2026-04-16T10:00:00Z","type":"session_meta","payload":{"id":"session-001","timestamp":"2026-04-16T10:00:00Z","cwd":"/Users/demo/workspace/neudrive","originator":"Codex Desktop","cli_version":"0.118.0","source":"desktop","model_provider":"openai"}}`,
+		`{"timestamp":"2026-04-16T10:00:00Z","type":"session_meta","payload":{"id":"session-001","timestamp":"2026-04-16T10:00:00Z","cwd":"/Users/demo/workspace/vola","originator":"Codex Desktop","cli_version":"0.118.0","source":"desktop","model_provider":"openai"}}`,
 		`{"timestamp":"2026-04-16T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Plan the import migration."}]}}`,
 		`{"timestamp":"2026-04-16T10:00:02Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Reviewing migration structure"}]}}`,
 		`{"timestamp":"2026-04-16T10:00:03Z","type":"response_item","payload":{"type":"function_call","name":"exec_command","arguments":"{\"cmd\":\"rg --files\"}","call_id":"call-1"}}`,

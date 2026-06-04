@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/models"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/google/uuid"
 )
 
@@ -227,7 +227,7 @@ func (s *Server) buildOpsGitMirrorStatus(ctx context.Context, userID uuid.UUID) 
 		checks = append(checks, opsCheck{
 			ID:      "git_mirror_remote",
 			Status:  opsStatusCritical,
-			Message: "Remote Git repository has changes outside neuDrive.",
+			Message: "Remote Git repository has changes outside Vola.",
 			Action:  "Review the remote repository before forcing overwrite.",
 		})
 	case status.LastError != "" || status.LastPushError != "" || status.SyncState == localgitsync.SyncStateError:

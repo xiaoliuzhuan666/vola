@@ -2,15 +2,15 @@
 
 # GitHub Backup 指南
 
-GitHub Backup 会把用户在 neuDrive 里可见的文件树同步到一个 Git 仓库。它的用途是提供可恢复的版本历史：skills、memory 文件、project 笔记和其他公开 Hub 文件都可以备份到 GitHub，并且可以用普通 Git 工具查看。
+GitHub Backup 会把用户在 Vola 里可见的文件树同步到一个 Git 仓库。它的用途是提供可恢复的版本历史：skills、memory 文件、project 笔记和其他公开 Hub 文件都可以备份到 GitHub，并且可以用普通 Git 工具查看。
 
 ## 存储模型
 
-neuDrive 里的数据分三层：
+Vola 里的数据分三层：
 
 - 主存储：Hosted 部署通常是 Postgres，本地模式通常是 SQLite。Hub 的当前状态先写在这里。
-- Git working tree：neuDrive 把用户可见文件树写成 Git 仓库工作副本，用于生成版本历史。
-- 远端备份：GitHub Backup 会把 Git working tree 推送到 GitHub；WebDAV、S3-compatible、OSS、R2 目标会上传 neuDrive 导出 zip，让备份离开当前机器或服务器。
+- Git working tree：Vola 把用户可见文件树写成 Git 仓库工作副本，用于生成版本历史。
+- 远端备份：GitHub Backup 会把 Git working tree 推送到 GitHub；WebDAV、S3-compatible、OSS、R2 目标会上传 Vola 导出 zip，让备份离开当前机器或服务器。
 
 GitHub Backup 不能替代数据库备份。它保存的是用户可见文件树，适合恢复 skills、team 资料、memory 文件、project 笔记等内容；账号、连接、billing、vault scope 元数据和 secret 仍需要依赖数据库备份或服务配置恢复。
 
@@ -18,7 +18,7 @@ GitHub Backup 不能替代数据库备份。它保存的是用户可见文件树
 
 ## 会备份什么
 
-GitHub Backup 会保持 neuDrive 里看到的路径结构，例如：
+GitHub Backup 会保持 Vola 里看到的路径结构，例如：
 
 ```text
 skills/...
@@ -34,20 +34,20 @@ Secrets 不会导出。账号内部元数据、连接记录、vault scope 元数
 如果已经同步到 GitHub，可以先 clone 远端仓库查看历史版本：
 
 ```bash
-git clone https://github.com/<owner>/neudrive-backup.git
+git clone https://github.com/<owner>/vola-backup.git
 ```
 
-恢复单个 Skill、memory 文件或 project 文件时，可以从 Git 历史里取回对应路径，再通过 neuDrive 的导入或同步命令写回 Hub。完整服务恢复还需要数据库备份，因为 GitHub Backup 不包含账号内部数据和 secret。
+恢复单个 Skill、memory 文件或 project 文件时，可以从 Git 历史里取回对应路径，再通过 Vola 的导入或同步命令写回 Hub。完整服务恢复还需要数据库备份，因为 GitHub Backup 不包含账号内部数据和 secret。
 
 本地文件树重新导入可以使用同步命令：
 
 ```bash
-neu sync push --source ./recovered-neudrive-files
+neu sync push --source ./recovered-vola-files
 ```
 
-执行前请先确认目录里只包含希望写回 neuDrive 的文件。
+执行前请先确认目录里只包含希望写回 Vola 的文件。
 
-如果备份到了 WebDAV 或 S3-compatible 目标，下载对应的 `neudrive-export-*.zip`。这个 zip 是 neuDrive 导出包，包含可恢复的文件树、profile、memory、projects、roles、inbox 和 vault scope 元数据；不包含 secret 明文。
+如果备份到了 WebDAV 或 S3-compatible 目标，下载对应的 `vola-export-*.zip`。这个 zip 是 Vola 导出包，包含可恢复的文件树、profile、memory、projects、roles、inbox 和 vault scope 元数据；不包含 secret 明文。
 
 恢复流程：
 
@@ -70,7 +70,7 @@ WebDAV 目标需要：
 - 用户名。
 - 密码或应用密码。保存后不会在页面回显。
 
-同步时 neuDrive 会生成 `neudrive-export-YYYYMMDD-HHMMSSZ.zip`，使用 WebDAV `PUT` 上传。如果填写了多级对象路径，服务会尝试用 `MKCOL` 创建目录。
+同步时 Vola 会生成 `vola-export-YYYYMMDD-HHMMSSZ.zip`，使用 WebDAV `PUT` 上传。如果填写了多级对象路径，服务会尝试用 `MKCOL` 创建目录。
 
 S3-compatible 目标需要：
 
@@ -81,13 +81,13 @@ S3-compatible 目标需要：
 - Access key ID 和 Secret access key。Secret 保存后不会在页面回显。
 - URL 样式。默认使用 path-style：`<endpoint>/<bucket>/<prefix>/<object>`；如果服务要求 virtual-hosted style，可以关闭 Path-style URL。
 
-S3-compatible 上传使用 AWS Signature V4，对象名同样是 `neudrive-export-YYYYMMDD-HHMMSSZ.zip`。
+S3-compatible 上传使用 AWS Signature V4，对象名同样是 `vola-export-YYYYMMDD-HHMMSSZ.zip`。
 
 外部目标可开启自动备份和保留策略：
 
 - 自动备份：按目标设置的小时间隔，由后台任务定时生成并上传导出 zip。
 - 备份历史：记录每次手动或自动运行的触发来源、对象名、大小、耗时和错误。
-- 保留策略：可设置保留最近 N 份或保留 N 天。清理只处理 neuDrive 历史记录中的 `neudrive-export-*.zip`，不会处理第三方文件，也不会删除最近一次成功备份。
+- 保留策略：可设置保留最近 N 份或保留 N 天。清理只处理 Vola 历史记录中的 `vola-export-*.zip`，不会处理第三方文件，也不会删除最近一次成功备份。
 
 ## Hosted 模式
 
@@ -97,8 +97,8 @@ Hosted 部署建议只使用 GitHub App user 授权。
 
 1. 打开 `GitHub Backup`。
 2. 点击 `Connect GitHub`。
-3. 授权完成后，neuDrive 会在当前 GitHub 用户下创建或复用一个私有仓库 `neudrive-backup`。
-4. 点击 `Sync now`，把当前 neuDrive 文件树写入 Git working tree，并推送到 `origin/main`。
+3. 授权完成后，Vola 会在当前 GitHub 用户下创建或复用一个私有仓库 `vola-backup`。
+4. 点击 `Sync now`，把当前 Vola 文件树写入 Git working tree，并推送到 `origin/main`。
 
 Hosted 模式会把普通用户界面保持得很简单：
 
@@ -146,7 +146,7 @@ volumeMounts:
 volumes:
   - name: git-mirror-data
     persistentVolumeClaim:
-      claimName: neudrive-git-mirrors
+      claimName: vola-git-mirrors
 ```
 
 同步代码会自动创建每个用户自己的目录，但服务进程必须对挂载的父目录有写权限。多副本部署时，建议使用 RWX volume，或者确保只有一个 pod 运行 Git mirror sync worker 指向同一个 root。
@@ -157,13 +157,13 @@ Hosted GitHub App 授权还需要这些环境变量：
 GITHUB_APP_CLIENT_ID=...
 GITHUB_APP_CLIENT_SECRET=...
 GITHUB_APP_SLUG=...
-PUBLIC_BASE_URL=https://your-neudrive-host
+PUBLIC_BASE_URL=https://your-vola-host
 JWT_SECRET=...
 ```
 
 GitHub App 还必须申请这些 repository 权限：
 
-- Administration: read and write。neuDrive 创建私有 `neudrive-backup` 仓库时会调用 GitHub 的 `POST /user/repos` API，这个权限是必需的。
+- Administration: read and write。Vola 创建私有 `vola-backup` 仓库时会调用 GitHub 的 `POST /user/repos` API，这个权限是必需的。
 - Contents: read and write。后续把备份内容 push 到仓库时需要这个权限。
 
 在 GitHub 里修改 App 权限后，用户需要批准新的权限，或重新连接 GitHub，然后再重试创建仓库。
@@ -181,18 +181,18 @@ GitHub App 还必须申请这些 repository 权限：
 对应的 CLI 命令：
 
 ```bash
-neu git init --output ./neudrive-export/git-mirror
+neu git init --output ./vola-export/git-mirror
 neu git pull
 neu git auth github-app --device
 ```
 
 ## 远端更新与冲突
 
-neuDrive 把 mirror 当作备份目标。如果远端分支上有本地 mirror 没有的提交，普通 push 会被阻止，并显示 remote conflict。你需要先确认远端改动；如果确定要以 neuDrive 当前 mirror 为准，可以在 UI 里执行 overwrite。overwrite 使用 `--force-with-lease`，避免误覆盖已经再次变化的远端分支。
+Vola 把 mirror 当作备份目标。如果远端分支上有本地 mirror 没有的提交，普通 push 会被阻止，并显示 remote conflict。你需要先确认远端改动；如果确定要以 Vola 当前 mirror 为准，可以在 UI 里执行 overwrite。overwrite 使用 `--force-with-lease`，避免误覆盖已经再次变化的远端分支。
 
 ## 常见问题
 
 - `GIT_MIRROR_HOSTED_ROOT is not configured`：配置这个环境变量，并挂载一个可写目录。
 - hosted root 下权限不足：用 `securityContext.fsGroup` 或 initContainer 修正 PVC 权限。
 - 本机 Git 凭证填写了 GitHub HTTPS URL：改用 GitHub token 模式，或者把仓库地址改成 `git@github.com:owner/repo.git`。
-- 备份里没有导入的文件：确认当前 neuDrive 用户真的拥有这些文件。系统内置 skills 即使用户自己的 `file_tree` 为空，也可能在页面里可见。
+- 备份里没有导入的文件：确认当前 Vola 用户真的拥有这些文件。系统内置 skills 即使用户自己的 `file_tree` 为空，也可能在页面里可见。

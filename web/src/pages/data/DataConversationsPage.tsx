@@ -59,7 +59,7 @@ export default function DataConversationsPage() {
   }
 
   const copyReplayPrompt = async (node: FileNode) => {
-    const prompt = `Replay this neuDrive conversation into the current agent as reusable context: ${transcriptPath(node)}. Extract the key decisions, preferences, and next actions before answering.`
+    const prompt = `Replay this Vola conversation into the current agent as reusable context: ${transcriptPath(node)}. Extract the key decisions, preferences, and next actions before answering.`
     await navigator.clipboard?.writeText(prompt)
     setCopied(node.path)
     window.setTimeout(() => setCopied(''), 1600)
@@ -85,7 +85,7 @@ export default function DataConversationsPage() {
     if (!projectName) return
     try {
       await api.appendProjectLog(projectName, {
-        source: 'neudrive',
+        source: 'vola',
         action: 'link_conversation',
         summary: `${titleFor(node)} · ${transcriptPath(node)}`,
         tags: ['conversation'],

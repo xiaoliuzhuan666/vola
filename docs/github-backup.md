@@ -2,15 +2,15 @@ English | [简体中文](github-backup.zh-CN.md)
 
 # GitHub Backup
 
-GitHub Backup mirrors the user-visible neuDrive file tree into a Git repository. It is meant for recoverable version history: your skills, memory files, project notes, and other public Hub files can be backed up to GitHub and inspected with normal Git tools.
+GitHub Backup mirrors the user-visible Vola file tree into a Git repository. It is meant for recoverable version history: your skills, memory files, project notes, and other public Hub files can be backed up to GitHub and inspected with normal Git tools.
 
 ## Storage Model
 
-neuDrive data has three layers:
+Vola data has three layers:
 
 - Primary storage: hosted deployments usually use Postgres, and local mode usually uses SQLite. The current Hub state is written here first.
-- Git working tree: neuDrive writes the user-visible file tree into a Git working copy so it can create version history.
-- Remote backup: GitHub Backup pushes the Git working tree to GitHub. WebDAV, S3-compatible, OSS, and R2 targets upload a neuDrive export zip so the backup leaves the current machine or server.
+- Git working tree: Vola writes the user-visible file tree into a Git working copy so it can create version history.
+- Remote backup: GitHub Backup pushes the Git working tree to GitHub. WebDAV, S3-compatible, OSS, and R2 targets upload a Vola export zip so the backup leaves the current machine or server.
 
 GitHub Backup does not replace database backups. It stores the user-visible file tree and is useful for recovering skills, team library files, memory files, project notes, and similar content. Accounts, connections, billing, vault scope metadata, and secrets still require database backups or service configuration for recovery.
 
@@ -18,7 +18,7 @@ The current remote backup options are GitHub version history and WebDAV / S3-com
 
 ## What Gets Backed Up
 
-GitHub Backup writes the same path structure shown in neuDrive, for example:
+GitHub Backup writes the same path structure shown in Vola, for example:
 
 ```text
 skills/...
@@ -34,26 +34,26 @@ Secrets are not exported. Internal account metadata, connection records, vault s
 After GitHub sync has succeeded, clone the remote repository to inspect historical versions:
 
 ```bash
-git clone https://github.com/<owner>/neudrive-backup.git
+git clone https://github.com/<owner>/vola-backup.git
 ```
 
-To recover a single Skill, memory file, or project file, retrieve the relevant path from Git history and write it back through neuDrive import or sync commands. Full service recovery still needs a database backup because GitHub Backup does not contain internal account data or secrets.
+To recover a single Skill, memory file, or project file, retrieve the relevant path from Git history and write it back through Vola import or sync commands. Full service recovery still needs a database backup because GitHub Backup does not contain internal account data or secrets.
 
 You can import a recovered local file tree with:
 
 ```bash
-neu sync push --source ./recovered-neudrive-files
+neu sync push --source ./recovered-vola-files
 ```
 
-Check the directory before running the command so it contains only the files you want to write back into neuDrive.
+Check the directory before running the command so it contains only the files you want to write back into Vola.
 
-If the backup was uploaded to WebDAV or an S3-compatible target, download the matching `neudrive-export-*.zip`. This zip is a neuDrive export archive containing recoverable file tree content, profile, memory, projects, roles, inbox data, and vault scope metadata. It does not contain secret plaintext.
+If the backup was uploaded to WebDAV or an S3-compatible target, download the matching `vola-export-*.zip`. This zip is a Vola export archive containing recoverable file tree content, profile, memory, projects, roles, inbox data, and vault scope metadata. It does not contain secret plaintext.
 
 Recovery flow:
 
 1. Download the zip from WebDAV or object storage.
 2. Unzip it and review the `export/` directory.
-3. Import the files you need back into neuDrive, or prepare a local directory and run `neu sync push --source <dir>`.
+3. Import the files you need back into Vola, or prepare a local directory and run `neu sync push --source <dir>`.
 
 Full service recovery still needs a database backup. GitHub / WebDAV / S3-compatible backups cover user-visible data and portable export archives, not login sessions, connection tokens, billing state, or secret plaintext.
 
@@ -67,7 +67,7 @@ WebDAV targets need:
 - Username.
 - Password or app password. It is not shown again after saving.
 
-When you upload, neuDrive creates `neudrive-export-YYYYMMDD-HHMMSSZ.zip` and uploads it with WebDAV `PUT`. If the object path includes nested folders, the service tries to create them with `MKCOL`.
+When you upload, Vola creates `vola-export-YYYYMMDD-HHMMSSZ.zip` and uploads it with WebDAV `PUT`. If the object path includes nested folders, the service tries to create them with `MKCOL`.
 
 S3-compatible targets need:
 
@@ -78,7 +78,7 @@ S3-compatible targets need:
 - Access key ID and secret access key. The secret is not shown again after saving.
 - URL style. Path-style is the default: `<endpoint>/<bucket>/<prefix>/<object>`. Turn off Path-style URL when a provider requires virtual-hosted style.
 
-S3-compatible upload uses AWS Signature Version 4. Object names use the same `neudrive-export-YYYYMMDD-HHMMSSZ.zip` format.
+S3-compatible upload uses AWS Signature Version 4. Object names use the same `vola-export-YYYYMMDD-HHMMSSZ.zip` format.
 
 ## Hosted Mode
 
@@ -88,8 +88,8 @@ User flow:
 
 1. Open `GitHub Backup`.
 2. Click `Connect GitHub`.
-3. After authorization, neuDrive creates or reuses a private repository named `neudrive-backup` under the current GitHub user.
-4. Click `Sync now` to write the current neuDrive file tree and push it to `origin/main`.
+3. After authorization, Vola creates or reuses a private repository named `vola-backup` under the current GitHub user.
+4. Click `Sync now` to write the current Vola file tree and push it to `origin/main`.
 
 Hosted mode keeps the ordinary user interface simple:
 
@@ -137,7 +137,7 @@ volumeMounts:
 volumes:
   - name: git-mirror-data
     persistentVolumeClaim:
-      claimName: neudrive-git-mirrors
+      claimName: vola-git-mirrors
 ```
 
 The sync code creates each user directory if it does not already exist, but the process must be able to write to the mounted parent path. For multi-pod deployments, use an RWX volume or make sure only one pod runs Git mirror sync workers against a given root.
@@ -148,13 +148,13 @@ Hosted GitHub App authorization also needs:
 GITHUB_APP_CLIENT_ID=...
 GITHUB_APP_CLIENT_SECRET=...
 GITHUB_APP_SLUG=...
-PUBLIC_BASE_URL=https://your-neudrive-host
+PUBLIC_BASE_URL=https://your-vola-host
 JWT_SECRET=...
 ```
 
 The GitHub App must request these repository permissions:
 
-- Administration: read and write. Required by GitHub's `POST /user/repos` API when neuDrive creates the private `neudrive-backup` repository.
+- Administration: read and write. Required by GitHub's `POST /user/repos` API when Vola creates the private `vola-backup` repository.
 - Contents: read and write. Required for Git push access to the backup repository.
 
 After changing App permissions in GitHub, users must approve the updated permissions or reconnect GitHub before repository creation is retried.
@@ -172,18 +172,18 @@ Local mode does not rate limit manual `Sync now` by default. You can still set `
 CLI equivalents:
 
 ```bash
-neu git init --output ./neudrive-export/git-mirror
+neu git init --output ./vola-export/git-mirror
 neu git pull
 neu git auth github-app --device
 ```
 
 ## Remote Changes And Conflicts
 
-neuDrive treats the mirror as a backup target. If the remote branch has commits that are not in the local mirror, neuDrive blocks a normal push and reports a remote conflict. Review the remote change first, then use the UI overwrite action when you intentionally want neuDrive to replace the remote branch with the current mirror state. Overwrite uses `--force-with-lease`.
+Vola treats the mirror as a backup target. If the remote branch has commits that are not in the local mirror, Vola blocks a normal push and reports a remote conflict. Review the remote change first, then use the UI overwrite action when you intentionally want Vola to replace the remote branch with the current mirror state. Overwrite uses `--force-with-lease`.
 
 ## Troubleshooting
 
 - `GIT_MIRROR_HOSTED_ROOT is not configured`: set the env var and mount a writable directory.
 - Permission denied under the hosted root: fix PVC ownership with `securityContext.fsGroup` or an init container.
 - GitHub HTTPS URL with local credentials: use GitHub token mode, or switch the repository URL to `git@github.com:owner/repo.git`.
-- Backup contains no imported files: confirm the current neuDrive user actually owns those files. System skills may be visible even when the user's own `file_tree` is empty.
+- Backup contains no imported files: confirm the current Vola user actually owns those files. System skills may be visible even when the user's own `file_tree` is empty.

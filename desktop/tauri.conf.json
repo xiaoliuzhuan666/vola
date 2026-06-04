@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Vola",
+  "version": "0.1.0",
+  "identifier": "cn.vola.desktop",
+  "build": {
+    "beforeDevCommand": "npm run build:backend",
+    "beforeBuildCommand": "npm run build:backend && cd ../web && npm run build",
+    "frontendDist": "../web/dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "Vola",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 980,
+        "minHeight": 680,
+        "center": true,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "externalBin": [
+      "sidecars/vola"
+    ],
+    "macOS": {
+      "infoPlist": "macos-info.plist"
+    },
+    "icon": [
+      "icons/icon.icns",
+      "icons/icon.ico",
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png"
+    ]
+  }
+}

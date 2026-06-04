@@ -49,7 +49,7 @@ func TestImportPlatformCodexDryRunPreviewHandlesLargeSessionIndex(t *testing.T) 
 	longInstructions := strings.Repeat("base-instructions ", 10<<10)
 	writeCLITestFile(t, filepath.Join(home, ".codex", "session_index.jsonl"), "{\"id\":\"session-001\",\"thread_name\":\""+longTitle+"\",\"updated_at\":\"2026-04-18T10:05:00Z\"}\n")
 	writeCLITestFile(t, filepath.Join(home, ".codex", "sessions", "2026", "04", "18", "session-001.jsonl"), strings.Join([]string{
-		"{\"timestamp\":\"2026-04-18T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"session-001\",\"timestamp\":\"2026-04-18T10:00:00Z\",\"cwd\":\"/Users/demo/workspace/neudrive\",\"originator\":\"Codex Desktop\",\"cli_version\":\"0.118.0\",\"source\":\"desktop\",\"model_provider\":\"openai\",\"base_instructions\":{\"text\":\"" + longInstructions + "\"}}}",
+		"{\"timestamp\":\"2026-04-18T10:00:00Z\",\"type\":\"session_meta\",\"payload\":{\"id\":\"session-001\",\"timestamp\":\"2026-04-18T10:00:00Z\",\"cwd\":\"/Users/demo/workspace/vola\",\"originator\":\"Codex Desktop\",\"cli_version\":\"0.118.0\",\"source\":\"desktop\",\"model_provider\":\"openai\",\"base_instructions\":{\"text\":\"" + longInstructions + "\"}}}",
 		`{"timestamp":"2026-04-18T10:00:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Plan the dry run."}]}}`,
 		`{"timestamp":"2026-04-18T10:00:02Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Use the deterministic preview path."}]}}`,
 	}, "\n")+"\n")

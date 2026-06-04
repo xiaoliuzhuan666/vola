@@ -12,14 +12,15 @@ import (
 	"sync"
 	"time"
 
-	"github.com/agi-bar/neudrive/internal/auth"
-	"github.com/agi-bar/neudrive/internal/backups"
-	"github.com/agi-bar/neudrive/internal/config"
-	"github.com/agi-bar/neudrive/internal/localgitsync"
-	"github.com/agi-bar/neudrive/internal/models"
-	"github.com/agi-bar/neudrive/internal/services"
-	vaultpkg "github.com/agi-bar/neudrive/internal/vault"
-	"github.com/agi-bar/neudrive/internal/web"
+	"github.com/agi-bar/vola/internal/auth"
+	"github.com/agi-bar/vola/internal/backups"
+	"github.com/agi-bar/vola/internal/config"
+	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/mcp"
+	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
+	vaultpkg "github.com/agi-bar/vola/internal/vault"
+	"github.com/agi-bar/vola/internal/web"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 )
@@ -52,6 +53,9 @@ type Server struct {
 	MemoryService            *services.MemoryService
 	ProjectService           *services.ProjectService
 	SummaryService           *services.SummaryService
+	SkillLearningService     *services.SkillLearningService
+	ModelProviderService     *services.ModelProviderService
+	GrowthProposalService    *services.GrowthProposalService
 	RoleService              *services.RoleService
 	InboxService             *services.InboxService
 	DashboardService         *services.DashboardService
@@ -74,6 +78,7 @@ type Server struct {
 	GitHubAppClientID        string
 	GitHubAppClientSecret    string
 	GitHubAppSlug            string
+	MCPGateway               *mcp.MCPGateway
 	mcpSessionSources        sync.Map
 	localPlatformPreviewJobs sync.Map
 }
@@ -91,6 +96,9 @@ type ServerDeps struct {
 	MemoryService         *services.MemoryService
 	ProjectService        *services.ProjectService
 	SummaryService        *services.SummaryService
+	SkillLearningService  *services.SkillLearningService
+	ModelProviderService  *services.ModelProviderService
+	GrowthProposalService *services.GrowthProposalService
 	RoleService           *services.RoleService
 	InboxService          *services.InboxService
 	DashboardService      *services.DashboardService
@@ -111,6 +119,7 @@ type ServerDeps struct {
 	GitHubAppClientID     string
 	GitHubAppClientSecret string
 	GitHubAppSlug         string
+	MCPGateway            *mcp.MCPGateway
 }
 
 // NewServer creates a fully wired Server with routes configured.
@@ -182,6 +191,9 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 		MemoryService:         deps.MemoryService,
 		ProjectService:        deps.ProjectService,
 		SummaryService:        deps.SummaryService,
+		SkillLearningService:  deps.SkillLearningService,
+		ModelProviderService:  deps.ModelProviderService,
+		GrowthProposalService: deps.GrowthProposalService,
 		RoleService:           deps.RoleService,
 		InboxService:          deps.InboxService,
 		DashboardService:      deps.DashboardService,
@@ -203,6 +215,7 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 		GitHubAppClientID:     deps.GitHubAppClientID,
 		GitHubAppClientSecret: deps.GitHubAppClientSecret,
 		GitHubAppSlug:         deps.GitHubAppSlug,
+		MCPGateway:            deps.MCPGateway,
 	}
 	if deps.UserService != nil && deps.AuthService != nil {
 		s.AuthHandler = auth.NewHandler(deps.UserService, deps.AuthService, deps.JWTSecret, deps.GitHubClientID, deps.GitHubClientSecret)
@@ -220,7 +233,18 @@ func (s *Server) setupRoutes() {
 	rl := NewRateLimiter(s.Config.RateLimit, time.Minute)
 	r.Use(PanicRecoveryMiddleware)
 	r.Use(SecurityHeadersMiddleware)
-	r.Use(CORSMiddleware(s.Config.CORSOrigins))
+	origins := s.Config.CORSOrigins
+	if s.isLocalMode() {
+		origins = append(origins,
+			"tauri://localhost",
+			"http://tauri.localhost",
+			"https://tauri.localhost",
+			"http://localhost:3000",
+			"http://localhost:8080",
+			"http://localhost:42690",
+		)
+	}
+	r.Use(CORSMiddleware(origins, s.isLocalMode()))
 	r.Use(rl.Middleware)
 	r.Use(RequestIDMiddleware)
 	r.Use(CaptureOAuthMiddleware(s.Config))
@@ -231,6 +255,9 @@ func (s *Server) setupRoutes() {
 	r.Get("/api/health", s.healthCheck)
 	r.Get("/api/config", s.handlePublicConfig)
 	r.Post("/api/local/owner-token", s.handleBootstrapLocalOwnerToken)
+	// 容错：兼容支持前端可能因 API_BASE 缺 /api 路径发起的直接配置与 owner Token 获取，杜绝返回 SPA 网页 HTML 的崩溃。
+	r.Get("/config", s.handlePublicConfig)
+	r.Post("/local/owner-token", s.handleBootstrapLocalOwnerToken)
 	r.Get("/gpt/openapi.json", s.handleGPTOpenAPISchema)
 	r.Post("/test/post", s.handleTestPost)
 
@@ -247,10 +274,8 @@ func (s *Server) setupRoutes() {
 	r.Post("/api/adapters/feishu/{slug}/events", s.handleFeishuEventCallback)
 
 	// Auth (public)
-	if s.isLocalMode() {
-		r.Post("/api/auth/register", s.handleAuthRegister)
-		r.Post("/api/auth/login", s.handleAuthLogin)
-	}
+	r.Post("/api/auth/register", s.handleAuthRegister)
+	r.Post("/api/auth/login", s.handleAuthLogin)
 	r.Get("/api/auth/providers", s.handleAuthProviders)
 	r.Post("/api/auth/providers/{provider}/start", s.handleAuthProviderStart)
 	r.Get("/api/auth/providers/{provider}/callback", s.handleAuthProviderCallback)
@@ -278,9 +303,7 @@ func (s *Server) setupRoutes() {
 
 		r.Get("/api/auth/me", s.handleAuthMe)
 		r.Put("/api/auth/me", s.handleAuthUpdateMe)
-		if s.isLocalMode() {
-			r.Post("/api/auth/change-password", s.handleAuthChangePassword)
-		}
+		r.Post("/api/auth/change-password", s.handleAuthChangePassword)
 		r.Get("/api/auth/sessions", s.handleAuthListSessions)
 		r.Delete("/api/auth/sessions/{id}", s.handleAuthRevokeSession)
 
@@ -299,6 +322,11 @@ func (s *Server) setupRoutes() {
 		r.Put("/api/vault/{scope}", s.HandleVaultWrite)
 		r.Delete("/api/vault/{scope}", s.HandleVaultDelete)
 
+		// Model providers
+		r.Get("/api/model-providers", s.handleModelProvidersGet)
+		r.Put("/api/model-providers", s.handleModelProvidersSave)
+		r.Post("/api/model-providers/test", s.handleModelProvidersTest)
+
 		// Connections
 		r.Get("/api/connections", s.handleConnectionsList)
 		r.Post("/api/connections", s.handleConnectionsCreate)
@@ -315,6 +343,14 @@ func (s *Server) setupRoutes() {
 		r.Post("/api/local/skills/sync/apply", s.handleLocalSkillSyncApply)
 		r.Post("/api/local/skills/sync/cleanup", s.handleLocalSkillSyncCleanup)
 		r.Post("/api/local/skills/sync/export", s.handleLocalSkillSyncExport)
+		r.Get("/api/skills/learning-summary", s.handleSkillsLearningSummary)
+		r.Get("/api/skills/learning-recommend", s.handleSkillsLearningRecommend)
+		r.Get("/api/skills/learning-notes", s.handleSkillsLearningNotes)
+		r.Post("/api/skills/learning-runs", s.handleSkillsLearningRunCreate)
+		r.Get("/api/growth-proposals", s.handleGrowthProposalsList)
+		r.Post("/api/growth-proposals/{id}/accept", s.handleGrowthProposalAccept)
+		r.Post("/api/growth-proposals/{id}/dismiss", s.handleGrowthProposalDismiss)
+		r.Post("/api/growth-proposals/{id}/apply", s.handleGrowthProposalApply)
 		r.Get("/api/skills", s.handleSkillsList)
 
 		// Memory
@@ -335,6 +371,7 @@ func (s *Server) setupRoutes() {
 
 		// Dashboard
 		r.Get("/api/dashboard/stats", s.handleDashboardStats)
+		r.Get("/api/dashboard/activities", s.handleGetDashboardActivities)
 		r.Get("/api/ops/status", s.handleOpsStatus)
 
 		// Admin account management
@@ -391,6 +428,11 @@ func (s *Server) setupRoutes() {
 		r.Post("/api/local/platform/preview", s.handleLocalPlatformPreview)
 		r.Post("/api/local/platform/import", s.handleLocalPlatformImport)
 
+		// Local MCP client integration
+		r.Get("/api/local/mcp/clients", s.handleLocalMCPClientsList)
+		r.Post("/api/local/mcp/clients/register", s.handleLocalMCPClientsRegister)
+		r.Post("/api/local/mcp/clients/unregister", s.handleLocalMCPClientsUnregister)
+
 		// GPT Setup
 		r.Get("/api/gpt/setup", s.handleGPTSetup)
 
@@ -444,6 +486,7 @@ func (s *Server) setupRoutes() {
 	// ChatGPT GPT Actions also use these endpoints — schema at /gpt/openapi.json
 	r.Group(func(r chi.Router) {
 		r.Use(s.apiKeyMiddleware)
+		r.Use(s.AgentAuditMiddleware)
 
 		r.Get("/agent/auth/whoami", s.handleAgentAuthWhoAmI)
 		r.Get("/agent/tree/snapshot", s.handleAgentTreeSnapshot)
@@ -781,7 +824,7 @@ func authExpiryFromCtx(ctx context.Context) (*time.Time, bool) {
 func (s *Server) healthCheck(w http.ResponseWriter, r *http.Request) {
 	payload := map[string]interface{}{
 		"status":  "ok",
-		"service": "neudrive",
+		"service": "vola",
 		"time":    time.Now().UTC().Format(time.RFC3339),
 	}
 	if s.Storage != "" {

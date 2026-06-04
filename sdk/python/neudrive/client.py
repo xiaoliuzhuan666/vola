@@ -1,4 +1,4 @@
-"""neuDrive SDK client for Python."""
+"""Vola SDK client for Python."""
 
 from __future__ import annotations
 
@@ -19,11 +19,11 @@ from .types import (
 
 
 class NeuDrive:
-    """Synchronous neuDrive SDK client.
+    """Synchronous Vola SDK client.
 
     Use as a context manager to ensure the underlying HTTP connection is closed::
 
-        with NeuDrive("https://neudrive.ai", token="ndt_xxx") as hub:
+        with NeuDrive("https://www.vola.ai", token="ndt_xxx") as hub:
             profile = hub.get_profile("preferences")
     """
 
@@ -428,7 +428,7 @@ class AsyncNeuDrive:
 
     Use as an async context manager::
 
-        async with AsyncNeuDrive("https://neudrive.ai", token="ndt_xxx") as hub:
+        async with AsyncNeuDrive("https://www.vola.ai", token="ndt_xxx") as hub:
             profile = await hub.get_profile("preferences")
     """
 
