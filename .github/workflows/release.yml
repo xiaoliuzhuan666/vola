@@ -157,13 +157,14 @@ jobs:
 
       - name: Build desktop app
         shell: bash
+        working-directory: src-tauri
         run: |
           set -euo pipefail
           args=()
           if [ -n "${{ matrix.tauriTarget }}" ]; then
             args+=(--target "${{ matrix.tauriTarget }}")
           fi
-          node ./web/node_modules/@tauri-apps/cli/tauri.js build --ci "${args[@]}"
+          node ../web/node_modules/@tauri-apps/cli/tauri.js build --ci "${args[@]}"
 
       - name: Collect desktop artifacts
         shell: bash
