@@ -15,7 +15,6 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
-	"syscall"
 	"time"
 )
 
@@ -461,9 +460,7 @@ func EnsureLocalDaemon(ctx context.Context, executable string, extraEnv map[stri
 		"PORT="+fmt.Sprintf("%d", port),
 		"VOLA_LOCAL_MODE=1",
 	)
-	if runtime.GOOS != "windows" {
-		cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
-	}
+	configureDaemonCommand(cmd)
 	if err := cmd.Start(); err != nil {
 		return nil, nil, err
 	}
@@ -499,11 +496,7 @@ func StopLocalDaemon() error {
 	}
 	process, err := os.FindProcess(state.PID)
 	if err == nil {
-		if runtime.GOOS != "windows" {
-			_ = process.Signal(syscall.SIGTERM)
-		} else {
-			_ = process.Kill()
-		}
+		stopProcess(process)
 	}
 	_ = ClearState(statePath)
 	return nil
