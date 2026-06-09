@@ -203,9 +203,7 @@ func (s *WebhookService) deliver(webhookID uuid.UUID, url, secret, event string,
 	req.Body = http.NoBody // replaced below
 	req.Body = newBytesReadCloser(body)
 	req.ContentLength = int64(len(body))
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-NeuDrive-Event", event)
-	req.Header.Set("X-NeuDrive-Signature", "sha256="+sig)
+	applyWebhookHeaders(req, event, sig)
 
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -224,6 +222,14 @@ func (s *WebhookService) deliver(webhookID uuid.UUID, url, secret, event string,
 		slog.Warn("webhook deliver: non-success status", "url", url, "status", resp.StatusCode)
 		s.recordFailure(webhookID)
 	}
+}
+
+func applyWebhookHeaders(req *http.Request, event, sig string) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Vola-Event", event)
+	req.Header.Set("X-Vola-Signature", "sha256="+sig)
+	req.Header.Set("X-NeuDrive-Event", event)
+	req.Header.Set("X-NeuDrive-Signature", "sha256="+sig)
 }
 
 // recordFailure increments the failure count and deactivates the webhook if

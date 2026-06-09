@@ -23,6 +23,15 @@ func TestScanLocalCodexMigrationBuildsStructuredInventory(t *testing.T) {
 	if len(scan.MemoryItems) == 0 {
 		t.Fatal("expected memory items")
 	}
+	hasChronicle := false
+	for _, item := range scan.MemoryItems {
+		if item.Title == "chronicle/apps/browser" {
+			hasChronicle = true
+		}
+	}
+	if !hasChronicle {
+		t.Fatalf("expected chronicle memory item, got %+v", scan.MemoryItems)
+	}
 	if len(scan.Projects) == 0 {
 		t.Fatal("expected project summaries")
 	}
@@ -41,6 +50,9 @@ func TestScanLocalCodexMigrationBuildsStructuredInventory(t *testing.T) {
 	for _, record := range scan.Automations {
 		if record.Metadata["schedule"] != "FREQ=DAILY;BYHOUR=9;BYMINUTE=0" {
 			t.Fatalf("expected parsed automation schedule, got %+v", record)
+		}
+		if record.Metadata["prompt"] != "Review the latest imports." {
+			t.Fatalf("expected parsed automation prompt, got %+v", record)
 		}
 	}
 	for _, record := range scan.Archives {
@@ -181,6 +193,7 @@ func createCodexMigrationFixtureTree(t *testing.T) string {
 	writeFixtureFile(t, filepath.Join(home, ".codex", "AGENTS.md"), "# Global\n\nKeep answers short.\n")
 	writeFixtureFile(t, filepath.Join(home, ".codex", "rules", "default.rules"), "prefix_rule(pattern=[\"go\", \"test\", \"./...\"], decision=\"allow\")\n")
 	writeFixtureFile(t, filepath.Join(home, ".codex", "memories", "team.md"), "Remember the migration fixtures.\n")
+	writeFixtureFile(t, filepath.Join(home, ".codex", "memories_extensions", "chronicle", "apps", "browser.md"), "Browser sessions are useful for visual checks.\n")
 	writeFixtureFile(t, filepath.Join(home, ".codex", "config.toml"), strings.Join([]string{
 		`model = "gpt-5.4"`,
 		`approval_policy = "never"`,
@@ -210,6 +223,7 @@ func createCodexMigrationFixtureTree(t *testing.T) string {
 		`kind = "heartbeat"`,
 		`status = "ACTIVE"`,
 		`rrule = "FREQ=DAILY;BYHOUR=9;BYMINUTE=0"`,
+		`prompt = "Review the latest imports."`,
 	}, "\n")+"\n")
 	writeFixtureFile(t, filepath.Join(home, ".agents", "skills", "sample", "SKILL.md"), "# Sample\n")
 	writeFixtureFile(t, filepath.Join(home, ".codex", "skills", "builtin", "SKILL.md"), "# Builtin\n")

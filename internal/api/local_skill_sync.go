@@ -884,8 +884,6 @@ func localSkillTargetRoot(agentID string, targetRoots map[string]string) (string
 			value = "~/.claude/skills"
 		case "codex":
 			value = "~/.codex/skills"
-		case "cursor":
-			value = ".cursor/rules"
 		default:
 			return "", fmt.Errorf("no local skill root configured for %s", agentID)
 		}

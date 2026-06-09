@@ -191,6 +191,12 @@ func (s *Server) handleTeamSkillsList(w http.ResponseWriter, r *http.Request) {
 		respondInternalError(w, err)
 		return
 	}
+	doc, err := s.readTeamSkillPublications(r.Context(), team.HubUserID)
+	if err != nil {
+		respondInternalError(w, err)
+		return
+	}
+	skills = filterTeamSkillSummariesForVisibility(skills, doc, team)
 	respondOK(w, map[string]any{"skills": skills})
 }
 
@@ -200,10 +206,22 @@ func (s *Server) handleTeamTreeRead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	path := chi.URLParam(r, "*")
+	doc, err := s.readTeamSkillPublications(r.Context(), team.HubUserID)
+	if err != nil {
+		respondInternalError(w, err)
+		return
+	}
+	if !teamSkillTreePathVisible(path, doc, team) {
+		respondNotFound(w, "file")
+		return
+	}
 	node, err := s.readOrListTreePath(r.Context(), team.HubUserID, trustLevelFromCtx(r.Context()), path)
 	if err != nil {
 		respondNotFound(w, "file")
 		return
+	}
+	if node != nil {
+		node.Children = filterTeamFileNodesForVisibility(node.Children, doc, team)
 	}
 	respondOK(w, node)
 }
@@ -222,8 +240,13 @@ func (s *Server) handleTeamTreeSnapshot(w http.ResponseWriter, r *http.Request) 
 		respondInternalError(w, err)
 		return
 	}
+	doc, err := s.readTeamSkillPublications(r.Context(), team.HubUserID)
+	if err != nil {
+		respondInternalError(w, err)
+		return
+	}
 	nodes := make([]*FileNode, 0, len(snapshot.Entries))
-	for _, entry := range filterVisibleEntries(snapshot.Entries) {
+	for _, entry := range filterTeamFileEntriesForVisibility(filterVisibleEntries(snapshot.Entries), doc, team) {
 		nodes = append(nodes, fileTreeEntryToNode(s.renderSystemSkillEntry(r.Context(), team.HubUserID, trustLevelFromCtx(r.Context()), &entry)))
 	}
 	respondOK(w, SnapshotResponse{
@@ -345,6 +368,12 @@ func (s *Server) handleAgentTeamSkillsList(w http.ResponseWriter, r *http.Reques
 		respondInternalError(w, err)
 		return
 	}
+	doc, err := s.readTeamSkillPublications(r.Context(), team.HubUserID)
+	if err != nil {
+		respondInternalError(w, err)
+		return
+	}
+	skills = filterTeamSkillSummariesForVisibility(skills, doc, team)
 	respondOK(w, map[string]any{"team": team, "skills": skills})
 }
 
@@ -357,10 +386,22 @@ func (s *Server) handleAgentTeamTreeRead(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	path := chi.URLParam(r, "*")
+	doc, err := s.readTeamSkillPublications(r.Context(), team.HubUserID)
+	if err != nil {
+		respondInternalError(w, err)
+		return
+	}
+	if !teamSkillTreePathVisible(path, doc, team) {
+		respondNotFound(w, "file")
+		return
+	}
 	node, err := s.readOrListTreePath(r.Context(), team.HubUserID, trustLevelFromCtx(r.Context()), path)
 	if err != nil {
 		respondNotFound(w, "file")
 		return
+	}
+	if node != nil {
+		node.Children = filterTeamFileNodesForVisibility(node.Children, doc, team)
 	}
 	respondOK(w, map[string]any{"team": team, "node": node})
 }

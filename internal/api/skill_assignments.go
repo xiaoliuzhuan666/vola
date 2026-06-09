@@ -81,11 +81,13 @@ var skillAgentTargets = []skillAgentTarget{
 	},
 	{
 		ID: "cursor", Name: "Cursor", Platform: "cursor", InstallPathHint: ".cursor/rules",
-		SupportsApply: true, SupportStatus: "managed_apply", ApplyMode: "managed-directory", ExportSupported: true,
-		DocsPath: "docs/agent-skill-targets.zh-CN.md",
+		SupportsApply: false, SupportStatus: "export_only", ApplyMode: "export-only", ExportSupported: true,
+		AutoApplyReason: "Cursor rules are project-specific, so Vola keeps assignments and export packages but does not edit Cursor configuration automatically.",
+		DocsPath:        "docs/agent-skill-targets.zh-CN.md",
 		DirectoryRules: []string{
-			"Vola writes assigned skills into .cursor/rules by default.",
-			"Only directories with .vola-managed.json are updated or cleaned.",
+			"Cursor assignments are preserved in Hub and can be exported as a zip package.",
+			"Review the exported SKILL.md and assets, then manually adapt them into the Cursor rules you already use.",
+			"Vola does not edit .cursor/rules, ~/.cursor, or Cursor project configuration automatically.",
 		},
 	},
 	{

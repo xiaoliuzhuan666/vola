@@ -11,13 +11,14 @@ const (
 	canonicalRootCommand = "vola"
 	shortRootCommand     = "vol"
 	legacyRootCommand    = "xlzdrive"
+	legacyNeuRootCommand = "neudrive"
 	neuRootCommand       = "neu"
 )
 
 func rootCommand() string {
 	base := strings.TrimSpace(filepath.Base(os.Args[0]))
 	switch base {
-	case canonicalRootCommand, shortRootCommand, legacyRootCommand, neuRootCommand:
+	case canonicalRootCommand, shortRootCommand, legacyRootCommand, legacyNeuRootCommand, neuRootCommand:
 		return base
 	default:
 		return canonicalRootCommand

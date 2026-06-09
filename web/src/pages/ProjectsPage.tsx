@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, type FileNode } from '../api'
+import {
+  api,
+  type FileNode,
+  type LocalLibraryImportResponse,
+  type LocalLibraryMarkdownCandidate,
+  type LocalLibraryProjectCandidate,
+  type LocalLibraryScanResponse,
+} from '../api'
 import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../components/MaterialsSectionToolbar'
 import MaterialsTile from '../components/MaterialsTile'
@@ -70,6 +77,12 @@ export default function ProjectsPage() {
   const [sourceFilter, setSourceFilter] = useState('all')
   const [archiveTarget, setArchiveTarget] = useState<Project | null>(null)
   const [archiveSubmitting, setArchiveSubmitting] = useState(false)
+  const [localModeAvailable, setLocalModeAvailable] = useState(false)
+  const [localLibraryScan, setLocalLibraryScan] = useState<LocalLibraryScanResponse | null>(null)
+  const [localLibraryImport, setLocalLibraryImport] = useState<LocalLibraryImportResponse | null>(null)
+  const [localLibraryScanning, setLocalLibraryScanning] = useState(false)
+  const [localLibraryImporting, setLocalLibraryImporting] = useState(false)
+  const [localLibraryNotice, setLocalLibraryNotice] = useState('')
   const { activeMenuId, closeMenu, isMenuOpen, toggleMenu } = useResourceCardMenu()
 
   const load = useCallback(async () => {
@@ -108,6 +121,20 @@ export default function ProjectsPage() {
   useEffect(() => {
     void load()
   }, [load])
+
+  useEffect(() => {
+    let active = true
+    api.getPublicConfig()
+      .then((config) => {
+        if (active) setLocalModeAvailable(!!config.local_mode)
+      })
+      .catch(() => {
+        if (active) setLocalModeAvailable(false)
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   const currentBundleContext = bundleNode?.bundle_context
   const bundleEntries = bundleNode?.children || []
@@ -168,6 +195,40 @@ export default function ProjectsPage() {
     }
   }
 
+  const handleLocalLibraryScan = async () => {
+    setLocalLibraryScanning(true)
+    setLocalLibraryNotice('')
+    setLocalLibraryImport(null)
+    setError('')
+    try {
+      const scan = await api.scanLocalLibrary({ max_markdown: 5000, max_projects: 500 })
+      setLocalLibraryScan(scan)
+    } catch (err: any) {
+      setError(err.message || tx('扫描本地资料失败', 'Failed to scan local material'))
+    } finally {
+      setLocalLibraryScanning(false)
+    }
+  }
+
+  const handleLocalLibraryImport = async () => {
+    setLocalLibraryImporting(true)
+    setLocalLibraryNotice('')
+    setError('')
+    try {
+      const result = await api.importLocalLibrary({ max_markdown: 5000, max_projects: 500 })
+      setLocalLibraryImport(result)
+      setLocalLibraryNotice(tx(
+        `已导入 ${result.stats.projects_shown} 个项目候选和 ${result.stats.markdown_shown} 个 Markdown 索引。`,
+        `Imported ${result.stats.projects_shown} project candidates and ${result.stats.markdown_shown} Markdown index rows.`,
+      ))
+      await load()
+    } catch (err: any) {
+      setError(err.message || tx('导入本地资料索引失败', 'Failed to import local material index'))
+    } finally {
+      setLocalLibraryImporting(false)
+    }
+  }
+
   const openProjectBundle = useCallback((name: string, relativeDir = '') => {
     closeMenu()
     navigate(dataProjectBundleRoute(name, relativeDir))
@@ -200,6 +261,35 @@ export default function ProjectsPage() {
       return ts
     }
   }
+
+  const localMarkdownCategoryLabel = (category: string) => {
+    switch (category) {
+      case 'general-playbook':
+        return tx('通用方案', 'General')
+      case 'learning-note':
+        return tx('学习笔记', 'Learning')
+      case 'sensitive-metadata':
+        return tx('敏感文件名', 'Sensitive name')
+      default:
+        return tx('项目笔记', 'Project note')
+    }
+  }
+
+  const renderLocalProjectPreview = (project: LocalLibraryProjectCandidate) => (
+    <div key={project.path} className="project-bundle-path-row">
+      <span className="project-bundle-path-label">{project.name}</span>
+      <code className="project-bundle-path-value">{project.path}</code>
+    </div>
+  )
+
+  const renderLocalMarkdownPreview = (doc: LocalLibraryMarkdownCandidate) => (
+    <div key={doc.path} className="project-bundle-path-row">
+      <span className="project-bundle-path-label">
+        {doc.title} · {localMarkdownCategoryLabel(doc.category)}
+      </span>
+      <code className="project-bundle-path-value">{doc.path}</code>
+    </div>
+  )
 
   const sortOptions = getMaterialsSortOptions(locale)
   const getProjectLastActivity = (project: Project) => project.last_activity || project.updated_at
@@ -513,6 +603,86 @@ export default function ProjectsPage() {
       </section>
 
       {error && <div className="alert alert-error">{error}</div>}
+
+      {localModeAvailable && (
+        <div className="materials-panel form-card">
+          <div className="materials-section-head">
+            <div>
+              <h3 className="materials-section-title">{tx('本地资料发现', 'Local material discovery')}</h3>
+              <p className="materials-section-copy">
+                {tx('扫描桌面、下载、文稿中的项目目录和 Markdown，并导入为 Vola 项目索引。', 'Scan Desktop, Downloads, and Documents for project folders and Markdown, then import them as a Vola project index.')}
+              </p>
+            </div>
+            <div className="form-actions">
+              <button className="btn btn-sm materials-toolbar-control" onClick={() => void handleLocalLibraryScan()} disabled={localLibraryScanning || localLibraryImporting}>
+                {localLibraryScanning ? tx('扫描中...', 'Scanning...') : tx('扫描本机目录', 'Scan local folders')}
+              </button>
+              <button className="btn btn-sm btn-primary materials-toolbar-control" onClick={() => void handleLocalLibraryImport()} disabled={localLibraryScanning || localLibraryImporting}>
+                {localLibraryImporting ? tx('导入中...', 'Importing...') : tx('导入索引', 'Import index')}
+              </button>
+            </div>
+          </div>
+
+          {localLibraryNotice && <div className="alert alert-success" style={{ marginTop: 12 }}>{localLibraryNotice}</div>}
+
+          {localLibraryScan && (
+            <div className="data-record-list" style={{ marginTop: 16 }}>
+              <div className="data-record-item">
+                <div className="data-record-title">{tx('扫描结果', 'Scan result')}</div>
+                <div className="data-record-secondary">
+                  {tx(
+                    `${localLibraryScan.stats.roots_scanned} 个目录，${localLibraryScan.stats.projects_found} 个项目候选，${localLibraryScan.stats.markdown_found} 个 Markdown。`,
+                    `${localLibraryScan.stats.roots_scanned} roots, ${localLibraryScan.stats.projects_found} project candidates, ${localLibraryScan.stats.markdown_found} Markdown files.`,
+                  )}
+                </div>
+                {localLibraryScan.stats.sensitive_files > 0 && (
+                  <div className="data-record-secondary">
+                    {tx(
+                      `${localLibraryScan.stats.sensitive_files} 个 Markdown 文件名看起来可能含账号或密钥，只导入路径和元数据。`,
+                      `${localLibraryScan.stats.sensitive_files} Markdown filenames look account- or key-related; only path metadata is imported.`,
+                    )}
+                  </div>
+                )}
+                <div className="project-bundle-paths" style={{ marginTop: 10 }}>
+                  {localLibraryScan.roots.map((root) => (
+                    <div key={root.path} className="project-bundle-path-row">
+                      <span className="project-bundle-path-label">{root.scanned ? tx('已扫描', 'Scanned') : tx('未扫描', 'Not scanned')}</span>
+                      <code className="project-bundle-path-value">{root.path}</code>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              {localLibraryScan.projects.length > 0 && (
+                <div className="data-record-item">
+                  <div className="data-record-title">{tx('项目候选', 'Project candidates')}</div>
+                  <div className="project-bundle-paths">
+                    {localLibraryScan.projects.slice(0, 6).map(renderLocalProjectPreview)}
+                  </div>
+                </div>
+              )}
+
+              {localLibraryScan.markdown.length > 0 && (
+                <div className="data-record-item">
+                  <div className="data-record-title">{tx('Markdown 候选', 'Markdown candidates')}</div>
+                  <div className="project-bundle-paths">
+                    {localLibraryScan.markdown.slice(0, 6).map(renderLocalMarkdownPreview)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {localLibraryImport && (
+            <div className="project-bundle-paths" style={{ marginTop: 12 }}>
+              <div className="project-bundle-path-row">
+                <span className="project-bundle-path-label">{tx('索引项目', 'Index project')}</span>
+                <code className="project-bundle-path-value">/projects/{localLibraryImport.project_name}/</code>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <GitHubTreeList
         rootPath="/projects"

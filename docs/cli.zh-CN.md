@@ -4,7 +4,7 @@
 
 这份文档是 README 里链接的详细 CLI 手册。逐平台接入方式请看 [接入说明](setup.zh-CN.md)。
 
-下面的示例统一使用 `neu`。
+下面的示例统一使用 `neu`。`vola`、`vol`、`neudrive`、`xlzdrive` 会继续作为兼容别名保留，方便旧脚本继续运行。
 
 ## 安装
 

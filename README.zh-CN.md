@@ -93,7 +93,8 @@ cd vola
 ./tools/install-vola.sh
 ```
 
-安装完成后，默认使用 `neu`；兼容别名 `vola` 也仍然可用。
+安装完成后，推荐使用 `neu`。`vola`、`vol` 以及旧脚本可能还在调用的
+`neudrive`、`xlzdrive` 都会继续作为兼容入口保留。
 
 ```bash
 neu status         # 检查 daemon、本地存储和当前 target 是否就绪
@@ -127,7 +128,7 @@ cd web && npm run build
 make build
 ```
 
-`make build` 会重新生成嵌入式前端产物并构建 `bin/vola` 与 `bin/neu`。部署前检查清单见：[Release Readiness](docs/release-readiness.zh-CN.md)
+`make build` 会重新生成嵌入式前端产物并构建 `bin/neu`、`bin/vola`、`bin/vol` 与 `bin/neudrive`。部署前检查清单见：[Release Readiness](docs/release-readiness.zh-CN.md)
 
 ## 登录官方云服务
 

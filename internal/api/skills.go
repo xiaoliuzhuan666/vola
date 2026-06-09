@@ -18,6 +18,14 @@ func (s *Server) handleSkillsList(w http.ResponseWriter, r *http.Request) {
 		respondInternalError(w, err)
 		return
 	}
+	if target.Scope == "team" && target.Team != nil {
+		doc, err := s.readTeamSkillPublications(r.Context(), target.UserID)
+		if err != nil {
+			respondInternalError(w, err)
+			return
+		}
+		skills = filterTeamSkillSummariesForVisibility(skills, doc, target.Team)
+	}
 
 	respondOK(w, map[string]interface{}{
 		"scope":  target.Scope,

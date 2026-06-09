@@ -95,7 +95,8 @@ cd vola
 ./tools/install-vola.sh
 ```
 
-After install, use `neu`; the `vola` compatibility alias still works.
+After install, use `neu`. The `vola` and `vol` aliases, plus the legacy
+`neudrive` and `xlzdrive` commands, are kept for existing scripts.
 
 ```bash
 neu status         # check daemon, storage, and current target readiness
@@ -129,7 +130,7 @@ cd web && npm run build
 make build
 ```
 
-`make build` rebuilds the embedded frontend and produces `bin/vola` and `bin/neu`. Deployment readiness checklist: [Release Readiness](docs/release-readiness.zh-CN.md)
+`make build` rebuilds the embedded frontend and produces `bin/neu`, `bin/vola`, `bin/vol`, and `bin/neudrive`. Deployment readiness checklist: [Release Readiness](docs/release-readiness.zh-CN.md)
 
 ## Login To Hosted Cloud
 

@@ -4,7 +4,7 @@ use std::process::{Child, Command, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use tauri::{AppHandle, Manager, Url};
+use tauri::AppHandle;
 use tauri_plugin_shell::ShellExt;
 
 const API_HOST: &str = "127.0.0.1";
@@ -13,14 +13,26 @@ const PORT_END: u16 = 42760;
 
 #[derive(Clone)]
 struct DesktopState {
+    api_base: Arc<Mutex<Option<String>>>,
     sidecar: Arc<Mutex<Option<Child>>>,
 }
 
 impl DesktopState {
     fn new() -> Self {
         Self {
+            api_base: Arc::new(Mutex::new(None)),
             sidecar: Arc::new(Mutex::new(None)),
         }
+    }
+
+    fn set_api_base(&self, api_base: String) {
+        if let Ok(mut slot) = self.api_base.lock() {
+            *slot = Some(api_base);
+        }
+    }
+
+    fn api_base(&self) -> Option<String> {
+        self.api_base.lock().ok().and_then(|slot| slot.clone())
     }
 
     fn set_child(&self, child: Child) {
@@ -75,28 +87,6 @@ fn wait_for_health(api_base: &str, timeout: Duration) -> Result<(), String> {
     ))
 }
 
-fn bootstrap_owner_token(api_base: &str) -> Result<String, String> {
-    let response = local_http_request(
-        "POST",
-        API_HOST,
-        api_base,
-        "/api/local/owner-token",
-        Duration::from_secs(6),
-    )?;
-    if !response_has_status(&response, &[200, 201]) {
-        return Err("local owner token request did not return 200 or 201".to_string());
-    }
-    let body = response
-        .split_once("\r\n\r\n")
-        .map(|(_, body)| body)
-        .unwrap_or_default();
-    let token = extract_json_string(body, "token").unwrap_or_default();
-    if token.is_empty() {
-        return Err("local owner token response did not include a token".to_string());
-    }
-    Ok(token)
-}
-
 fn response_has_status(response: &str, expected: &[u16]) -> bool {
     let Some(status) = response
         .lines()
@@ -141,16 +131,7 @@ fn local_http_request(
     Ok(response)
 }
 
-fn extract_json_string(body: &str, key: &str) -> Option<String> {
-    let needle = format!("\"{key}\"");
-    let after_key = body.split(&needle).nth(1)?;
-    let after_colon = after_key.split_once(':')?.1.trim_start();
-    let value = after_colon.strip_prefix('"')?;
-    let end = value.find('"')?;
-    Some(value[..end].to_string())
-}
-
-fn start_local_service(app: &AppHandle, state: &DesktopState) -> Result<(String, String), String> {
+fn start_local_service(app: &AppHandle, state: &DesktopState) -> Result<String, String> {
     let port = choose_port()?;
     let listen_addr = format!("{API_HOST}:{port}");
     let api_base = format!("http://{listen_addr}");
@@ -177,24 +158,14 @@ fn start_local_service(app: &AppHandle, state: &DesktopState) -> Result<(String,
         .map_err(|err| format!("start Vola local service: {err}"))?;
     state.set_child(child);
     wait_for_health(&api_base, Duration::from_secs(20))?;
-    let token = bootstrap_owner_token(&api_base)?;
-    Ok((api_base, token))
+    Ok(api_base)
 }
 
-fn load_desktop_dashboard(app: &AppHandle, api_base: &str, token: &str) -> Result<(), String> {
-    let window = app
-        .get_webview_window("main")
-        .ok_or_else(|| "main window was not created".to_string())?;
-    let target = format!(
-        "{}/?local_token={}&desktop=1",
-        api_base.trim_end_matches('/'),
-        token
-    );
-    let url = Url::parse(&target).map_err(|err| format!("parse local dashboard URL: {err}"))?;
-    window
-        .navigate(url)
-        .map_err(|err| format!("open local dashboard: {err}"))?;
-    Ok(())
+#[tauri::command]
+fn get_api_base(state: tauri::State<'_, DesktopState>) -> Result<String, String> {
+    state
+        .api_base()
+        .ok_or_else(|| "Vola local service is not ready".to_string())
 }
 
 pub fn run() {
@@ -205,16 +176,19 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
+        .manage(state.clone())
         .setup(move |app| {
             let handle = app.handle().clone();
             let state = state.clone();
-            match start_local_service(&handle, &state)
-                .and_then(|(api_base, token)| load_desktop_dashboard(&handle, &api_base, &token))
-            {
-                Ok(()) => Ok(()),
+            match start_local_service(&handle, &state) {
+                Ok(api_base) => {
+                    state.set_api_base(format!("{}/api", api_base.trim_end_matches('/')));
+                    Ok(())
+                }
                 Err(err) => Err(Box::<dyn std::error::Error>::from(err)),
             }
         })
+        .invoke_handler(tauri::generate_handler![get_api_base])
         .on_window_event(move |_window, event| {
             if matches!(event, tauri::WindowEvent::Destroyed) {
                 window_stop_state.stop();

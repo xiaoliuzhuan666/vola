@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "tauri dev",
     "build": "tauri build",
-    "build:backend": "node ./scripts/build-backend-sidecar.mjs"
+    "build:backend": "node ./scripts/build-backend-sidecar.mjs",
+    "check:runtime": "node ./scripts/check-desktop-runtime.mjs",
+    "seed:local-team": "node ./scripts/seed-local-team-simulation.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "^2"

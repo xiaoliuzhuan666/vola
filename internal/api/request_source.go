@@ -9,6 +9,17 @@ import (
 	"github.com/agi-bar/vola/internal/services"
 )
 
+var sourceHintHeaderNames = []string{
+	"X-Vola-Platform",
+	"X-Vola-Source",
+	"X-NeuDrive-Platform",
+	"X-NeuDrive-Source",
+}
+
+func sourceHintAllowedHeaders() string {
+	return strings.Join(sourceHintHeaderNames, ", ")
+}
+
 func explicitRequestSource(r *http.Request) string {
 	if r == nil {
 		return ""
@@ -18,7 +29,7 @@ func explicitRequestSource(r *http.Request) string {
 			return value
 		}
 	}
-	for _, key := range []string{"X-NeuDrive-Platform", "X-NeuDrive-Source"} {
+	for _, key := range sourceHintHeaderNames {
 		if value := services.NormalizeSource(r.Header.Get(key)); value != "" {
 			return value
 		}

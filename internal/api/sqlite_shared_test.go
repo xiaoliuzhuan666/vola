@@ -1961,6 +1961,23 @@ func TestSQLiteSharedServerTeamSkillUploadAndCopyToPersonal(t *testing.T) {
 		t.Fatalf("unexpected copied metadata: %+v", personalEntry.Metadata)
 	}
 
+	subscriptionEntry, err := store.Read(ctx, user.ID, teamSkillSubscriptionsPath, models.TrustLevelWork)
+	if err != nil {
+		t.Fatalf("Read team skill subscription record: %v", err)
+	}
+	var subscriptionDoc teamSkillSubscriptionsDocument
+	if err := json.Unmarshal([]byte(subscriptionEntry.Content), &subscriptionDoc); err != nil {
+		t.Fatalf("decode subscription record: %v", err)
+	}
+	if len(subscriptionDoc.Subscriptions) != 1 {
+		t.Fatalf("subscription count = %d, want 1: %s", len(subscriptionDoc.Subscriptions), subscriptionEntry.Content)
+	}
+	if subscriptionDoc.Subscriptions[0].SourcePath != "/skills/shared-skill" ||
+		subscriptionDoc.Subscriptions[0].TargetPath != "/skills/shared-skill" ||
+		subscriptionDoc.Subscriptions[0].SourceFingerprint == "" {
+		t.Fatalf("unexpected subscription record: %+v", subscriptionDoc.Subscriptions[0])
+	}
+
 	status, conflict := doJSON(t, http.MethodPost, ts.URL+"/api/skills/copy-to-personal", skillsToken.Token, []byte(`{
 		"team_id": "`+teamPayload.Team.ID.String()+`",
 		"source_path": "/skills/shared-skill"
@@ -1968,6 +1985,452 @@ func TestSQLiteSharedServerTeamSkillUploadAndCopyToPersonal(t *testing.T) {
 	if status != http.StatusConflict || conflict.OK {
 		t.Fatalf("copy without overwrite should conflict: status=%d body=%+v", status, conflict)
 	}
+
+	if _, err := store.WriteEntry(ctx, teamPayload.Team.HubUserID, "/skills/shared-skill/SKILL.md", "# Shared Skill\n\nTeam owned v2.\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("Update team skill: %v", err)
+	}
+	status, beforeUpdateStatus := doJSON(t, http.MethodGet, ts.URL+"/api/skills/team-subscriptions?team_id="+teamPayload.Team.ID.String(), skillsToken.Token, nil)
+	if status != http.StatusOK || !beforeUpdateStatus.OK {
+		t.Fatalf("list team skill subscriptions before update failed: status=%d body=%+v", status, beforeUpdateStatus)
+	}
+	var beforeUpdate teamSkillSubscriptionsResponse
+	if err := json.Unmarshal(beforeUpdateStatus.Data, &beforeUpdate); err != nil {
+		t.Fatalf("decode subscriptions before update: %v", err)
+	}
+	if len(beforeUpdate.Subscriptions) != 1 || !beforeUpdate.Subscriptions[0].UpdateAvailable {
+		t.Fatalf("expected update_available before overwrite: %+v", beforeUpdate.Subscriptions)
+	}
+
+	status, overwritten := doJSON(t, http.MethodPost, ts.URL+"/api/skills/copy-to-personal", skillsToken.Token, []byte(`{
+		"team_id": "`+teamPayload.Team.ID.String()+`",
+		"source_path": "/skills/shared-skill",
+		"overwrite": true
+	}`))
+	if status != http.StatusOK || !overwritten.OK {
+		t.Fatalf("copy with overwrite failed: status=%d body=%+v", status, overwritten)
+	}
+	personalEntry, err = store.Read(ctx, user.ID, "/skills/shared-skill/SKILL.md", models.TrustLevelWork)
+	if err != nil {
+		t.Fatalf("Read overwritten personal skill: %v", err)
+	}
+	if !strings.Contains(personalEntry.Content, "Team owned v2") {
+		t.Fatalf("expected overwritten personal skill content, got: %q", personalEntry.Content)
+	}
+
+	status, afterUpdateStatus := doJSON(t, http.MethodGet, ts.URL+"/api/skills/team-subscriptions?team_id="+teamPayload.Team.ID.String(), skillsToken.Token, nil)
+	if status != http.StatusOK || !afterUpdateStatus.OK {
+		t.Fatalf("list team skill subscriptions after update failed: status=%d body=%+v", status, afterUpdateStatus)
+	}
+	var afterUpdate teamSkillSubscriptionsResponse
+	if err := json.Unmarshal(afterUpdateStatus.Data, &afterUpdate); err != nil {
+		t.Fatalf("decode subscriptions after update: %v", err)
+	}
+	if len(afterUpdate.Subscriptions) != 1 || afterUpdate.Subscriptions[0].UpdateAvailable {
+		t.Fatalf("expected no update_available after overwrite: %+v", afterUpdate.Subscriptions)
+	}
+}
+
+func TestSQLiteSharedServerTeamSkillPublicationVisibility(t *testing.T) {
+	ts, _, adminToken, _, _ := newTestHTTPServer(t)
+
+	status, createdUser := doJSON(t, http.MethodPost, ts.URL+"/api/admin/users", adminToken, []byte(`{
+		"email": "team-member@example.com",
+		"password": "password-123",
+		"display_name": "Team Member",
+		"slug": "team-member"
+	}`))
+	if status != http.StatusCreated || !createdUser.OK {
+		t.Fatalf("create team member failed: status=%d body=%+v", status, createdUser)
+	}
+
+	status, login := doAuthJSON(t, http.MethodPost, ts.URL+"/api/auth/login", []byte(`{
+		"email": "team-member@example.com",
+		"password": "password-123"
+	}`))
+	if status != http.StatusOK {
+		t.Fatalf("login team member failed: status=%d body=%+v", status, login)
+	}
+	memberToken := login.AccessToken
+
+	status, teamResp := doJSON(t, http.MethodPost, ts.URL+"/api/teams", adminToken, []byte(`{
+		"slug": "publication-team",
+		"name": "Publication Team"
+	}`))
+	if status != http.StatusCreated || !teamResp.OK {
+		t.Fatalf("create team failed: status=%d body=%+v", status, teamResp)
+	}
+	var teamPayload struct {
+		Team models.Team `json:"team"`
+	}
+	if err := json.Unmarshal(teamResp.Data, &teamPayload); err != nil {
+		t.Fatalf("decode team: %v", err)
+	}
+
+	status, memberResp := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/members", adminToken, []byte(`{
+		"user_slug": "team-member",
+		"role": "member"
+	}`))
+	if status != http.StatusCreated || !memberResp.OK {
+		t.Fatalf("add team member failed: status=%d body=%+v", status, memberResp)
+	}
+
+	for _, path := range []string{"/skills/published/SKILL.md", "/skills/draft/SKILL.md"} {
+		status, written := doJSON(t, http.MethodPut, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/tree"+path, adminToken, []byte(`{
+			"content": "# Team Skill\n\nShared.",
+			"mime_type": "text/markdown",
+			"min_trust_level": 2
+		}`))
+		if status != http.StatusOK || !written.OK {
+			t.Fatalf("write team skill %s failed: status=%d body=%+v", path, status, written)
+		}
+	}
+
+	status, draftSaved := doJSON(t, http.MethodPut, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-publications", adminToken, []byte(`{
+		"skill_path": "/skills/draft",
+		"status": "draft",
+		"visibility": "private"
+	}`))
+	if status != http.StatusOK || !draftSaved.OK {
+		t.Fatalf("save draft publication failed: status=%d body=%+v", status, draftSaved)
+	}
+
+	adminSkills := fetchTeamSkillsForTest(t, ts.URL, teamPayload.Team.ID.String(), adminToken)
+	if !hasSkillSummaryPath(adminSkills, "/skills/published") || !hasSkillSummaryPath(adminSkills, "/skills/draft") {
+		t.Fatalf("admin should see published and draft skills: %+v", adminSkills)
+	}
+	memberSkills := fetchTeamSkillsForTest(t, ts.URL, teamPayload.Team.ID.String(), memberToken)
+	if !hasSkillSummaryPath(memberSkills, "/skills/published") || hasSkillSummaryPath(memberSkills, "/skills/draft") {
+		t.Fatalf("member should see only published skill before approval: %+v", memberSkills)
+	}
+
+	status, memberReadDraft := doJSON(t, http.MethodGet, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/tree/skills/draft/SKILL.md", memberToken, nil)
+	if status != http.StatusNotFound || memberReadDraft.OK {
+		t.Fatalf("member should not read draft skill: status=%d body=%+v", status, memberReadDraft)
+	}
+	status, memberCopyDraft := doJSON(t, http.MethodPost, ts.URL+"/api/skills/copy-to-personal", memberToken, []byte(`{
+		"team_id": "`+teamPayload.Team.ID.String()+`",
+		"source_path": "/skills/draft"
+	}`))
+	if status != http.StatusNotFound || memberCopyDraft.OK {
+		t.Fatalf("member should not copy hidden draft skill: status=%d body=%+v", status, memberCopyDraft)
+	}
+	status, memberConvertDraft := doJSON(t, http.MethodPost, ts.URL+"/api/skills/convert/preview", memberToken, []byte(`{
+		"team_id": "`+teamPayload.Team.ID.String()+`",
+		"source_path": "/skills/draft",
+		"source_platform": "claude-code",
+		"target_platform": "codex"
+	}`))
+	if status != http.StatusBadRequest || memberConvertDraft.OK || !strings.Contains(memberConvertDraft.Message, "not found") {
+		t.Fatalf("member should not convert hidden draft skill: status=%d body=%+v", status, memberConvertDraft)
+	}
+
+	status, memberPublish := doJSON(t, http.MethodPut, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-publications", memberToken, []byte(`{
+		"skill_path": "/skills/draft",
+		"status": "published",
+		"visibility": "team"
+	}`))
+	if status != http.StatusForbidden || memberPublish.OK {
+		t.Fatalf("member should not publish team skill: status=%d body=%+v", status, memberPublish)
+	}
+
+	status, requested := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-review-requests", memberToken, []byte(`{
+		"skill_path": "/skills/draft",
+		"note": "Ready for admin review."
+	}`))
+	if status != http.StatusOK || !requested.OK {
+		t.Fatalf("member request review failed: status=%d body=%+v", status, requested)
+	}
+	var requestedHistory teamSkillReviewHistoryResponse
+	if err := json.Unmarshal(requested.Data, &requestedHistory); err != nil {
+		t.Fatalf("decode requested review history: %v", err)
+	}
+	if !reviewHistoryHasAction(requestedHistory.Events, "request_review", models.TeamRoleMember) {
+		t.Fatalf("unexpected review request history: %+v", requestedHistory.Events)
+	}
+
+	status, approved := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-review-requests/resolve", adminToken, []byte(`{
+		"skill_path": "/skills/draft",
+		"decision": "approved",
+		"note": "Approved for team use."
+	}`))
+	if status != http.StatusOK || !approved.OK {
+		t.Fatalf("admin approve skill review failed: status=%d body=%+v", status, approved)
+	}
+	var approvedHistory teamSkillReviewHistoryResponse
+	if err := json.Unmarshal(approved.Data, &approvedHistory); err != nil {
+		t.Fatalf("decode approved review history: %v", err)
+	}
+	if !reviewHistoryHasAction(approvedHistory.Events, "approved", models.TeamRoleOwner) {
+		t.Fatalf("unexpected approved review history: %+v", approvedHistory.Events)
+	}
+	memberSkills = fetchTeamSkillsForTest(t, ts.URL, teamPayload.Team.ID.String(), memberToken)
+	if !hasSkillSummaryPath(memberSkills, "/skills/draft") {
+		t.Fatalf("member should see draft skill after publish: %+v", memberSkills)
+	}
+	status, memberCopy := doJSON(t, http.MethodPost, ts.URL+"/api/skills/copy-to-personal", memberToken, []byte(`{
+		"team_id": "`+teamPayload.Team.ID.String()+`",
+		"source_path": "/skills/draft"
+	}`))
+	if status != http.StatusOK || !memberCopy.OK {
+		t.Fatalf("member copy approved skill failed: status=%d body=%+v", status, memberCopy)
+	}
+	status, updatedSkill := doJSON(t, http.MethodPut, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/tree/skills/draft/SKILL.md", adminToken, []byte(`{
+		"content": "# Team Skill\n\nShared v2.",
+		"mime_type": "text/markdown",
+		"min_trust_level": 2
+	}`))
+	if status != http.StatusOK || !updatedSkill.OK {
+		t.Fatalf("update team skill failed: status=%d body=%+v", status, updatedSkill)
+	}
+	status, reportEnv := doJSON(t, http.MethodGet, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-subscription-report", adminToken, nil)
+	if status != http.StatusOK || !reportEnv.OK {
+		t.Fatalf("subscription report failed: status=%d body=%+v", status, reportEnv)
+	}
+	var report teamSkillSubscriptionReportResponse
+	if err := json.Unmarshal(reportEnv.Data, &report); err != nil {
+		t.Fatalf("decode subscription report: %v", err)
+	}
+	if !reportHasMemberStatus(report, "/skills/draft", "team-member", "update_available") {
+		t.Fatalf("expected update_available in subscription report: %+v", report.Skills)
+	}
+	status, checkedEnv := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-subscriptions/check", adminToken, nil)
+	if status != http.StatusOK || !checkedEnv.OK {
+		t.Fatalf("subscription check failed: status=%d body=%+v", status, checkedEnv)
+	}
+	var checked teamSkillUpdateNotificationsResponse
+	if err := json.Unmarshal(checkedEnv.Data, &checked); err != nil {
+		t.Fatalf("decode update notifications: %v", err)
+	}
+	if len(checked.Notifications) == 0 || checked.Notifications[0].Status != "update_available" || checked.Notifications[0].UserSlug != "team-member" {
+		t.Fatalf("expected update notification for team member: %+v", checked.Notifications)
+	}
+
+	status, archived := doJSON(t, http.MethodPut, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-publications", adminToken, []byte(`{
+		"skill_path": "/skills/draft",
+		"status": "archived",
+		"visibility": "team"
+	}`))
+	if status != http.StatusOK || !archived.OK {
+		t.Fatalf("admin archive skill failed: status=%d body=%+v", status, archived)
+	}
+	status, memberReadArchived := doJSON(t, http.MethodGet, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/tree/skills/draft/SKILL.md", memberToken, nil)
+	if status != http.StatusNotFound || memberReadArchived.OK {
+		t.Fatalf("member should not read archived skill: status=%d body=%+v", status, memberReadArchived)
+	}
+	status, adminReadArchived := doJSON(t, http.MethodGet, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/tree/skills/draft/SKILL.md", adminToken, nil)
+	if status != http.StatusOK || !adminReadArchived.OK {
+		t.Fatalf("admin should still read archived skill: status=%d body=%+v", status, adminReadArchived)
+	}
+}
+
+func TestSQLiteSharedServerTeamAgentPublicationAndInstall(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+
+	status, createdUser := doJSON(t, http.MethodPost, ts.URL+"/api/admin/users", adminToken, []byte(`{
+		"email": "agent-member@example.com",
+		"password": "password-123",
+		"display_name": "Agent Member",
+		"slug": "agent-member"
+	}`))
+	if status != http.StatusCreated || !createdUser.OK {
+		t.Fatalf("create agent member failed: status=%d body=%+v", status, createdUser)
+	}
+	var createdUserPayload struct {
+		User models.AdminUserAccount `json:"user"`
+	}
+	if err := json.Unmarshal(createdUser.Data, &createdUserPayload); err != nil {
+		t.Fatalf("decode created user: %v", err)
+	}
+
+	status, login := doAuthJSON(t, http.MethodPost, ts.URL+"/api/auth/login", []byte(`{
+		"email": "agent-member@example.com",
+		"password": "password-123"
+	}`))
+	if status != http.StatusOK {
+		t.Fatalf("login agent member failed: status=%d body=%+v", status, login)
+	}
+	memberToken := login.AccessToken
+
+	status, teamResp := doJSON(t, http.MethodPost, ts.URL+"/api/teams", adminToken, []byte(`{
+		"slug": "agent-team",
+		"name": "Agent Team"
+	}`))
+	if status != http.StatusCreated || !teamResp.OK {
+		t.Fatalf("create team failed: status=%d body=%+v", status, teamResp)
+	}
+	var teamPayload struct {
+		Team models.Team `json:"team"`
+	}
+	if err := json.Unmarshal(teamResp.Data, &teamPayload); err != nil {
+		t.Fatalf("decode team: %v", err)
+	}
+	status, memberResp := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/members", adminToken, []byte(`{
+		"user_slug": "agent-member",
+		"role": "member"
+	}`))
+	if status != http.StatusCreated || !memberResp.OK {
+		t.Fatalf("add agent member failed: status=%d body=%+v", status, memberResp)
+	}
+
+	status, saved := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/agents", adminToken, []byte(`{
+		"slug": "research-assistant",
+		"name": "Research Assistant",
+		"description": "Preconfigured research agent for the team.",
+		"instructions": "Use approved team skills and cite sources.",
+		"status": "draft",
+		"visibility": "private",
+		"default_skill_paths": ["/skills/research"],
+		"target_agents": ["codex", "claude-code"],
+		"model": "team-default",
+		"permissions": ["read-memory", "read-projects"],
+		"approval_required": ["delete-files"],
+		"maintainer": "Research Ops"
+	}`))
+	if status != http.StatusOK || !saved.OK {
+		t.Fatalf("save draft team agent failed: status=%d body=%+v", status, saved)
+	}
+	var savedAgents teamAgentsResponse
+	if err := json.Unmarshal(saved.Data, &savedAgents); err != nil {
+		t.Fatalf("decode saved agents: %v", err)
+	}
+	if len(savedAgents.Agents) != 1 || savedAgents.Agents[0].Status != "draft" {
+		t.Fatalf("unexpected saved draft agents: %+v", savedAgents.Agents)
+	}
+
+	status, memberDraftList := doJSON(t, http.MethodGet, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/agents", memberToken, nil)
+	if status != http.StatusOK || !memberDraftList.OK {
+		t.Fatalf("member list draft team agents failed: status=%d body=%+v", status, memberDraftList)
+	}
+	var memberDraftAgents teamAgentsResponse
+	if err := json.Unmarshal(memberDraftList.Data, &memberDraftAgents); err != nil {
+		t.Fatalf("decode member draft agents: %v", err)
+	}
+	if len(memberDraftAgents.Agents) != 0 {
+		t.Fatalf("member should not see draft private agents: %+v", memberDraftAgents.Agents)
+	}
+
+	status, memberPublish := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/agents", memberToken, []byte(`{
+		"slug": "research-assistant",
+		"name": "Research Assistant",
+		"status": "published",
+		"visibility": "team"
+	}`))
+	if status != http.StatusForbidden || memberPublish.OK {
+		t.Fatalf("member should not publish team agent: status=%d body=%+v", status, memberPublish)
+	}
+
+	status, published := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/agents", adminToken, []byte(`{
+		"slug": "research-assistant",
+		"name": "Research Assistant",
+		"description": "Preconfigured research agent for the team.",
+		"instructions": "Use approved team skills and cite sources.",
+		"status": "published",
+		"visibility": "team",
+		"default_skill_paths": ["/skills/research"],
+		"target_agents": ["codex", "claude-code"],
+		"model": "team-default",
+		"permissions": ["read-memory", "read-projects"],
+		"approval_required": ["delete-files"],
+		"maintainer": "Research Ops"
+	}`))
+	if status != http.StatusOK || !published.OK {
+		t.Fatalf("admin publish team agent failed: status=%d body=%+v", status, published)
+	}
+
+	status, memberList := doJSON(t, http.MethodGet, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/agents", memberToken, nil)
+	if status != http.StatusOK || !memberList.OK {
+		t.Fatalf("member list published team agents failed: status=%d body=%+v", status, memberList)
+	}
+	var memberAgents teamAgentsResponse
+	if err := json.Unmarshal(memberList.Data, &memberAgents); err != nil {
+		t.Fatalf("decode member agents: %v", err)
+	}
+	if len(memberAgents.Agents) != 1 || memberAgents.Agents[0].Slug != "research-assistant" {
+		t.Fatalf("member should see published team agent: %+v", memberAgents.Agents)
+	}
+
+	status, installed := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/agents/research-assistant/install", memberToken, nil)
+	if status != http.StatusOK || !installed.OK {
+		t.Fatalf("install team agent failed: status=%d body=%+v", status, installed)
+	}
+	agentEntry, err := store.Read(ctx, createdUserPayload.User.ID, "/agents/research-assistant/agent.vola.json", models.TrustLevelWork)
+	if err != nil {
+		t.Fatalf("read installed personal agent asset: %v", err)
+	}
+	var installedAgent teamAgentAsset
+	if err := json.Unmarshal([]byte(agentEntry.Content), &installedAgent); err != nil {
+		t.Fatalf("decode installed agent asset: %v", err)
+	}
+	if installedAgent.InstalledFromTeamID != teamPayload.Team.ID.String() ||
+		installedAgent.SourceTeamSlug != "agent-team" ||
+		installedAgent.Status != "published" ||
+		!stringSliceContains(installedAgent.TargetAgents, "codex") {
+		t.Fatalf("unexpected installed agent asset: %+v", installedAgent)
+	}
+	readmeEntry, err := store.Read(ctx, createdUserPayload.User.ID, "/agents/research-assistant/README.md", models.TrustLevelWork)
+	if err != nil {
+		t.Fatalf("read installed personal agent README: %v", err)
+	}
+	if !strings.Contains(readmeEntry.Content, "Default Skills") || !strings.Contains(readmeEntry.Content, "/skills/research") {
+		t.Fatalf("unexpected installed agent README: %s", readmeEntry.Content)
+	}
+}
+
+func fetchTeamSkillsForTest(t *testing.T, baseURL string, teamID string, token string) []models.SkillSummary {
+	t.Helper()
+	status, env := doJSON(t, http.MethodGet, baseURL+"/api/teams/"+teamID+"/skills", token, nil)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("fetch team skills failed: status=%d body=%+v", status, env)
+	}
+	var payload struct {
+		Skills []models.SkillSummary `json:"skills"`
+	}
+	if err := json.Unmarshal(env.Data, &payload); err != nil {
+		t.Fatalf("decode team skills: %v", err)
+	}
+	return payload.Skills
+}
+
+func hasSkillSummaryPath(skills []models.SkillSummary, skillPath string) bool {
+	for _, skill := range skills {
+		if normalizeAssignedSkillPath(firstNonEmpty(skill.BundlePath, skill.Path)) == skillPath {
+			return true
+		}
+	}
+	return false
+}
+
+func reportHasMemberStatus(report teamSkillSubscriptionReportResponse, skillPath, userSlug, status string) bool {
+	for _, skill := range report.Skills {
+		if skill.SkillPath != skillPath {
+			continue
+		}
+		for _, member := range skill.Members {
+			if member.UserSlug == userSlug && member.Status == status {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func reviewHistoryHasAction(events []teamSkillReviewEvent, action, actorRole string) bool {
+	for _, event := range events {
+		if event.Action == action && event.ActorRole == actorRole {
+			return true
+		}
+	}
+	return false
+}
+
+func stringSliceContains(items []string, target string) bool {
+	for _, item := range items {
+		if item == target {
+			return true
+		}
+	}
+	return false
 }
 
 func TestSQLiteSharedServerSkillAssignments(t *testing.T) {
@@ -1988,9 +2451,18 @@ func TestSQLiteSharedServerSkillAssignments(t *testing.T) {
 	if !bytes.Contains(env.Data, []byte(`"id":"claude-code"`)) || !bytes.Contains(env.Data, []byte(`"storage_path":"`+skillAssignmentsPath+`"`)) {
 		t.Fatalf("unexpected assignments payload: %s", string(env.Data))
 	}
-	for _, expected := range []string{`"id":"cursor"`, `"id":"gemini-cli"`, `"support_status":"export_only"`, `"export_supported":true`} {
-		if !bytes.Contains(env.Data, []byte(expected)) {
-			t.Fatalf("expected %q in assignments payload: %s", expected, string(env.Data))
+	var assignmentPayload skillAssignmentsResponse
+	if err := json.Unmarshal(env.Data, &assignmentPayload); err != nil {
+		t.Fatalf("decode assignments payload: %v", err)
+	}
+	agentsByID := map[string]skillAgentTarget{}
+	for _, agent := range assignmentPayload.Agents {
+		agentsByID[agent.ID] = agent
+	}
+	for _, agentID := range []string{"cursor", "gemini-cli"} {
+		agent := agentsByID[agentID]
+		if agent.ID == "" || agent.SupportsApply || agent.SupportStatus != "export_only" || !agent.ExportSupported {
+			t.Fatalf("expected %s to be export-only, got %+v", agentID, agent)
 		}
 	}
 
@@ -2201,6 +2673,20 @@ func TestSQLiteSharedServerModelProvidersStoresAPIKeyInVault(t *testing.T) {
 func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 	ts, store, adminToken, _, _ := newTestHTTPServer(t)
 	ctx := context.Background()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", filepath.Join(home, ".config"))
+	cursorRulesDir := filepath.Join(home, "workspace", ".cursor", "rules")
+	geminiGuide := filepath.Join(home, "workspace", "GEMINI.md")
+	if err := os.MkdirAll(cursorRulesDir, 0o755); err != nil {
+		t.Fatalf("create cursor rules dir: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(cursorRulesDir, "existing.mdc"), []byte("manual cursor rule\n"), 0o644); err != nil {
+		t.Fatalf("write cursor rule: %v", err)
+	}
+	if err := os.WriteFile(geminiGuide, []byte("# Manual Gemini guide\n"), 0o644); err != nil {
+		t.Fatalf("write gemini guide: %v", err)
+	}
 	userID, err := store.FirstUserID(ctx)
 	if err != nil {
 		t.Fatalf("FirstUserID: %v", err)
@@ -2229,13 +2715,22 @@ func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 		t.Fatalf("Write demo logo: %v", err)
 	}
 
-	assignBody := []byte(`{"assignments":[{"agent_id":"gemini-cli","skill_paths":["/skills/demo"]}]}`)
+	assignBody := []byte(`{"assignments":[{"agent_id":"cursor","skill_paths":["/skills/demo"]},{"agent_id":"gemini-cli","skill_paths":["/skills/demo"]}]}`)
 	status, env := doJSON(t, http.MethodPut, ts.URL+"/api/skills/assignments", adminToken, assignBody)
 	if status != http.StatusOK || !env.OK {
 		t.Fatalf("save skill assignments failed: status=%d body=%+v", status, env)
 	}
 
-	previewBody := []byte(`{"agent_ids":["gemini-cli"]}`)
+	previewBody, err := json.Marshal(map[string]interface{}{
+		"agent_ids": []string{"cursor", "gemini-cli"},
+		"target_roots": map[string]string{
+			"cursor":     cursorRulesDir,
+			"gemini-cli": filepath.Dir(geminiGuide),
+		},
+	})
+	if err != nil {
+		t.Fatalf("Marshal preview body: %v", err)
+	}
 	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/local/skills/sync/preview", adminToken, previewBody)
 	if status != http.StatusOK || !env.OK {
 		t.Fatalf("preview export-only local skill sync failed: status=%d body=%+v", status, env)
@@ -2244,8 +2739,8 @@ func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 	if err := json.Unmarshal(env.Data, &preview); err != nil {
 		t.Fatalf("decode preview: %v", err)
 	}
-	if len(preview.Agents) != 1 {
-		t.Fatalf("expected one agent: %s", string(env.Data))
+	if len(preview.Agents) != 2 {
+		t.Fatalf("expected two agents: %s", string(env.Data))
 	}
 	for _, agent := range preview.Agents {
 		if agent.SupportStatus != "export_only" || agent.Supported || !agent.ExportSupported || !agent.ExportAvailable {
@@ -2254,6 +2749,34 @@ func TestSQLiteSharedServerLocalSkillSyncExportOnlyAgents(t *testing.T) {
 		if agent.Summary.Export != 1 || agent.ExportFileName == "" || len(agent.DetectedRoots) == 0 {
 			t.Fatalf("unexpected export-only preview: %+v", agent)
 		}
+		for _, change := range agent.Changes {
+			if change.Action != "export" {
+				t.Fatalf("export-only agent should not plan local writes: %+v", agent)
+			}
+		}
+	}
+
+	status, env = doJSON(t, http.MethodPost, ts.URL+"/api/local/skills/sync/apply", adminToken, previewBody)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("apply export-only local skill sync failed: status=%d body=%+v", status, env)
+	}
+	var applied localSkillSyncResponse
+	if err := json.Unmarshal(env.Data, &applied); err != nil {
+		t.Fatalf("decode apply: %v", err)
+	}
+	for _, agent := range applied.Agents {
+		if agent.Supported || agent.Summary.Written != 0 || agent.Summary.Deleted != 0 {
+			t.Fatalf("export-only apply should not write local files: %+v", agent)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(cursorRulesDir, "demo")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Cursor rules should not receive a skill directory, err=%v", err)
+	}
+	if data, err := os.ReadFile(filepath.Join(cursorRulesDir, "existing.mdc")); err != nil || string(data) != "manual cursor rule\n" {
+		t.Fatalf("Cursor manual rule changed: data=%q err=%v", string(data), err)
+	}
+	if data, err := os.ReadFile(geminiGuide); err != nil || string(data) != "# Manual Gemini guide\n" {
+		t.Fatalf("Gemini guide changed: data=%q err=%v", string(data), err)
 	}
 
 	status, raw, contentType := doRaw(t, http.MethodPost, ts.URL+"/api/local/skills/sync/export", adminToken, []byte(`{"agent_id":"gemini-cli"}`))
@@ -2976,32 +3499,44 @@ func TestSQLiteSharedServerTreeDefaultsNewFileSourceToManual(t *testing.T) {
 }
 
 func TestSQLiteSharedServerTreeAllowsExplicitPlatformHeader(t *testing.T) {
-	ts, _, adminToken, _, _ := newTestHTTPServer(t)
+	for _, tc := range []struct {
+		name   string
+		header string
+		source string
+	}{
+		{name: "vola header", header: "X-Vola-Platform", source: "kimi"},
+		{name: "legacy header", header: "X-NeuDrive-Platform", source: "perplexity"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ts, _, adminToken, _, _ := newTestHTTPServer(t)
+			path := "/api/tree/notes/" + tc.source + "-platform-header.md"
+			req, err := http.NewRequest(http.MethodPut, ts.URL+path, bytes.NewReader([]byte(`{"content":"header sourced","mime_type":"text/markdown"}`)))
+			if err != nil {
+				t.Fatalf("NewRequest: %v", err)
+			}
+			req.Header.Set("Authorization", "Bearer "+adminToken)
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Set(tc.header, tc.source)
 
-	req, err := http.NewRequest(http.MethodPut, ts.URL+"/api/tree/notes/platform-header.md", bytes.NewReader([]byte(`{"content":"header sourced","mime_type":"text/markdown"}`)))
-	if err != nil {
-		t.Fatalf("NewRequest: %v", err)
-	}
-	req.Header.Set("Authorization", "Bearer "+adminToken)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("X-NeuDrive-Platform", "kimi")
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatalf("Do: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				body, _ := io.ReadAll(resp.Body)
+				t.Fatalf("write file failed: status=%d body=%s", resp.StatusCode, string(body))
+			}
 
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		t.Fatalf("Do: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		t.Fatalf("write file failed: status=%d body=%s", resp.StatusCode, string(body))
-	}
-
-	status, read := doJSON(t, http.MethodGet, ts.URL+"/api/tree/notes/platform-header.md", adminToken, nil)
-	if status != http.StatusOK || !read.OK {
-		t.Fatalf("read file failed: status=%d body=%+v", status, read)
-	}
-	if !bytes.Contains(read.Data, []byte(`"source":"kimi"`)) {
-		t.Fatalf("expected kimi source in tree payload: %s", string(read.Data))
+			status, read := doJSON(t, http.MethodGet, ts.URL+path, adminToken, nil)
+			if status != http.StatusOK || !read.OK {
+				t.Fatalf("read file failed: status=%d body=%+v", status, read)
+			}
+			expected := []byte(`"source":"` + tc.source + `"`)
+			if !bytes.Contains(read.Data, expected) {
+				t.Fatalf("expected %s source in tree payload: %s", tc.source, string(read.Data))
+			}
+		})
 	}
 }
 
@@ -3171,6 +3706,91 @@ func TestSQLiteSharedServerMCPSessionTracksPlatformSource(t *testing.T) {
 	}
 	if !bytes.Contains(read.Data, []byte(`"source":"codex"`)) {
 		t.Fatalf("expected codex source in tree payload: %s", string(read.Data))
+	}
+}
+
+func TestSQLiteSharedServerLocalLibraryScanAndImport(t *testing.T) {
+	ts, _, adminToken, _, _ := newTestHTTPServer(t)
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "demo-app")
+	docsDir := filepath.Join(projectDir, "docs")
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "package.json"), []byte(`{"name":"demo-app"}`), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte("# Demo App\n\nA small app.\n"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(docsDir, "deploy-guide.md"), []byte("# Docker 部署指南\n\nUse Docker Compose for release.\n"), 0o644); err != nil {
+		t.Fatalf("write deploy guide: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "账号信息.md"), []byte("# secret\n\npassword=demo\n"), 0o644); err != nil {
+		t.Fatalf("write sensitive doc: %v", err)
+	}
+
+	body, _ := json.Marshal(map[string]interface{}{
+		"roots":        []string{root},
+		"max_markdown": 20,
+		"max_projects": 20,
+	})
+	status, scanned := doJSON(t, http.MethodPost, ts.URL+"/api/local/library/scan", adminToken, body)
+	if status != http.StatusOK || !scanned.OK {
+		t.Fatalf("scan failed: status=%d body=%+v", status, scanned)
+	}
+	var scan localLibraryScanResponse
+	if err := json.Unmarshal(scanned.Data, &scan); err != nil {
+		t.Fatalf("unmarshal scan: %v", err)
+	}
+	if scan.Stats.RootsScanned != 1 {
+		t.Fatalf("roots scanned = %d, want 1", scan.Stats.RootsScanned)
+	}
+	if scan.Stats.MarkdownFound != 3 {
+		t.Fatalf("markdown found = %d, want 3", scan.Stats.MarkdownFound)
+	}
+	if scan.Stats.SensitiveFiles != 1 {
+		t.Fatalf("sensitive files = %d, want 1", scan.Stats.SensitiveFiles)
+	}
+	if len(scan.Projects) == 0 || scan.Projects[0].Name != "demo-app" {
+		t.Fatalf("expected demo-app project candidate, got %+v", scan.Projects)
+	}
+	foundGuide := false
+	for _, doc := range scan.Markdown {
+		if strings.Contains(doc.Path, "deploy-guide.md") && doc.GenericCandidate {
+			foundGuide = true
+		}
+	}
+	if !foundGuide {
+		t.Fatalf("expected generic deploy guide in markdown results: %+v", scan.Markdown)
+	}
+
+	status, imported := doJSON(t, http.MethodPost, ts.URL+"/api/local/library/import", adminToken, body)
+	if status != http.StatusOK || !imported.OK {
+		t.Fatalf("import failed: status=%d body=%+v", status, imported)
+	}
+	var importResp localLibraryImportResponse
+	if err := json.Unmarshal(imported.Data, &importResp); err != nil {
+		t.Fatalf("unmarshal import: %v", err)
+	}
+	if importResp.ProjectName != localLibraryProjectName {
+		t.Fatalf("project name = %q, want %q", importResp.ProjectName, localLibraryProjectName)
+	}
+
+	status, contextFile := doJSON(t, http.MethodGet, ts.URL+"/api/tree/projects/local-knowledge-index/context.md", adminToken, nil)
+	if status != http.StatusOK || !contextFile.OK {
+		t.Fatalf("read context failed: status=%d body=%+v", status, contextFile)
+	}
+	if !bytes.Contains(contextFile.Data, []byte("demo-app")) || !bytes.Contains(contextFile.Data, []byte("deploy-guide.md")) {
+		t.Fatalf("context index missing expected entries: %s", string(contextFile.Data))
+	}
+
+	status, jsonFile := doJSON(t, http.MethodGet, ts.URL+"/api/tree/projects/local-knowledge-index/index.json", adminToken, nil)
+	if status != http.StatusOK || !jsonFile.OK {
+		t.Fatalf("read index json failed: status=%d body=%+v", status, jsonFile)
+	}
+	if !bytes.Contains(jsonFile.Data, []byte("local_library_scan")) && !bytes.Contains(jsonFile.Data, []byte("vola.local_library_scan/v1")) {
+		t.Fatalf("index json missing scan marker: %s", string(jsonFile.Data))
 	}
 }
 

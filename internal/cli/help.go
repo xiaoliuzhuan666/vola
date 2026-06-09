@@ -161,7 +161,7 @@ var cliHelpTopics = map[string]cliHelpTopic{
 	},
 	"disconnect": {
 		Key:       "disconnect",
-		Summary:   "Remove an Vola managed platform entrypoint and stored connection metadata.",
+		Summary:   "Remove a Vola managed platform entrypoint and stored connection metadata.",
 		Usage:     []string{"vola disconnect <platform>"},
 		Examples:  []string{"vola disconnect codex", "vola disconnect claude"},
 		Notes:     []string{"Use this when you want to remove the Vola managed skill or command file from the current environment.", "This is operational cleanup, not a public Hub data command."},
@@ -329,6 +329,7 @@ Mental model:
   - Start at the Hub root with vola ls
   - Public roots: profile, memory, project, skill, secret, platform
   - A leading / is optional. project/demo and /project/demo are equivalent.
+  - Recommended command name: neu. Compatibility aliases: vola, vol, neudrive, xlzdrive.
 
 Public commands:
   vola help [topic]                              Show root help or a topic-specific guide

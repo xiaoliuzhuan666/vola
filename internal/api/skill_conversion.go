@@ -152,6 +152,15 @@ func (s *Server) buildSkillConversion(ctx context.Context, target scopedHubTarge
 	if sourcePath == "" {
 		return nil, fmt.Errorf("source_path is required")
 	}
+	if target.Scope == "team" {
+		visible, err := s.teamSkillPathReadableByRole(ctx, target.Team, sourcePath)
+		if err != nil {
+			return nil, err
+		}
+		if !visible {
+			return nil, fmt.Errorf("%s not found", sourcePath)
+		}
+	}
 	targetPlatform, err := normalizeSkillConversionPlatform(req.TargetPlatform)
 	if err != nil {
 		return nil, err

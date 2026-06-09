@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type FileNode, type Team, type TeamMember, type TeamRole } from '../api'
+import { api, type FileNode, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse } from '../api'
 import CustomSelect from '../components/CustomSelect'
 import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsTile from '../components/MaterialsTile'
@@ -13,6 +13,7 @@ const TEAM_SELECTION_KEY = 'vola:selected-team-id'
 const TEAM_TEMPLATE = [
   { path: '/team', isDir: true, content: '', mimeType: 'directory' },
   { path: '/team/mcp', isDir: true, content: '', mimeType: 'directory' },
+  { path: '/team/agents', isDir: true, content: '', mimeType: 'directory' },
   { path: '/team/prompts', isDir: true, content: '', mimeType: 'directory' },
   { path: '/team/playbooks', isDir: true, content: '', mimeType: 'directory' },
   {
@@ -44,6 +45,26 @@ const TEAM_TEMPLATE = [
 - 数据访问范围：
 - 配置说明：
 - 风险说明：
+`,
+  },
+  {
+    path: '/team/agents/README.md',
+    isDir: false,
+    mimeType: 'text/markdown',
+    content: `# 团队 Agent 配方
+
+这里保存团队共享的 Agent 配置说明，不直接安装或运行 Agent。
+
+推荐记录：
+
+- 名称：
+- 适用场景：
+- 默认模型：
+- 默认 Skill：
+- 可访问数据范围：
+- 需要人工审批的动作：
+- Codex / Claude / Cursor / Gemini CLI 配置说明：
+- 维护人：
 `,
   },
   {
@@ -111,6 +132,41 @@ function roleLabel(role: TeamRole | undefined, locale: string) {
   }
 }
 
+function agentStatusLabel(status: string | undefined, visibility: string | undefined, locale: string) {
+  if (status === 'archived') return locale === 'zh-CN' ? '已归档' : 'Archived'
+  if (status === 'published' && visibility === 'team') return locale === 'zh-CN' ? '团队可见' : 'Team visible'
+  return locale === 'zh-CN' ? '草稿' : 'Draft'
+}
+
+function reviewActionLabel(action: string, locale: string) {
+  if (locale !== 'zh-CN') {
+    if (action === 'request_review') return 'Review requested'
+    if (action === 'approved') return 'Approved'
+    if (action === 'changes_requested') return 'Changes requested'
+    if (action === 'publish' || action === 'publish_agent') return 'Published'
+    if (action === 'archive' || action === 'archive_agent') return 'Archived'
+    return 'Draft updated'
+  }
+  if (action === 'request_review') return '提交审查'
+  if (action === 'approved') return '审查通过'
+  if (action === 'changes_requested') return '要求修改'
+  if (action === 'publish' || action === 'publish_agent') return '发布'
+  if (action === 'archive' || action === 'archive_agent') return '归档'
+  return '更新草稿'
+}
+
+function formatDateTime(value: string | undefined, locale: string) {
+  if (!value) return locale === 'zh-CN' ? '暂无' : 'None'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return value
+  return date.toLocaleString(locale === 'zh-CN' ? 'zh-CN' : 'en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+  })
+}
+
 function normalizeSlugInput(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64)
 }
@@ -123,10 +179,16 @@ export default function TeamLibraryPage() {
   const [skillsRoot, setSkillsRoot] = useState<FileNode | null>(null)
   const [teamCounts, setTeamCounts] = useState<Record<string, number>>({})
   const [members, setMembers] = useState<TeamMember[]>([])
+  const [teamAgents, setTeamAgents] = useState<TeamAgentAsset[]>([])
+  const [skillSubscriptionReport, setSkillSubscriptionReport] = useState<TeamSkillSubscriptionReportResponse | null>(null)
+  const [skillUpdateNotifications, setSkillUpdateNotifications] = useState<TeamSkillUpdateNotification[]>([])
+  const [skillUpdateNotificationInfo, setSkillUpdateNotificationInfo] = useState<Pick<TeamSkillUpdateNotificationsResponse, 'storage_path' | 'updated_at' | 'last_checked_at'> | null>(null)
+  const [skillReviewHistory, setSkillReviewHistory] = useState<TeamSkillReviewEvent[]>([])
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
-  const [activeCardHover, setActiveCardHover] = useState(false)
-  const [hoveredFeature, setHoveredFeature] = useState<number | null>(null)
+  const [agentWorking, setAgentWorking] = useState(false)
+  const [sharingWorking, setSharingWorking] = useState(false)
+  const [installingAgentSlug, setInstallingAgentSlug] = useState('')
   const [message, setMessage] = useState('')
   const [error, setError] = useState('')
   const [treePath, setTreePath] = useState(TEAM_ROOT)
@@ -136,6 +198,10 @@ export default function TeamLibraryPage() {
   const [memberSlug, setMemberSlug] = useState('')
   const [memberRole, setMemberRole] = useState<TeamRole>('member')
   const [currentUser, setCurrentUser] = useState<any>(null)
+  const [newAgentName, setNewAgentName] = useState('')
+  const [newAgentSlug, setNewAgentSlug] = useState('')
+  const [newAgentDescription, setNewAgentDescription] = useState('')
+  const [newAgentInstructions, setNewAgentInstructions] = useState('')
 
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === selectedTeamID) || teams[0] || null,
@@ -161,13 +227,22 @@ export default function TeamLibraryPage() {
       setSkillsRoot(null)
       setTeamCounts({})
       setMembers([])
+      setTeamAgents([])
+      setSkillSubscriptionReport(null)
+      setSkillUpdateNotifications([])
+      setSkillUpdateNotificationInfo(null)
+      setSkillReviewHistory([])
       return
     }
-    const [teamResult, skillsResult, snapshotResult, membersResult] = await Promise.allSettled([
+    const [teamResult, skillsResult, snapshotResult, membersResult, agentsResult, reviewHistoryResult, subscriptionReportResult, notificationsResult] = await Promise.allSettled([
       api.getTeamTree(team.id, TEAM_ROOT),
       api.getTeamTree(team.id, '/skills'),
       api.getTeamTreeSnapshot(team.id, '/'),
       api.getTeamMembers(team.id),
+      api.getTeamAgents(team.id),
+      api.getTeamSkillReviewHistory(team.id),
+      team.can_manage_members ? api.getTeamSkillSubscriptionReport(team.id) : Promise.resolve(null),
+      team.can_manage_members ? api.getTeamSkillUpdateNotifications(team.id) : Promise.resolve(null),
     ])
     const entries = snapshotResult.status === 'fulfilled' ? snapshotResult.value.entries || [] : []
     const existingPaths = new Set(entries.map((entry) => normalizeTemplatePath(entry.path)))
@@ -175,10 +250,21 @@ export default function TeamLibraryPage() {
     setSkillsRoot(skillsResult.status === 'fulfilled' ? skillsResult.value : null)
     setTeamCounts({
       mcp: countDirectChildren(entries, '/team/mcp'),
+      agents: countDirectChildren(entries, '/team/agents'),
       prompts: countDirectChildren(entries, '/team/prompts'),
       playbooks: countDirectChildren(entries, '/team/playbooks'),
     })
     setMembers(membersResult.status === 'fulfilled' ? membersResult.value : [])
+    setTeamAgents(agentsResult.status === 'fulfilled' ? agentsResult.value.agents || [] : [])
+    setSkillReviewHistory(reviewHistoryResult.status === 'fulfilled' ? reviewHistoryResult.value.events || [] : [])
+    setSkillSubscriptionReport(subscriptionReportResult.status === 'fulfilled' ? subscriptionReportResult.value : null)
+    const notificationsResponse = notificationsResult.status === 'fulfilled' ? notificationsResult.value : null
+    setSkillUpdateNotifications(notificationsResponse?.notifications || [])
+    setSkillUpdateNotificationInfo(notificationsResponse ? {
+      storage_path: notificationsResponse.storage_path,
+      updated_at: notificationsResponse.updated_at,
+      last_checked_at: notificationsResponse.last_checked_at,
+    } : null)
   }, [])
 
   const load = useCallback(async () => {
@@ -215,6 +301,45 @@ export default function TeamLibraryPage() {
     void loadTeamData(selectedTeam)
   }, [loadTeamData, selectedTeam])
 
+  const subscriptionSummary = useMemo(() => {
+    return (skillSubscriptionReport?.skills || []).reduce((acc, skill) => {
+      acc.skills += 1
+      acc.personalCopies += skill.installed_count + skill.update_available_count + skill.source_missing_count
+      acc.notInstalled += skill.not_installed_count
+      acc.updates += skill.update_available_count
+      acc.missing += skill.source_missing_count
+      return acc
+    }, { skills: 0, personalCopies: 0, notInstalled: 0, updates: 0, missing: 0 })
+  }, [skillSubscriptionReport])
+
+  const reviewEventCount = useMemo(() => (
+    skillReviewHistory.filter((event) => event.action === 'request_review').length
+  ), [skillReviewHistory])
+
+  const handleCheckTeamSkillSubscriptions = async () => {
+    if (!selectedTeam || sharingWorking) return
+    setSharingWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      const response = await api.checkTeamSkillSubscriptions(selectedTeam.id)
+      if (response.report) setSkillSubscriptionReport(response.report)
+      setSkillUpdateNotifications(response.notifications || [])
+      setSkillUpdateNotificationInfo({
+        storage_path: response.storage_path,
+        updated_at: response.updated_at,
+        last_checked_at: response.last_checked_at,
+      })
+      setMessage(response.notifications?.length
+        ? tx(`发现 ${response.notifications.length} 条团队 Skill 更新提醒。`, `${response.notifications.length} team skill update notices found.`)
+        : tx('已检查团队 Skill 订阅，没有新的更新提醒。', 'Team skill subscriptions checked. No new update notices.'))
+    } catch (err: any) {
+      setError(err?.message || tx('检查团队 Skill 更新失败', 'Failed to check team skill updates'))
+    } finally {
+      setSharingWorking(false)
+    }
+  }
+
   const categories = useMemo(() => {
     return [
       {
@@ -232,6 +357,14 @@ export default function TeamLibraryPage() {
         count: teamCounts.mcp || 0,
         icon: 'icon-device',
         action: selectedTeam ? <Link className="btn btn-sm" to={dataFileEditorRoute('/team/mcp/README.md', selectedTeam.id)}>{tx('打开', 'Open')}</Link> : null,
+      },
+      {
+        title: tx('Agent 配方', 'Agent Recipes'),
+        subtitle: '/team/agents',
+        desc: tx('团队共用的 Agent 说明、默认 Skill、模型和权限建议。', 'Shared agent instructions, default skills, models, and permission notes.'),
+        count: teamCounts.agents || 0,
+        icon: 'icon-device',
+        action: selectedTeam ? <Link className="btn btn-sm" to={dataFileEditorRoute('/team/agents/README.md', selectedTeam.id)}>{tx('打开', 'Open')}</Link> : null,
       },
       {
         title: tx('提示词', 'Prompts'),
@@ -346,235 +479,142 @@ export default function TeamLibraryPage() {
     }
   }
 
-  const isLocalOnly = !currentUser || !currentUser.slug || currentUser.slug === 'local'
-
-  if (!loading && isLocalOnly) {
-    return (
-      <div className="materials-page" style={{ paddingLeft: '24px', paddingRight: '24px', margin: '0 auto', maxWidth: '1240px' }}>
-        <section style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          gap: '30px',
-          padding: '36px 40px',
-          marginBottom: '24px',
-          border: '1px solid rgba(65, 77, 136, 0.08)',
-          borderRadius: '24px',
-          background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.95) 0%, rgba(248, 250, 252, 0.85) 100%)',
-          boxShadow: '0 10px 30px rgba(65, 77, 136, 0.03), inset 0 1px 0 #ffffff',
-          backdropFilter: 'blur(8px)',
-        }}>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontSize: '11px',
-              fontWeight: 800,
-              letterSpacing: '0.15em',
-              textTransform: 'uppercase',
-              color: '#6366f1',
-              marginBottom: '8px',
-            }}>{tx('团队资料', 'Team Library')}</div>
-            <h2 style={{
-              fontSize: '28px',
-              fontWeight: 800,
-              color: '#12192d',
-              margin: 0,
-              letterSpacing: '-0.03em',
-              lineHeight: '1.2',
-            }}>{tx('团队 AI 资料库', 'Team AI Library')}</h2>
-            <p style={{
-              marginTop: '12px',
-              fontSize: '14px',
-              color: '#506074',
-              lineHeight: '1.6',
-              maxWidth: '640px',
-              marginRight: 0,
-              marginBottom: 0,
-            }}>
-              {tx(
-                '小团队可共享专属 Skill、MCP 服务的配置样例与快捷提示词库，打破成员间的信息孤岛，共同沉淀团队高效的 AI 最佳实践。',
-                'Small teams can share custom skills, MCP server guides, prompts, and playbooks in a private workspace to elevate collective AI workflow.'
-              )}
-            </p>
-          </div>
-          <svg viewBox="0 0 120 100" width="120" height="100" style={{ flexShrink: 0, display: 'block' }}>
-            <defs>
-              <linearGradient id="docGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#818cf8" stopOpacity="0.85" />
-                <stop offset="100%" stopColor="#c084fc" stopOpacity="0.85" />
-              </linearGradient>
-              <linearGradient id="docGrad2" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.75" />
-                <stop offset="100%" stopColor="#818cf8" stopOpacity="0.75" />
-              </linearGradient>
-              <filter id="glow">
-                <feGaussianBlur stdDeviation="2" result="blur" />
-                <feComposite in="SourceGraphic" in2="blur" operator="over" />
-              </filter>
-            </defs>
-            <circle cx="85" cy="50" r="30" stroke="rgba(99, 102, 241, 0.1)" strokeWidth="1" strokeDasharray="3 3" fill="none" />
-            <path d="M45 70 Q 60 55 85 50" stroke="rgba(99, 102, 241, 0.15)" strokeWidth="1.5" strokeDasharray="3 3" fill="none" />
-            <circle cx="85" cy="20" r="2.5" fill="#818cf8" opacity="0.6" filter="url(#glow)" />
-            <circle cx="115" cy="50" r="2" fill="#38bdf8" opacity="0.6" />
-            <rect x="32" y="18" width="40" height="52" rx="6" fill="url(#docGrad)" transform="rotate(-8 52 44)" style={{ filter: 'drop-shadow(0 8px 16px rgba(129, 140, 248, 0.12))' }} />
-            <line x1="40" y1="31" x2="60" y2="28" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" transform="rotate(-8 52 44)" />
-            <line x1="40" y1="39" x2="52" y2="37" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" transform="rotate(-8 52 44)" />
-            <rect x="52" y="26" width="40" height="52" rx="6" fill="url(#docGrad2)" transform="rotate(6 72 52)" style={{ filter: 'drop-shadow(0 8px 16px rgba(56, 189, 248, 0.15))' }} />
-            <line x1="60" y1="39" x2="80" y2="41" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" transform="rotate(6 72 52)" />
-            <line x1="60" y1="47" x2="75" y2="48" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" transform="rotate(6 72 52)" />
-            <line x1="60" y1="55" x2="68" y2="56" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" transform="rotate(6 72 52)" />
-            <circle cx="85" cy="50" r="4.5" fill="#6366f1" style={{ filter: 'drop-shadow(0 0 6px rgba(99, 102, 241, 0.6))' }} />
-          </svg>
-        </section>
-
-        <section className="card" style={{
-          marginTop: '24px',
-          background: 'linear-gradient(135deg, rgba(99, 102, 241, 0.03) 0%, rgba(139, 92, 246, 0.03) 50%, rgba(6, 182, 212, 0.02) 100%)',
-          border: '1px solid rgba(99, 102, 241, 0.12)',
-          borderRadius: '24px',
-          boxShadow: '0 20px 40px rgba(99, 102, 241, 0.04), inset 0 1px 0 rgba(255, 255, 255, 0.6)',
-        }}>
-          <div className="card-body" style={{ padding: '60px 40px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-            <svg viewBox="0 0 64 64" width="80" height="80" style={{ marginBottom: '24px' }}>
-              <defs>
-                <linearGradient id="cloudGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#6366f1" />
-                  <stop offset="100%" stopColor="#a855f7" />
-                </linearGradient>
-                <linearGradient id="nodeGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#06b6d4" />
-                  <stop offset="100%" stopColor="#6366f1" />
-                </linearGradient>
-              </defs>
-              <path d="M16 32h32M32 16v32M20 20l24 24M44 20L20 44" stroke="rgba(99, 102, 241, 0.15)" strokeWidth="2" strokeDasharray="4 4" />
-              <circle cx="16" cy="32" r="4" fill="url(#nodeGrad)" />
-              <circle cx="48" cy="32" r="4" fill="url(#nodeGrad)" />
-              <circle cx="32" cy="16" r="4" fill="url(#nodeGrad)" />
-              <circle cx="32" cy="48" r="4" fill="url(#nodeGrad)" />
-              <path d="M46 38a7 7 0 0 0-5.59-11.24 10 10 0 0 0-18.82-3.76A8 8 0 0 0 16 38a6 6 0 0 0 6 6h24a5 5 0 0 0 0-10z" fill="url(#cloudGrad)" />
-              <path d="M26 38c0-1.5 2-2.5 4-2.5s4 1 4 2.5v1h-8zm4-3a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3zm6 3c0-1.2 1.5-2 3-2s3 .8 3 2v1h-6zm3-3a1.2 1.2 0 1 0 0-2.4 1.2 1.2 0 0 0 0 2.4z" fill="#ffffff" />
-            </svg>
-            <h3 style={{ fontSize: '22px', fontWeight: 800, color: '#12192d', marginBottom: '10px', letterSpacing: '-0.02em' }}>
-              {tx('激活团队协作空间', 'Activate Team Collaboration')}
-            </h3>
-            <p style={{ fontSize: '14.5px', color: '#506074', maxWidth: '560px', margin: '0 auto 28px auto', lineHeight: '1.7' }}>
-              {tx(
-                '您当前处于本地安全单机模式。在此状态下，您的所有文件和 AI 技能都安全地保存在本地设备中。为了与团队成员实时共享和同步 AI 技能、MCP 配置以及提示词库，请前往个人中心绑定云端账户。',
-                'You are currently in safe Local-Only mode. All your files and AI skills stay securely on this device. To share and sync AI skills, MCP configurations, and prompt libraries with your team, please go to My Profile to bind a cloud account.'
-              )}
-            </p>
-            <Link
-              to="/settings/profile"
-              className="btn btn-primary"
-              onMouseEnter={() => setActiveCardHover(true)}
-              onMouseLeave={() => setActiveCardHover(false)}
-              style={{
-                padding: '12px 28px',
-                borderRadius: '12px',
-                fontWeight: 600,
-                background: 'linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%)',
-                border: 'none',
-                boxShadow: activeCardHover ? '0 10px 25px rgba(99, 102, 241, 0.35)' : '0 6px 18px rgba(99, 102, 241, 0.2)',
-                transform: activeCardHover ? 'translateY(-1px) scale(1.02)' : 'none',
-                transition: 'all 0.2s cubic-bezier(0.16, 1, 0.3, 1)',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: '8px',
-                color: '#ffffff',
-                textDecoration: 'none',
-              }}
-            >
-              {tx('立即前往绑定云账号', 'Go to Bind Cloud Account')}
-              <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ transition: 'transform 0.2s', transform: activeCardHover ? 'translateX(4px)' : 'none' }}>
-                <line x1="5" y1="12" x2="19" y2="12" />
-                <polyline points="12 5 19 12 12 19" />
-              </svg>
-            </Link>
-
-            {/* 协作优势三列网格 */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
-              gap: '20px',
-              width: '100%',
-              marginTop: '54px',
-              textAlign: 'left'
-            }}>
-              {[
-                {
-                  title: tx('多端实时同步', 'Multi-device Realtime Sync'),
-                  desc: tx('激活云服务后，您在多台设备上使用的 AI 技能、文件与配置均可实时无缝同步。', 'All your AI skills, files, and configurations seamlessly sync across devices in real time.'),
-                  icon: (
-                    <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#6366f1' }}>
-                      <path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67" />
-                    </svg>
-                  ),
-                },
-                {
-                  title: tx('团队协作共享', 'Teammate Collaborative Sharing'),
-                  desc: tx('邀请团队成员加入，共同维护与共享团队 Skill、MCP 服务描述与快捷提示词库。', 'Invite colleagues to co-create and share custom skills, MCP connections, and prompt libraries.'),
-                  icon: (
-                    <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#8b5cf6' }}>
-                      <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
-                      <circle cx="9" cy="7" r="4" />
-                      <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
-                      <path d="M16 3.13a4 4 0 0 1 0 7.75" />
-                    </svg>
-                  ),
-                },
-                {
-                  title: tx('安全云端存储', 'Secure Cloud Storage'),
-                  desc: tx('云端数据全程采用金融级高强度加密，无惧本地硬件损坏或误删风险。', 'End-to-end encryption secures your core data assets from hardware issues or accidental deletions.'),
-                  icon: (
-                    <svg viewBox="0 0 24 24" width="22" height="22" stroke="currentColor" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" style={{ color: '#06b6d4' }}>
-                      <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                      <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-                    </svg>
-                  ),
-                },
-              ].map((feat, idx) => (
-                <div
-                  key={idx}
-                  onMouseEnter={() => setHoveredFeature(idx)}
-                  onMouseLeave={() => setHoveredFeature(null)}
-                  style={{
-                    padding: '24px',
-                    background: '#ffffff',
-                    border: '1px solid',
-                    borderColor: hoveredFeature === idx ? 'rgba(99, 102, 241, 0.24)' : 'rgba(65, 77, 136, 0.08)',
-                    borderRadius: '18px',
-                    boxShadow: hoveredFeature === idx ? '0 16px 32px rgba(99, 102, 241, 0.06)' : '0 4px 12px rgba(65, 77, 136, 0.02)',
-                    transform: hoveredFeature === idx ? 'translateY(-3px)' : 'none',
-                    transition: 'all 0.25s cubic-bezier(0.16, 1, 0.3, 1)',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '12px',
-                  }}
-                >
-                  <div style={{
-                    width: '40px',
-                    height: '40px',
-                    borderRadius: '10px',
-                    background: 'rgba(99, 102, 241, 0.06)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                  }}>
-                    {feat.icon}
-                  </div>
-                  <h4 style={{ fontSize: '15px', fontWeight: 700, color: '#12192d', margin: 0 }}>
-                    {feat.title}
-                  </h4>
-                  <p style={{ fontSize: '13px', color: '#506074', margin: 0, lineHeight: '1.6' }}>
-                    {feat.desc}
-                  </p>
-                </div>
-              ))}
-            </div>
-          </div>
-        </section>
-      </div>
-    )
+  const handleCreateAgent = async () => {
+    if (!selectedTeam) return
+    const slug = normalizeSlugInput(newAgentSlug || newAgentName)
+    const name = newAgentName.trim() || slug
+    if (!slug || !name) {
+      setError(tx('请填写 Agent 名称和 slug。', 'Enter an agent name and slug.'))
+      return
+    }
+    setAgentWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      const response = await api.saveTeamAgent(selectedTeam.id, {
+        slug,
+        name,
+        description: newAgentDescription,
+        instructions: newAgentInstructions,
+        status: selectedTeam.can_manage_members ? 'published' : 'draft',
+        visibility: selectedTeam.can_manage_members ? 'team' : 'private',
+        target_agents: ['codex', 'claude-code', 'cursor', 'gemini-cli'],
+      })
+      setTeamAgents(response.agents || [])
+      if (!selectedTeam.can_manage_members) {
+        const history = await api.requestTeamSkillReview(selectedTeam.id, {
+          asset_type: 'agent',
+          agent_slug: slug,
+          note: 'Created by a team member.',
+        })
+        setSkillReviewHistory(history.events || [])
+      }
+      setNewAgentName('')
+      setNewAgentSlug('')
+      setNewAgentDescription('')
+      setNewAgentInstructions('')
+      setMessage(selectedTeam.can_manage_members
+        ? tx('Agent 配方已发布给团队。', 'Agent recipe published to the team.')
+        : tx('Agent 配方已保存为草稿，等待管理员发布。', 'Agent recipe saved as draft for an admin to publish.'))
+    } catch (err: any) {
+      setError(err?.message || tx('保存 Agent 配方失败', 'Failed to save agent recipe'))
+    } finally {
+      setAgentWorking(false)
+    }
   }
+
+  const handlePublishAgent = async (agent: TeamAgentAsset, status: 'draft' | 'published' | 'archived') => {
+    if (!selectedTeam) return
+    setAgentWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      const response = await api.saveTeamAgent(selectedTeam.id, {
+        slug: agent.slug,
+        name: agent.name,
+        description: agent.description,
+        instructions: agent.instructions,
+        default_skill_paths: agent.default_skill_paths || [],
+        target_agents: agent.target_agents || [],
+        model: agent.model,
+        permissions: agent.permissions || [],
+        approval_required: agent.approval_required || [],
+        maintainer: agent.maintainer,
+        status,
+        visibility: status === 'published' ? 'team' : 'private',
+      })
+      setTeamAgents(response.agents || [])
+      setMessage(status === 'published'
+        ? tx('Agent 配方已发布。', 'Agent recipe published.')
+        : status === 'archived'
+          ? tx('Agent 配方已归档。', 'Agent recipe archived.')
+          : tx('Agent 配方已转为草稿。', 'Agent recipe moved to draft.'))
+    } catch (err: any) {
+      setError(err?.message || tx('更新 Agent 配方失败', 'Failed to update agent recipe'))
+    } finally {
+      setAgentWorking(false)
+    }
+  }
+
+  const handleRequestAgentReview = async (agent: TeamAgentAsset) => {
+    if (!selectedTeam) return
+    setAgentWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      const response = await api.requestTeamSkillReview(selectedTeam.id, {
+        asset_type: 'agent',
+        agent_slug: agent.slug,
+      })
+      setSkillReviewHistory(response.events || [])
+      setMessage(tx('Agent 配方已提交给管理员审查。', 'Agent recipe review requested for admins.'))
+      await loadTeamData(selectedTeam)
+    } catch (err: any) {
+      setError(err?.message || tx('提交 Agent 审查失败', 'Failed to request agent review'))
+    } finally {
+      setAgentWorking(false)
+    }
+  }
+
+  const handleResolveAgentReview = async (agent: TeamAgentAsset, decision: 'approved' | 'changes_requested') => {
+    if (!selectedTeam) return
+    setAgentWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      const response = await api.resolveTeamSkillReview(selectedTeam.id, {
+        asset_type: 'agent',
+        agent_slug: agent.slug,
+        decision,
+      })
+      setSkillReviewHistory(response.events || [])
+      setMessage(decision === 'approved'
+        ? tx('Agent 配方审查已通过。', 'Agent recipe review approved.')
+        : tx('已要求修改 Agent 配方。', 'Changes requested for this agent recipe.'))
+      await loadTeamData(selectedTeam)
+    } catch (err: any) {
+      setError(err?.message || tx('处理 Agent 审查失败', 'Failed to resolve agent review'))
+    } finally {
+      setAgentWorking(false)
+    }
+  }
+
+  const handleInstallAgent = async (agent: TeamAgentAsset) => {
+    if (!selectedTeam || installingAgentSlug) return
+    setInstallingAgentSlug(agent.slug)
+    setMessage('')
+    setError('')
+    try {
+      await api.installTeamAgent(selectedTeam.id, agent.slug)
+      setMessage(tx(`已安装到个人 Agent 配方：${agent.name}`, `Installed personal agent recipe: ${agent.name}`))
+    } catch (err: any) {
+      setError(err?.message || tx('安装 Agent 配方失败', 'Failed to install agent recipe'))
+    } finally {
+      setInstallingAgentSlug('')
+    }
+  }
+
+  const isLocalTeamSimulation = !currentUser || !currentUser.slug || currentUser.slug === 'local'
 
   return (
     <div className="materials-page" style={{ paddingLeft: '24px', paddingRight: '24px', margin: '0 auto', maxWidth: '1240px' }}>
@@ -609,6 +649,14 @@ export default function TeamLibraryPage() {
 
       {message && <div className="alert alert-success">{message}</div>}
       {error && <div className="alert alert-warn">{error}</div>}
+      {isLocalTeamSimulation && (
+        <div className="alert alert-warn">
+          {tx(
+            '当前是本地团队模拟：团队、成员、Skill 和审查记录只保存在这台设备的本地数据里，适合演示和离线验证；真实多人同步仍需要云端账号。',
+            'Local team simulation is active. Teams, members, skills, and review records are stored only on this device for demos and offline testing. Real multi-user sync still needs a cloud account.',
+          )}
+        </div>
+      )}
 
       <section className="materials-section">
         <div className="materials-section-head">
@@ -660,7 +708,7 @@ export default function TeamLibraryPage() {
             <div>
             <h3 className="materials-section-title">{tx('成员', 'Members')}</h3>
               <p className="materials-section-copy">
-                {tx('Owner/Admin 管理成员；Member 可写团队资料；Viewer 只读。审计、SSO 和审批流不在当前阶段。', 'Owners/Admins manage members; Members can write team files; Viewers are read-only. Audit, SSO, and approval workflows are outside this phase.')}
+                {tx('Owner/Admin 管理成员并处理审查；Member 可写团队资料并提交审查；Viewer 只读。', 'Owners/Admins manage members and reviews; Members can write team files and request reviews; Viewers are read-only.')}
               </p>
             </div>
           </div>
@@ -726,6 +774,186 @@ export default function TeamLibraryPage() {
                 actions={category.action}
               />
             ))}
+          </div>
+        </section>
+      )}
+
+      {selectedTeam && (
+        <section className="materials-section">
+          <div className="materials-section-head">
+            <div>
+              <h3 className="materials-section-title">{tx('团队共享管理', 'Team Sharing Management')}</h3>
+              <p className="materials-section-copy">
+                {tx('查看团队 Skill 审查记录、成员订阅状态和更新提醒。', 'Review team skill history, member subscription status, and update notices.')}
+              </p>
+            </div>
+          </div>
+
+          <div className="materials-grid materials-grid-wide">
+            {selectedTeam.can_manage_members ? (
+              <MaterialsTile
+                iconClassName="icon-stack"
+                title={tx('订阅报表', 'Subscription Report')}
+                subtitle={tx(`${subscriptionSummary.skills} 个团队 Skill`, `${subscriptionSummary.skills} team skills`)}
+                description={tx('按成员查看哪些团队 Skill 有个人副本、未安装或需要更新。', 'See which team skills have personal copies, are missing, or need updates by member.')}
+                footerStart={tx(`个人副本 ${subscriptionSummary.personalCopies}`, `${subscriptionSummary.personalCopies} personal copies`)}
+                footerEnd={tx(`待更新 ${subscriptionSummary.updates}`, `${subscriptionSummary.updates} updates`)}
+                actions={(
+                  <button className="btn btn-sm btn-primary" type="button" disabled={sharingWorking} onClick={() => { void handleCheckTeamSkillSubscriptions() }}>
+                    {sharingWorking ? tx('检查中...', 'Checking...') : tx('检查更新', 'Check updates')}
+                  </button>
+                )}
+              >
+                <div className="team-admin-list">
+                  {(skillSubscriptionReport?.skills || []).filter((skill) => skill.update_available_count > 0 || skill.source_missing_count > 0 || skill.not_installed_count > 0).slice(0, 4).map((skill) => (
+                    <div key={skill.skill_path} className="team-admin-row">
+                      <span>{skill.skill_path}</span>
+                      <small>{tx(`未安装 ${skill.not_installed_count} / 更新 ${skill.update_available_count}`, `${skill.not_installed_count} missing / ${skill.update_available_count} updates`)}</small>
+                    </div>
+                  ))}
+                  {!skillSubscriptionReport?.skills?.length ? (
+                    <div className="team-admin-empty">{tx('暂无订阅数据。', 'No subscription data yet.')}</div>
+                  ) : null}
+                </div>
+              </MaterialsTile>
+            ) : null}
+
+            {selectedTeam.can_manage_members ? (
+              <MaterialsTile
+                iconClassName="icon-file"
+                title={tx('更新通知', 'Update Notices')}
+                subtitle={tx(`最近检查：${formatDateTime(skillUpdateNotificationInfo?.last_checked_at || skillUpdateNotifications[0]?.created_at, locale)}`, `Last checked: ${formatDateTime(skillUpdateNotificationInfo?.last_checked_at || skillUpdateNotifications[0]?.created_at, locale)}`)}
+                description={tx('检查结果会保存到团队 Hub，供管理员后续处理。', 'Check results are saved in the team Hub for admins to review.')}
+                footerStart={tx(`${skillUpdateNotifications.length} 条提醒`, `${skillUpdateNotifications.length} notices`)}
+              >
+                <div className="team-admin-list">
+                  {skillUpdateNotifications.slice(0, 4).map((item) => (
+                    <div key={item.id} className="team-admin-row">
+                      <span>{item.skill_path}</span>
+                      <small>{item.display_name || item.user_slug} · {item.status}</small>
+                    </div>
+                  ))}
+                  {skillUpdateNotifications.length === 0 ? (
+                    <div className="team-admin-empty">{tx('暂无更新提醒。', 'No update notices yet.')}</div>
+                  ) : null}
+                </div>
+              </MaterialsTile>
+            ) : null}
+
+            <MaterialsTile
+              iconClassName="icon-file"
+              title={tx('审查历史', 'Review History')}
+              subtitle={tx(`${skillReviewHistory.length} 条记录`, `${skillReviewHistory.length} records`)}
+              description={tx('记录 Skill 和 Agent 配方的提交、通过、要求修改、发布和归档。', 'Records review requests, approvals, requested changes, publishing, and archiving for skills and agent recipes.')}
+              footerStart={tx(`提交审查 ${reviewEventCount}`, `${reviewEventCount} review requests`)}
+            >
+              <div className="team-admin-list">
+                {skillReviewHistory.slice(0, 5).map((event) => (
+                  <div key={event.id} className="team-admin-row">
+                    <span>{event.skill_path || event.agent_slug || event.asset_type}</span>
+                    <small>{reviewActionLabel(event.action, locale)} · {roleLabel(event.actor_role as TeamRole, locale)} · {formatDateTime(event.created_at, locale)}</small>
+                  </div>
+                ))}
+                {skillReviewHistory.length === 0 ? (
+                  <div className="team-admin-empty">{tx('暂无审查记录。', 'No review history yet.')}</div>
+                ) : null}
+              </div>
+            </MaterialsTile>
+          </div>
+        </section>
+      )}
+
+      {selectedTeam && (
+        <section className="materials-section">
+          <div className="materials-section-head">
+            <div>
+              <h3 className="materials-section-title">{tx('团队 Agent 配方', 'Team Agent Recipes')}</h3>
+              <p className="materials-section-copy">
+                {tx('这里保存可共享的 Agent 配置：默认 Skill、模型、权限和审批动作。Vola 保存配方，不直接运行 Agent。', 'Shared agent recipes store default skills, models, permissions, and approval notes. Vola stores the recipe and does not run the agent.')}
+              </p>
+            </div>
+          </div>
+
+          <div className="materials-grid materials-grid-wide">
+            {teamAgents.map((agent) => (
+              <MaterialsTile
+                key={agent.slug}
+                iconClassName="icon-device"
+                title={agent.name}
+                subtitle={`/${agent.slug}`}
+                description={agent.description || agent.instructions || tx('团队 Agent 配方', 'Team agent recipe')}
+                footerStart={agentStatusLabel(agent.status, agent.visibility, locale)}
+                footerEnd={agent.review_status === 'requested'
+                  ? tx('待审查', 'Review requested')
+                  : agent.review_status === 'changes_requested'
+                    ? tx('需修改', 'Changes requested')
+                    : (agent.default_skill_paths || []).length
+                      ? tx(`${agent.default_skill_paths?.length || 0} 个默认 Skill`, `${agent.default_skill_paths?.length || 0} default skills`)
+                      : tx('可安装到个人', 'Installable')}
+                actions={(
+                  <>
+                    {agent.status === 'published' && agent.visibility === 'team' ? (
+                      <button className="btn btn-sm" type="button" disabled={installingAgentSlug === agent.slug} onClick={() => { void handleInstallAgent(agent) }}>
+                        {installingAgentSlug === agent.slug ? tx('安装中...', 'Installing...') : tx('安装到个人', 'Install')}
+                      </button>
+                    ) : null}
+                    {selectedTeam.can_write && !selectedTeam.can_manage_members ? (
+                      <button className="btn btn-sm" type="button" disabled={agentWorking || agent.review_status === 'requested'} onClick={() => { void handleRequestAgentReview(agent) }}>
+                        {agent.review_status === 'requested' ? tx('待审查', 'Review requested') : tx('提交审查', 'Request review')}
+                      </button>
+                    ) : null}
+                    {selectedTeam.can_manage_members && agent.review_status === 'requested' ? (
+                      <>
+                        <button className="btn btn-sm btn-primary" type="button" disabled={agentWorking} onClick={() => { void handleResolveAgentReview(agent, 'approved') }}>
+                          {tx('通过审查', 'Approve review')}
+                        </button>
+                        <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={() => { void handleResolveAgentReview(agent, 'changes_requested') }}>
+                          {tx('要求修改', 'Request changes')}
+                        </button>
+                      </>
+                    ) : null}
+                    {selectedTeam.can_manage_members ? (
+                      agent.status === 'published' && agent.visibility === 'team' ? (
+                        <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={() => { void handlePublishAgent(agent, 'draft') }}>
+                          {tx('转草稿', 'Draft')}
+                        </button>
+                      ) : (
+                        <button className="btn btn-sm btn-primary" type="button" disabled={agentWorking} onClick={() => { void handlePublishAgent(agent, 'published') }}>
+                          {tx('发布', 'Publish')}
+                        </button>
+                      )
+                    ) : null}
+                    {selectedTeam.can_manage_members && agent.status !== 'archived' ? (
+                      <button className="btn btn-sm materials-toolbar-control is-danger" type="button" disabled={agentWorking} onClick={() => { void handlePublishAgent(agent, 'archived') }}>
+                        {tx('归档', 'Archive')}
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              />
+            ))}
+            {selectedTeam.can_write && (
+              <MaterialsTile
+                iconClassName="icon-file"
+                title={tx('新 Agent 配方', 'New Agent Recipe')}
+                subtitle={tx('默认保存为团队资产', 'Saved as a team asset')}
+                description={tx('给 Codex、Claude、Cursor 或 Gemini CLI 复用的 Agent 说明。', 'Agent instructions reusable by Codex, Claude, Cursor, or Gemini CLI.')}
+                footerStart={selectedTeam.can_manage_members ? tx('创建后发布', 'Publish on create') : tx('创建为草稿', 'Create as draft')}
+              >
+                <div className="form-grid">
+                  <input className="input" placeholder={tx('Agent 名称', 'Agent name')} value={newAgentName} onChange={(event) => {
+                    setNewAgentName(event.target.value)
+                    if (!newAgentSlug) setNewAgentSlug(normalizeSlugInput(event.target.value))
+                  }} />
+                  <input className="input" placeholder="slug" value={newAgentSlug} onChange={(event) => setNewAgentSlug(normalizeSlugInput(event.target.value))} />
+                  <input className="input" placeholder={tx('用途说明', 'Description')} value={newAgentDescription} onChange={(event) => setNewAgentDescription(event.target.value)} />
+                  <textarea className="input" rows={4} placeholder={tx('Agent 指令、默认工作方式和审批边界', 'Agent instructions, default workflow, and approval boundaries')} value={newAgentInstructions} onChange={(event) => setNewAgentInstructions(event.target.value)} />
+                  <button className="btn btn-sm" type="button" disabled={agentWorking || !newAgentName.trim()} onClick={handleCreateAgent}>
+                    {agentWorking ? tx('保存中...', 'Saving...') : tx('保存配方', 'Save recipe')}
+                  </button>
+                </div>
+              </MaterialsTile>
+            )}
           </div>
         </section>
       )}

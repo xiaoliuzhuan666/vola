@@ -167,6 +167,8 @@ VOLA_IMAGE=<ACR 地址>/<命名空间>/<仓库>:<镜像 tag>
 run step successfully!
 ```
 
+如果日志里同时出现 `NEUDRIVE_IMAGE=...`，那是给旧部署脚本保留的兼容输出。新部署只需要复制 `VOLA_IMAGE=...`。
+
 以本次成功运行为例，最终镜像是：
 
 ```text

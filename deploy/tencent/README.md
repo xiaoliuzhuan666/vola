@@ -42,6 +42,11 @@ PUBLIC_BASE_URL=http://127.0.0.1:18080
 CORS_ORIGINS=http://127.0.0.1:18080
 ```
 
+Use `VOLA_ENV_FILE` and `VOLA_HOST_PORT` for new deployments. The pull script
+still accepts `NEUDRIVE_ENV_FILE` and `NEUDRIVE_HOST_PORT` for older server
+automation, but those names are compatibility inputs rather than the
+recommended Vola configuration.
+
 Keep ACR credentials out of this file if possible. Run `docker login` once on the server with a pull-only credential:
 
 ```bash

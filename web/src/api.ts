@@ -1,20 +1,133 @@
 export let API_BASE = "/api";
 
-export const isTauri = typeof window !== "undefined" && (window as any).__TAURI_INTERNALS__;
+function normalizeApiBase(value?: string | null) {
+  const raw = `${value || ""}`.trim().replace(/\/+$/, "");
+  if (!raw) return "/api";
+  if (raw === "/api" || raw.endsWith("/api")) return raw;
+  if (/^https?:\/\//i.test(raw)) return `${raw}/api`;
+  return raw;
+}
+
+function detectTauriRuntime() {
+  if (typeof window === "undefined") return false;
+  const protocol = window.location?.protocol || "";
+  const hostname = window.location?.hostname || "";
+  return !!(window as any).__TAURI_INTERNALS__ || protocol === "tauri:" || hostname === "tauri.localhost";
+}
+
+export const isTauri = detectTauriRuntime();
 
 export let apiBasePromise: Promise<string> | null = null;
 
-if (isTauri) {
-  apiBasePromise = import('@tauri-apps/api/core').then(({ invoke }) => {
-    return invoke<string>("get_api_base").then(url => {
-      API_BASE = url;
-      console.log("Tauri backend API base initialized:", API_BASE);
-      return url;
-    }).catch(err => {
-      console.error("Failed to get API base from Tauri:", err);
-      return "/api";
+type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promise<T>;
+type AuthStorageKey = "token" | "refresh_token";
+let memoryAccessToken = "";
+let localOwnerTokenPromise: Promise<string | null> | null = null;
+
+function sanitizeAuthValue(value?: string | null) {
+  if (!value) return null;
+  const trimmed = value.trim();
+  if (!trimmed || !/^[\x21-\x7E]+$/.test(trimmed)) {
+    return null;
+  }
+  return trimmed;
+}
+
+function readHeaderSafeAuthValue(key: AuthStorageKey) {
+  const value = localStorage.getItem(key);
+  const trimmed = sanitizeAuthValue(value);
+  if (!trimmed) {
+    localStorage.removeItem(key);
+    if (key === "token" && memoryAccessToken) return memoryAccessToken;
+    return null;
+  }
+  if (trimmed !== value) localStorage.setItem(key, trimmed);
+  return trimmed;
+}
+
+function storeAccessToken(token?: string | null) {
+  const trimmed = sanitizeAuthValue(token);
+  if (!trimmed) {
+    localStorage.removeItem("token");
+    memoryAccessToken = "";
+    return null;
+  }
+  memoryAccessToken = trimmed;
+  localStorage.setItem("token", trimmed);
+  return trimmed;
+}
+
+function clearStoredAuth() {
+  memoryAccessToken = "";
+  localStorage.removeItem("token");
+  localStorage.removeItem("refresh_token");
+}
+
+function authHeadersForToken(token: string | null): Record<string, string> {
+  return token ? { Authorization: `Bearer ${token}` } : {};
+}
+
+function authHeaders(): Record<string, string> {
+  return authHeadersForToken(readHeaderSafeAuthValue("token"));
+}
+
+function getGlobalTauriInvoke(): TauriInvoke | null {
+  if (typeof window === "undefined") return null;
+  const tauri = (window as any).__TAURI__;
+  return tauri?.core?.invoke || tauri?.invoke || null;
+}
+
+async function resolveTauriApiBase() {
+  try {
+    const globalInvoke = getGlobalTauriInvoke();
+    const invoke = globalInvoke || (await import('@tauri-apps/api/core')).invoke;
+    const url = await invoke<string>("get_api_base");
+    API_BASE = normalizeApiBase(url);
+    console.log("Tauri backend API base initialized:", API_BASE);
+    return API_BASE;
+  } catch (err) {
+    console.error("Failed to get API base from Tauri:", err);
+    throw err;
+  }
+}
+
+async function ensureTauriApiBase() {
+  if (!isTauri) return;
+  if (!apiBasePromise) apiBasePromise = resolveTauriApiBase();
+  try {
+    await apiBasePromise;
+  } catch (err) {
+    apiBasePromise = null;
+    throw err;
+  }
+}
+
+function shouldAutoBootstrapLocalOwner(path: string) {
+  if (!isTauri) return false;
+  if (path === "/config" || path === "/local/owner-token") return false;
+  if (path === "/auth/login" || path === "/auth/register" || path === "/auth/refresh" || path === "/auth/logout") return false;
+  if (path.startsWith("/auth/providers/")) return false;
+  return true;
+}
+
+async function bootstrapLocalOwnerAccessToken() {
+  if (!isTauri) return null;
+  if (!localOwnerTokenPromise) {
+    localOwnerTokenPromise = (async () => {
+      await ensureTauriApiBase();
+      const res = await fetch(`${API_BASE}/local/owner-token`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      if (!res.ok) return null;
+      const json = await res.json().catch(() => null);
+      const token = json?.data?.token || json?.token || null;
+      return storeAccessToken(token);
+    })().finally(() => {
+      localOwnerTokenPromise = null;
     });
-  });
+  }
+  return localOwnerTokenPromise;
 }
 
 
@@ -212,6 +325,75 @@ export interface DashboardStats {
   projects: number;
   weekly_activity: DashboardActivity[];
   pending: DashboardPending[];
+}
+
+export interface LocalLibraryScanRequest {
+  roots?: string[];
+  max_markdown?: number;
+  max_projects?: number;
+}
+
+export interface LocalLibraryRoot {
+  path: string;
+  exists: boolean;
+  scanned: boolean;
+  error?: string;
+}
+
+export interface LocalLibraryStats {
+  roots_requested: number;
+  roots_scanned: number;
+  markdown_found: number;
+  markdown_shown: number;
+  projects_found: number;
+  projects_shown: number;
+  dirs_skipped: number;
+  files_scanned: number;
+  sensitive_files: number;
+}
+
+export interface LocalLibraryProjectCandidate {
+  name: string;
+  path: string;
+  score: number;
+  markers: string[];
+  reasons: string[];
+  markdown_count: number;
+  updated_at?: string;
+}
+
+export interface LocalLibraryMarkdownCandidate {
+  title: string;
+  path: string;
+  project_name?: string;
+  project_path?: string;
+  category: string;
+  generic_candidate: boolean;
+  sensitive_candidate: boolean;
+  size_bytes: number;
+  updated_at?: string;
+  score: number;
+  headings?: string[];
+  excerpt?: string;
+}
+
+export interface LocalLibraryScanResponse {
+  version: string;
+  generated_at: string;
+  roots: LocalLibraryRoot[];
+  stats: LocalLibraryStats;
+  projects: LocalLibraryProjectCandidate[];
+  markdown: LocalLibraryMarkdownCandidate[];
+  warnings?: string[];
+}
+
+export interface LocalLibraryImportResponse {
+  version: string;
+  generated_at: string;
+  project_name: string;
+  paths: string[];
+  stats: LocalLibraryStats;
+  warnings?: string[];
 }
 
 export function normalizeDashboardStats(stats?: Partial<DashboardStats> | null): DashboardStats {
@@ -664,6 +846,201 @@ export interface SkillCopyToPersonalResponse {
   overwrite: boolean;
 }
 
+export interface TeamSkillPublication {
+  skill_path: string;
+  status: "draft" | "published" | "archived" | string;
+  visibility: "private" | "team" | string;
+  note?: string;
+  review_status?: "requested" | "approved" | "changes_requested" | string;
+  review_note?: string;
+  review_requested_at?: string;
+  review_requested_by?: string;
+  review_requested_by_role?: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  reviewed_by_role?: string;
+  updated_at?: string;
+  published_at?: string;
+  archived_at?: string;
+  implicit?: boolean;
+}
+
+export interface TeamSkillPublicationsResponse {
+  version: string;
+  team?: Team;
+  storage_path: string;
+  updated_at?: string;
+  publications: TeamSkillPublication[];
+}
+
+export interface TeamSkillSubscriptionStatus {
+  team_id: string;
+  team_slug?: string;
+  team_name?: string;
+  source_path: string;
+  target_path: string;
+  source_fingerprint?: string;
+  source_current_fingerprint?: string;
+  files: number;
+  bytes: number;
+  installed_at?: string;
+  updated_at?: string;
+  checked_at?: string;
+  update_available: boolean;
+  source_missing: boolean;
+  error?: string;
+}
+
+export interface TeamSkillSubscriptionsResponse {
+  version: string;
+  storage_path: string;
+  updated_at?: string;
+  checked_at?: string;
+  subscriptions: TeamSkillSubscriptionStatus[];
+}
+
+export interface TeamSkillReviewEvent {
+  id: string;
+  asset_type: "skill" | "agent" | string;
+  skill_path?: string;
+  agent_slug?: string;
+  action: string;
+  status?: string;
+  visibility?: string;
+  note?: string;
+  actor_id?: string;
+  actor_role?: string;
+  created_at: string;
+}
+
+export interface TeamSkillReviewHistoryResponse {
+  version: string;
+  team?: Team;
+  storage_path: string;
+  updated_at?: string;
+  events: TeamSkillReviewEvent[];
+}
+
+export interface TeamSkillSubscriptionMemberReport {
+  user_id: string;
+  user_slug?: string;
+  display_name?: string;
+  role?: string;
+  status: "not_installed" | "installed" | "update_available" | "source_missing" | string;
+  target_path?: string;
+  source_fingerprint?: string;
+  source_current_fingerprint?: string;
+  files?: number;
+  bytes?: number;
+  installed_at?: string;
+  updated_at?: string;
+  checked_at?: string;
+  update_available: boolean;
+  source_missing: boolean;
+  error?: string;
+}
+
+export interface TeamSkillSubscriptionSkillReport {
+  skill_path: string;
+  status: string;
+  visibility: string;
+  source_fingerprint?: string;
+  source_missing: boolean;
+  installed_count: number;
+  update_available_count: number;
+  source_missing_count: number;
+  not_installed_count: number;
+  members: TeamSkillSubscriptionMemberReport[];
+}
+
+export interface TeamSkillSubscriptionReportResponse {
+  version: string;
+  team?: Team;
+  generated_at: string;
+  skills: TeamSkillSubscriptionSkillReport[];
+}
+
+export interface TeamSkillUpdateNotification {
+  id: string;
+  kind: string;
+  team_id?: string;
+  team_slug?: string;
+  skill_path?: string;
+  user_id?: string;
+  user_slug?: string;
+  display_name?: string;
+  member_role?: string;
+  status: string;
+  message: string;
+  source_fingerprint?: string;
+  installed_fingerprint?: string;
+  created_at: string;
+}
+
+export interface TeamSkillUpdateNotificationsResponse {
+  version: string;
+  team?: Team;
+  storage_path: string;
+  updated_at?: string;
+  last_checked_at?: string;
+  notifications: TeamSkillUpdateNotification[];
+  report?: TeamSkillSubscriptionReportResponse;
+}
+
+export interface TeamAgentAsset {
+  version: string;
+  slug: string;
+  name: string;
+  description?: string;
+  instructions?: string;
+  status: "draft" | "published" | "archived" | string;
+  visibility: "private" | "team" | string;
+  default_skill_paths?: string[];
+  target_agents?: string[];
+  model?: string;
+  permissions?: string[];
+  approval_required?: string[];
+  maintainer?: string;
+  review_status?: "requested" | "approved" | "changes_requested" | string;
+  review_note?: string;
+  review_requested_at?: string;
+  review_requested_by?: string;
+  review_requested_by_role?: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  reviewed_by_role?: string;
+  source_team_id?: string;
+  source_team_slug?: string;
+  installed_from_team_id?: string;
+  created_at?: string;
+  updated_at?: string;
+  published_at?: string;
+  archived_at?: string;
+  path?: string;
+  readme_path?: string;
+}
+
+export interface TeamAgentsResponse {
+  version: string;
+  team?: Team;
+  agents: TeamAgentAsset[];
+}
+
+export interface TeamAgentSaveRequest {
+  slug: string;
+  name: string;
+  description?: string;
+  instructions?: string;
+  status?: string;
+  visibility?: string;
+  default_skill_paths?: string[];
+  target_agents?: string[];
+  model?: string;
+  permissions?: string[];
+  approval_required?: string[];
+  maintainer?: string;
+}
+
 export interface SkillConversionSummary {
   converted: number;
   copied: number;
@@ -898,8 +1275,22 @@ export function buildAPIErrorFromPayload(payload: any, fallbackMessage: string):
 }
 
 export async function buildAPIErrorFromResponse(res: Response): Promise<BillingAPIError> {
-  const payload = await res.json().catch(() => ({ error: res.statusText }))
+  const contentType = res.headers.get('content-type') || ''
+  const payload = contentType.toLowerCase().includes('application/json')
+    ? await res.json().catch(() => ({ error: res.statusText }))
+    : { error: await res.text().then((text) => text.trim().slice(0, 160)).catch(() => res.statusText) || res.statusText }
   return buildAPIError(payload, res.statusText)
+}
+
+async function parseAPIJsonResponse(res: Response, path: string) {
+  const contentType = res.headers.get('content-type') || ''
+  if (!contentType.toLowerCase().includes('application/json')) {
+    const preview = await res.text()
+      .then((text) => text.replace(/\s+/g, ' ').trim().slice(0, 120))
+      .catch(() => '')
+    throw new Error(preview ? `接口返回的不是 JSON：${path} (${preview})` : `接口返回的不是 JSON：${path}`)
+  }
+  return res.json()
 }
 
 export function notifyBillingRedirect(error: unknown) {
@@ -927,7 +1318,7 @@ let isRefreshing = false;
 let refreshPromise: Promise<AuthResponse | null> | null = null;
 
 async function doRefreshToken(): Promise<AuthResponse | null> {
-  const refreshToken = localStorage.getItem("refresh_token");
+  const refreshToken = readHeaderSafeAuthValue("refresh_token");
   if (!refreshToken) return null;
 
   try {
@@ -937,17 +1328,15 @@ async function doRefreshToken(): Promise<AuthResponse | null> {
       body: JSON.stringify({ refresh_token: refreshToken }),
     });
     if (!res.ok) {
-      localStorage.removeItem("token");
-      localStorage.removeItem("refresh_token");
+      clearStoredAuth();
       return null;
     }
     const data: AuthResponse = await res.json();
-    localStorage.setItem("token", data.access_token);
+    storeAccessToken(data.access_token);
     localStorage.setItem("refresh_token", data.refresh_token);
     return data;
   } catch {
-    localStorage.removeItem("token");
-    localStorage.removeItem("refresh_token");
+    clearStoredAuth();
     return null;
   }
 }
@@ -960,10 +1349,11 @@ async function requestWithMetadata<T>(
   path: string,
   options?: RequestInit,
 ): Promise<RequestEnvelope<T>> {
-  if (isTauri && apiBasePromise) {
-    await apiBasePromise;
+  await ensureTauriApiBase();
+  let token = readHeaderSafeAuthValue("token");
+  if (!token && shouldAutoBootstrapLocalOwner(path)) {
+    token = await bootstrapLocalOwnerAccessToken();
   }
-  const token = localStorage.getItem("token");
   const hasExplicitContentType =
     !!options?.headers &&
     typeof options.headers === "object" &&
@@ -975,13 +1365,43 @@ async function requestWithMetadata<T>(
       ...(!hasExplicitContentType && !(options?.body instanceof FormData)
         ? { "Content-Type": "application/json" }
         : {}),
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...authHeadersForToken(token),
       ...options?.headers,
     },
   });
 
+  if (res.status === 401 && shouldAutoBootstrapLocalOwner(path)) {
+    clearStoredAuth();
+    const localToken = await bootstrapLocalOwnerAccessToken();
+    if (localToken) {
+      const retryRes = await fetch(`${API_BASE}${path}`, {
+        ...options,
+        headers: {
+          ...(!hasExplicitContentType && !(options?.body instanceof FormData)
+            ? { "Content-Type": "application/json" }
+            : {}),
+          ...authHeadersForToken(localToken),
+          ...options?.headers,
+        },
+      });
+      if (!retryRes.ok) {
+        const err = await buildAPIErrorFromResponse(retryRes)
+        notifyBillingRedirect(err)
+        throw err
+      }
+      const retryJson = await parseAPIJsonResponse(retryRes, path);
+      if (retryJson && retryJson.ok === true && retryJson.data !== undefined) {
+        return {
+          data: retryJson.data,
+          localGitSync: retryJson.local_git_sync,
+        };
+      }
+      return { data: retryJson };
+    }
+  }
+
   // If 401, try to refresh the token once
-  if (res.status === 401 && localStorage.getItem("refresh_token")) {
+  if (res.status === 401 && readHeaderSafeAuthValue("refresh_token")) {
     if (!isRefreshing) {
       isRefreshing = true;
       refreshPromise = doRefreshToken().finally(() => {
@@ -1008,7 +1428,7 @@ async function requestWithMetadata<T>(
         notifyBillingRedirect(err)
         throw err
       }
-      const retryJson = await retryRes.json();
+      const retryJson = await parseAPIJsonResponse(retryRes, path);
       if (retryJson && retryJson.ok === true && retryJson.data !== undefined) {
         return {
           data: retryJson.data,
@@ -1025,7 +1445,7 @@ async function requestWithMetadata<T>(
     notifyBillingRedirect(err)
     throw err
   }
-  const json = await res.json();
+  const json = await parseAPIJsonResponse(res, path);
   // Unwrap APISuccess envelope: {ok: true, data: {...}} → return data
   if (json && json.ok === true && json.data !== undefined) {
     return {
@@ -1076,7 +1496,7 @@ async function agentRequest<T>(
   if (res.status === 204) {
     return undefined as T;
   }
-  const json = await res.json();
+  const json = await parseAPIJsonResponse(res, path);
   if (json && json.ok === true && json.data !== undefined) {
     return json.data;
   }
@@ -1134,7 +1554,7 @@ export const api = {
     }),
 
   logout: async (): Promise<void> => {
-    const refreshToken = localStorage.getItem("refresh_token");
+    const refreshToken = readHeaderSafeAuthValue("refresh_token");
     if (refreshToken) {
       try {
         await request<any>("/auth/logout", {
@@ -1155,6 +1575,9 @@ export const api = {
   bootstrapLocalOwnerToken: (): Promise<CreateTokenResponse> =>
     request<CreateTokenResponse>("/local/owner-token", {
       method: "POST",
+    }).then((created) => {
+      storeAccessToken(created?.token);
+      return created;
     }),
 
   getSessions: (): Promise<Session[]> => request<Session[]>("/auth/sessions"),
@@ -1281,6 +1704,16 @@ export const api = {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  scanLocalLibrary: (data?: LocalLibraryScanRequest) =>
+    request<LocalLibraryScanResponse>("/local/library/scan", {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }),
+  importLocalLibrary: (data?: LocalLibraryScanRequest) =>
+    request<LocalLibraryImportResponse>("/local/library/import", {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }),
 
   // Skills
   getSkills: (teamID?: string) =>
@@ -1377,6 +1810,59 @@ export const api = {
     }),
   getTeamSkills: (teamID: string) =>
     request<{ skills: SkillSummary[] }>(`/teams/${encodeURIComponent(teamID)}/skills`).then((r) => r.skills || []),
+  getTeamSkillPublications: (teamID: string) =>
+    request<TeamSkillPublicationsResponse>(`/teams/${encodeURIComponent(teamID)}/skill-publications`),
+  saveTeamSkillPublication: (teamID: string, data: {
+    skill_path: string;
+    status: string;
+    visibility: string;
+    note?: string;
+  }) =>
+    request<TeamSkillPublicationsResponse>(`/teams/${encodeURIComponent(teamID)}/skill-publications`, {
+      method: "PUT",
+      body: JSON.stringify(data),
+    }),
+  getTeamSkillReviewHistory: (teamID: string, params?: { asset_type?: string; skill_path?: string; agent_slug?: string }) => {
+    const query = new URLSearchParams()
+    if (params?.asset_type) query.set("asset_type", params.asset_type)
+    if (params?.skill_path) query.set("skill_path", params.skill_path)
+    if (params?.agent_slug) query.set("agent_slug", params.agent_slug)
+    const suffix = query.toString()
+    return request<TeamSkillReviewHistoryResponse>(`/teams/${encodeURIComponent(teamID)}/skill-review-history${suffix ? `?${suffix}` : ""}`)
+  },
+  requestTeamSkillReview: (teamID: string, data: { asset_type?: string; skill_path?: string; agent_slug?: string; note?: string }) =>
+    request<TeamSkillReviewHistoryResponse>(`/teams/${encodeURIComponent(teamID)}/skill-review-requests`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  resolveTeamSkillReview: (teamID: string, data: { asset_type?: string; skill_path?: string; agent_slug?: string; decision: "approved" | "changes_requested"; note?: string }) =>
+    request<TeamSkillReviewHistoryResponse>(`/teams/${encodeURIComponent(teamID)}/skill-review-requests/resolve`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getTeamSkillSubscriptionReport: (teamID: string) =>
+    request<TeamSkillSubscriptionReportResponse>(`/teams/${encodeURIComponent(teamID)}/skill-subscription-report`),
+  checkTeamSkillSubscriptions: (teamID: string) =>
+    request<TeamSkillUpdateNotificationsResponse>(`/teams/${encodeURIComponent(teamID)}/skill-subscriptions/check`, {
+      method: "POST",
+    }),
+  getTeamSkillUpdateNotifications: (teamID: string) =>
+    request<TeamSkillUpdateNotificationsResponse>(`/teams/${encodeURIComponent(teamID)}/skill-update-notifications`),
+  getTeamSkillSubscriptions: (teamID?: string) =>
+    request<TeamSkillSubscriptionsResponse>(
+      teamID ? `/skills/team-subscriptions?team_id=${encodeURIComponent(teamID)}` : "/skills/team-subscriptions",
+    ),
+  getTeamAgents: (teamID: string) =>
+    request<TeamAgentsResponse>(`/teams/${encodeURIComponent(teamID)}/agents`),
+  saveTeamAgent: (teamID: string, data: TeamAgentSaveRequest) =>
+    request<TeamAgentsResponse>(`/teams/${encodeURIComponent(teamID)}/agents`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  installTeamAgent: (teamID: string, slug: string) =>
+    requestEnvelope<{ agent: TeamAgentAsset }>(`/teams/${encodeURIComponent(teamID)}/agents/${encodeURIComponent(slug)}/install`, {
+      method: "POST",
+    }),
   getSkillAssignments: (teamID?: string) =>
     request<SkillAssignmentsState>(
       teamID ? `/skills/assignments?team_id=${encodeURIComponent(teamID)}` : "/skills/assignments",
@@ -1402,12 +1888,11 @@ export const api = {
       body: JSON.stringify({ team_id: teamID || undefined }),
     }),
   downloadLocalSkillSyncExport: async (agentId: string, teamID?: string) => {
-    const token = localStorage.getItem("token");
     const res = await fetch(`${API_BASE}/local/skills/sync/export`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeaders(),
       },
       body: JSON.stringify({ agent_id: agentId, team_id: teamID || undefined }),
     });
@@ -1451,13 +1936,12 @@ export const api = {
   },
   downloadTreeZip: async (path: string) => {
     const normalized = path.startsWith("/") ? path : `/${path}`;
-    const token = localStorage.getItem("token");
     const fallbackName = `${normalized.split("/").filter(Boolean).slice(-1)[0] || "root"}.zip`;
     const res = await fetch(
       `${API_BASE}/tree/archive?path=${encodeURIComponent(normalized)}`,
       {
         headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...authHeaders(),
         },
       },
     );
@@ -1475,13 +1959,12 @@ export const api = {
   },
   downloadTeamTreeZip: async (teamID: string, path: string) => {
     const normalized = path.startsWith("/") ? path : `/${path}`;
-    const token = localStorage.getItem("token");
     const fallbackName = `${normalized.split("/").filter(Boolean).slice(-1)[0] || "root"}.zip`;
     const res = await fetch(
       `${API_BASE}/teams/${encodeURIComponent(teamID)}/tree/archive?path=${encodeURIComponent(normalized)}`,
       {
         headers: {
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...authHeaders(),
         },
       },
     );
@@ -1659,10 +2142,9 @@ export const api = {
     }),
   exportFull: () => request<FullHubExport>("/export/full"),
   exportZip: async () => {
-    const token = localStorage.getItem("token");
     const res = await fetch(`${API_BASE}/export/zip`, {
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeaders(),
       },
     });
     if (!res.ok) {
@@ -1719,12 +2201,11 @@ export const api = {
     const formData = new FormData();
     formData.append("file", file);
     if (teamID) formData.append("team_id", teamID);
-    const token = localStorage.getItem("token");
     const query = teamID ? `?team_id=${encodeURIComponent(teamID)}` : "";
     return fetch(`${API_BASE}/import/skills${query}`, {
       method: "POST",
       headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...authHeaders(),
       },
       body: formData,
     }).then(async (res) => {
@@ -1733,7 +2214,7 @@ export const api = {
         notifyBillingRedirect(err)
         throw err
       }
-      const payload = await res.json();
+      const payload = await parseAPIJsonResponse(res, `/import/skills${query}`);
       return (payload && payload.ok === true && payload.data !== undefined ? payload.data : payload) as ImportResult;
     });
   },
@@ -1882,6 +2363,49 @@ export const api = {
     requestEnvelope<LocalPlatformImportSummary>("/local/platform/import", {
       method: "POST",
       body: JSON.stringify(req),
+    }),
+
+  getCodexConsole: (): Promise<CodexConsoleResponse> =>
+    request<CodexConsoleResponse>("/local/codex-console"),
+  saveCodexConsoleArtifacts: (data: CodexConsoleArtifactRegistrySaveRequest = {}): Promise<CodexConsoleArtifactRegistrySaveResponse> =>
+    request<CodexConsoleArtifactRegistrySaveResponse>("/local/codex-console/artifacts/save", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  syncCodexConsoleMemory: (data: CodexConsoleMemorySyncRequest): Promise<CodexConsoleMemorySyncResponse> =>
+    request<CodexConsoleMemorySyncResponse>("/local/codex-console/memory-sync", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  reviewCodexConsoleMemory: (data: CodexConsoleMemoryReviewRequest): Promise<CodexConsoleMemoryReviewResponse> =>
+    request<CodexConsoleMemoryReviewResponse>("/local/codex-console/memory-review", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  resolveCodexConsoleMemoryConflict: (data: CodexConsoleMemoryConflictResolveRequest): Promise<CodexConsoleMemoryConflictResolveResponse> =>
+    request<CodexConsoleMemoryConflictResolveResponse>("/local/codex-console/memory-conflict/resolve", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  saveCodexConsoleHandover: (data: CodexConsoleHandoverSaveRequest): Promise<CodexConsoleHandoverSaveResponse> =>
+    request<CodexConsoleHandoverSaveResponse>("/local/codex-console/handovers/save", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  saveCodexConsoleSkillCandidate: (data: CodexConsoleSkillCandidateSaveRequest): Promise<CodexConsoleSkillCandidateSaveResponse> =>
+    request<CodexConsoleSkillCandidateSaveResponse>("/local/codex-console/skill-candidates/save", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  assignCodexConsoleSkillCandidate: (data: CodexConsoleSkillCandidateAssignPreviewRequest): Promise<CodexConsoleSkillCandidateAssignPreviewResponse> =>
+    request<CodexConsoleSkillCandidateAssignPreviewResponse>("/local/codex-console/skill-candidates/assign-preview", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  updateCodexConsoleSkillCandidateStatus: (data: CodexConsoleSkillCandidateStatusRequest): Promise<CodexConsoleSkillCandidateStatusResponse> =>
+    request<CodexConsoleSkillCandidateStatusResponse>("/local/codex-console/skill-candidates/status", {
+      method: "POST",
+      body: JSON.stringify(data),
     }),
 
   testGitMirrorGitHubToken: (
@@ -2193,6 +2717,414 @@ export interface LocalPlatformImportSummary {
   mode: "agent" | "files" | "all";
   files?: LocalPlatformFilesImportResult;
   agent?: LocalPlatformAgentImportResult;
+}
+
+export interface CodexConsoleWorkspace {
+  name: string;
+  threads: number;
+  last_activity?: string;
+}
+
+export interface CodexConsoleOverview {
+  threads: number;
+  goals: number;
+  automations: number;
+  runs: number;
+  artifacts: number;
+  hooks: number;
+  memory_candidates: number;
+  handovers: number;
+  skill_candidates: number;
+  memory_review_required: number;
+  memory_accepted: number;
+  memory_ignored: number;
+  memory_deferred: number;
+  memory_synced: number;
+  projects: number;
+  skills: number;
+  tools: number;
+  sensitive_findings: number;
+  vault_candidates: number;
+  last_activity?: string;
+  workspaces?: CodexConsoleWorkspace[];
+}
+
+export interface CodexConsoleThread {
+  id: string;
+  title: string;
+  summary?: string;
+  project?: string;
+  started_at?: string;
+  updated_at?: string;
+  archived: boolean;
+  source_path?: string;
+  message_count: number;
+  user_turns: number;
+  assistant_turns: number;
+  tool_calls: number;
+  tool_results: number;
+  thinking_events: number;
+  attachment_count: number;
+  artifact_count: number;
+}
+
+export interface CodexConsoleGoal {
+  id: string;
+  title: string;
+  status: string;
+  thread_id?: string;
+  thread_title?: string;
+  project?: string;
+  source_path?: string;
+  observed_at?: string;
+  description?: string;
+}
+
+export interface CodexConsoleAutomation {
+  id: string;
+  name: string;
+  kind?: string;
+  status?: string;
+  schedule?: string;
+  prompt?: string;
+  source_path?: string;
+}
+
+export interface CodexConsoleRunEvent {
+  at?: string;
+  type: string;
+  title: string;
+  detail?: string;
+}
+
+export interface CodexConsoleRun {
+  id: string;
+  thread_id: string;
+  thread_title: string;
+  project?: string;
+  started_at?: string;
+  updated_at?: string;
+  source_path?: string;
+  tool_calls: number;
+  tool_results: number;
+  browser_actions: number;
+  computer_actions: number;
+  approvals: number;
+  errors: number;
+  artifacts: number;
+  events?: CodexConsoleRunEvent[];
+}
+
+export interface CodexConsoleArtifact {
+  id: string;
+  name: string;
+  kind: string;
+  role?: string;
+  thread_id?: string;
+  thread_title?: string;
+  project?: string;
+  source_path?: string;
+  detail?: string;
+  handoff_note?: string;
+  agent_instruction?: string;
+}
+
+export interface CodexConsoleArtifactRegistrySummary {
+  status?: string;
+  path?: string;
+  saved_at?: string;
+  artifact_count?: number;
+  project_count?: number;
+  project_summaries?: CodexConsoleArtifactProjectSummary[];
+}
+
+export interface CodexConsoleArtifactProjectSummary {
+  project: string;
+  artifact_count: number;
+  roles?: CodexConsoleArtifactRoleCount[];
+  primary_artifacts?: CodexConsoleArtifactHandoff[];
+}
+
+export interface CodexConsoleArtifactRoleCount {
+  role: string;
+  count: number;
+}
+
+export interface CodexConsoleArtifactHandoff {
+  id: string;
+  name: string;
+  role?: string;
+  handoff_note?: string;
+  agent_instruction?: string;
+}
+
+export interface CodexConsoleArtifactRegistrySaveRequest {
+  overwrite?: boolean;
+}
+
+export interface CodexConsoleArtifactRegistrySaveResponse {
+  status: string;
+  path: string;
+  saved_at?: string;
+  artifact_count: number;
+  project_count: number;
+  message?: string;
+}
+
+export interface CodexConsoleHookRisk {
+  id: string;
+  name: string;
+  kind: string;
+  bundle?: string;
+  status: string;
+  risk_level?: string;
+  shebang?: string;
+  env_vars?: string[];
+  risk_signals?: string[];
+  write_path_hints?: string[];
+  source_path?: string;
+  detail?: string;
+}
+
+export interface CodexConsoleMemoryCandidate {
+  id: string;
+  title: string;
+  kind: string;
+  content: string;
+  source_path?: string;
+  confidence?: number;
+  review_status: string;
+  review_note?: string;
+  reviewed_at?: string;
+  memory_path?: string;
+  conflict?: CodexConsoleMemoryConflictHint;
+}
+
+export interface CodexConsoleHandoverItem {
+  id: string;
+  title: string;
+  kind?: string;
+  detail?: string;
+  at?: string;
+  source_path?: string;
+}
+
+export interface CodexConsoleHandoverSummary {
+  id: string;
+  project: string;
+  summary: string;
+  latest_activity?: string;
+  thread_count: number;
+  run_count: number;
+  artifact_count: number;
+  memory_candidate_count: number;
+  recent_threads?: CodexConsoleHandoverItem[];
+  recent_runs?: CodexConsoleHandoverItem[];
+  recent_artifacts?: CodexConsoleHandoverItem[];
+  memory_candidates?: CodexConsoleHandoverItem[];
+  status?: string;
+  path?: string;
+  saved_at?: string;
+  version?: number;
+  saved_content?: string;
+}
+
+export interface CodexConsoleHandoverSaveRequest {
+  id: string;
+  overwrite?: boolean;
+  content_override?: string;
+}
+
+export interface CodexConsoleHandoverSaveResponse {
+  id: string;
+  project: string;
+  status: string;
+  path: string;
+  saved_at?: string;
+  version?: number;
+  edited?: boolean;
+  message?: string;
+}
+
+export interface CodexConsoleSkillCandidate {
+  id: string;
+  name: string;
+  title: string;
+  project?: string;
+  thread_id?: string;
+  thread_title?: string;
+  updated_at?: string;
+  source_path?: string;
+  confidence?: number;
+  tool_calls: number;
+  artifact_count: number;
+  signals?: string[];
+  rationale?: string;
+  draft: string;
+  status?: string;
+  status_note?: string;
+  status_updated_at?: string;
+  skill_path?: string;
+  saved_at?: string;
+  edited?: boolean;
+  metadata_path?: string;
+  manifest_path?: string;
+}
+
+export interface CodexConsoleSkillCandidateSaveRequest {
+  id: string;
+  overwrite?: boolean;
+  draft_override?: string;
+}
+
+export interface CodexConsoleSkillCandidateSaveResponse {
+  id: string;
+  name: string;
+  status: string;
+  skill_path: string;
+  path: string;
+  metadata_path: string;
+  manifest_path: string;
+  saved_at?: string;
+  edited?: boolean;
+  files?: string[];
+  message?: string;
+}
+
+export interface CodexConsoleSkillCandidateAssignPreviewRequest {
+  id: string;
+  agent_ids?: string[];
+  target_roots?: Record<string, string>;
+}
+
+export interface CodexConsoleSkillCandidateStatusRequest {
+  id: string;
+  status: "draft" | "ready" | "archived";
+  note?: string;
+}
+
+export interface CodexConsoleSkillCandidateAssignPreviewResponse {
+  id: string;
+  status: string;
+  skill_path: string;
+  agent_ids: string[];
+  assignments?: SkillAgentAssignment[];
+  sync_preview?: LocalSkillSyncResponse;
+  message?: string;
+}
+
+export interface CodexConsoleSkillCandidateStatusResponse {
+  id: string;
+  status: string;
+  skill_path: string;
+  metadata_path: string;
+  manifest_path: string;
+  status_updated_at?: string;
+  message?: string;
+}
+
+export interface CodexConsoleMemoryConflictHint {
+  status: string;
+  target: string;
+  category: string;
+  path: string;
+  existing_source?: string;
+  existing_updated_at?: string;
+  existing_content?: string;
+  candidate_content?: string;
+  message: string;
+}
+
+export interface CodexConsoleMemorySyncRequest {
+  ids?: string[];
+  all?: boolean;
+  target?: "profile" | "project";
+  project?: string;
+  content_overrides?: Record<string, string>;
+}
+
+export interface CodexConsoleMemorySyncItem {
+  id: string;
+  title?: string;
+  category?: string;
+  path?: string;
+  target?: string;
+  project?: string;
+  edited?: boolean;
+  status: string;
+  message?: string;
+}
+
+export interface CodexConsoleMemorySyncResponse {
+  target: string;
+  project?: string;
+  requested: number;
+  synced: number;
+  skipped: number;
+  failed: number;
+  items: CodexConsoleMemorySyncItem[];
+  paths?: string[];
+}
+
+export interface CodexConsoleMemoryReviewRequest {
+  ids: string[];
+  status: "review_required" | "accepted" | "ignored" | "deferred";
+  note?: string;
+}
+
+export interface CodexConsoleMemoryReviewItem {
+  id: string;
+  title?: string;
+  status: string;
+  message?: string;
+}
+
+export interface CodexConsoleMemoryReviewResponse {
+  path: string;
+  status: string;
+  updated: number;
+  failed: number;
+  items: CodexConsoleMemoryReviewItem[];
+}
+
+export type CodexConsoleMemoryConflictResolution = "keep_existing" | "use_candidate" | "keep_both" | "merge";
+
+export interface CodexConsoleMemoryConflictResolveRequest {
+  id: string;
+  resolution: CodexConsoleMemoryConflictResolution;
+  merged_content?: string;
+}
+
+export interface CodexConsoleMemoryConflictResolveResponse {
+  id: string;
+  title?: string;
+  category: string;
+  resolution: CodexConsoleMemoryConflictResolution;
+  status: string;
+  path?: string;
+  existing_path?: string;
+  candidate_path?: string;
+  review_path?: string;
+  message?: string;
+}
+
+export interface CodexConsoleResponse {
+  platform: string;
+  updated_at: string;
+  overview: CodexConsoleOverview;
+  threads: CodexConsoleThread[];
+  goals: CodexConsoleGoal[];
+  automations: CodexConsoleAutomation[];
+  runs: CodexConsoleRun[];
+  artifacts: CodexConsoleArtifact[];
+  artifact_registry: CodexConsoleArtifactRegistrySummary;
+  hooks: CodexConsoleHookRisk[];
+  memory_candidates: CodexConsoleMemoryCandidate[];
+  handovers: CodexConsoleHandoverSummary[];
+  skill_candidates: CodexConsoleSkillCandidate[];
+  sensitive_findings?: LocalPlatformSensitiveFinding[];
+  vault_candidates?: LocalPlatformVaultCandidate[];
+  notes?: string[];
 }
 
 export interface ClaudeDataImportResult {

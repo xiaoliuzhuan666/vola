@@ -244,11 +244,10 @@ func inferCaptureSource(r *http.Request, body []byte) string {
 	if r == nil {
 		return "unknown"
 	}
-	if explicit := services.NormalizeSource(r.Header.Get("X-NeuDrive-Platform")); explicit != "" {
-		return explicit
-	}
-	if explicit := services.NormalizeSource(r.Header.Get("X-NeuDrive-Source")); explicit != "" {
-		return explicit
+	for _, key := range sourceHintHeaderNames {
+		if explicit := services.NormalizeSource(r.Header.Get(key)); explicit != "" {
+			return explicit
+		}
 	}
 
 	textSignals := collectRequestTextSignals(r, body)

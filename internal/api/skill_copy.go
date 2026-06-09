@@ -78,6 +78,15 @@ func (s *Server) handleSkillCopyToPersonal(w http.ResponseWriter, r *http.Reques
 		respondValidationError(w, "team_id", "team_id must reference a team")
 		return
 	}
+	visible, err := s.teamSkillPathReadableByRole(r.Context(), source.Team, sourcePath)
+	if err != nil {
+		respondInternalError(w, err)
+		return
+	}
+	if !visible {
+		respondError(w, http.StatusNotFound, ErrCodeNotFound, fmt.Sprintf("%s not found", sourcePath))
+		return
+	}
 
 	files, err := s.collectLocalSkillFiles(r.Context(), source.UserID, sourcePath)
 	if err != nil {
@@ -151,6 +160,10 @@ func (s *Server) handleSkillCopyToPersonal(w http.ResponseWriter, r *http.Reques
 			respondInternalError(w, err)
 			return
 		}
+	}
+	if err := s.upsertTeamSkillSubscription(writeCtx, userID, source.Team, sourcePath, targetPath, files, copiedAt); err != nil {
+		respondInternalError(w, err)
+		return
 	}
 
 	respondOKWithLocalGitSync(w, skillCopyToPersonalResponse{

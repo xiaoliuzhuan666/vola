@@ -1,4 +1,4 @@
-import { copyFileSync, existsSync, mkdirSync } from 'node:fs'
+import { copyFileSync, cpSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { basename, join, resolve } from 'node:path'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
@@ -68,13 +68,23 @@ if (!goTargetEnv) {
   process.exit(1)
 }
 
-const binaryName = platform === 'win32' ? 'vola.exe' : 'vola'
 const sidecarName = platform === 'win32'
   ? `vola-${rustTriple}.exe`
   : `vola-${rustTriple}`
 
-const binPath = join(repoRoot, 'bin', binaryName)
-const built = spawnSync('go', ['build', '-o', binPath, './cmd/vola'], {
+const sidecarPath = join(sidecarDir, sidecarName)
+const buildPath = join(sidecarDir, `.${sidecarName}.build`)
+const webDist = join(repoRoot, 'web', 'dist')
+const embeddedWebDist = join(repoRoot, 'internal', 'web', 'dist')
+
+rmSync(buildPath, { force: true })
+
+if (existsSync(webDist)) {
+  rmSync(embeddedWebDist, { recursive: true, force: true })
+  cpSync(webDist, embeddedWebDist, { recursive: true })
+}
+
+const built = spawnSync('go', ['build', '-o', buildPath, './cmd/vola'], {
   cwd: repoRoot,
   env: {
     ...process.env,
@@ -86,5 +96,6 @@ if (built.status !== 0) {
   process.exit(built.status || 1)
 }
 
-copyFileSync(binPath, join(sidecarDir, sidecarName))
+copyFileSync(buildPath, sidecarPath)
+rmSync(buildPath, { force: true })
 console.log(`Prepared desktop sidecar ${basename(sidecarName)}`)

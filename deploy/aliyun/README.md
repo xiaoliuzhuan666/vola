@@ -55,7 +55,7 @@ If Docker Hub rate limits the local machine too, set `DOCKERHUB_USERNAME` and `D
 bash deploy/aliyun/flow-build-acr.sh
 ```
 
-The script builds the root `Dockerfile` using the mirrored ACR base images, pushes both `:${IMAGE_TAG}` and `:latest`, and prints the exact `VOLA_IMAGE=...` value for the server env file.
+The script builds the root `Dockerfile` using the mirrored ACR base images, pushes both `:${IMAGE_TAG}` and `:latest`, and prints the exact `VOLA_IMAGE=...` value for the server env file. It also prints `NEUDRIVE_IMAGE=...` so older deployment automation can keep reading the legacy name; new deployments should use `VOLA_IMAGE`.
 
 Optional overrides:
 

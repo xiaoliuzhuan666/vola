@@ -32,6 +32,7 @@ const OnboardingPage = lazy(() => import('./pages/OnboardingPage'))
 const DeveloperAccessPage = lazy(() => import('./pages/DeveloperAccessPage'))
 const CommandLineToolsPage = lazy(() => import('./pages/CommandLineToolsPage'))
 const McpHubPage = lazy(() => import('./pages/McpHubPage'))
+const CodexConsolePage = lazy(() => import('./pages/CodexConsolePage'))
 const LocalWelcomePage = lazy(() => import('./pages/LocalWelcomePage'))
 const MarketingHomePage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.MarketingHomePage })))
 const IntegrationsPage = lazy(() => import('./pages/PublicPages').then((module) => ({ default: module.IntegrationsPage })))
@@ -54,6 +55,7 @@ type NavIconName =
   | 'backup'
   | 'cli'
   | 'growth'
+  | 'account'
   | 'settings'
 
 const navIconPaths: Record<NavIconName, ReactNode> = {
@@ -119,6 +121,13 @@ const navIconPaths: Record<NavIconName, ReactNode> = {
       <path d="M14 9h4.2v4.2" />
       <path d="M6.3 8.5 7 6.4l.7 2.1 2.1.7-2.1.7L7 12l-.7-2.1-2.1-.7 2.1-.7Z" />
       <path d="M16.7 16.5 17.2 15l.5 1.5 1.5.5-1.5.5-.5 1.5-.5-1.5-1.5-.5 1.5-.5Z" />
+    </>
+  ),
+  account: (
+    <>
+      <circle cx="10" cy="9" r="3" />
+      <path d="M5.4 18.2c.8-3 2.3-4.5 4.6-4.5 1.4 0 2.5.5 3.4 1.5" />
+      <path d="M15.4 9.2a3.6 3.6 0 0 1 4.4 3.5 3.6 3.6 0 0 1-3.6 3.6h-3.1a2.4 2.4 0 0 1-.2-4.8" />
     </>
   ),
   settings: (
@@ -247,7 +256,6 @@ function App() {
   const currentUserName = userDisplayName(currentUser, localMode, tx)
   const currentUserHint = userDisplayHint(currentUser, localMode, tx)
   const currentUserInitial = currentUserName.slice(0, 1).toUpperCase()
-  const cloudUserVisible = !!currentUser && !isLocalOwnerUser(currentUser, localMode)
   const importsHomePath = localMode ? '/imports/local-apps' : '/imports/claude-export'
 
   const checkAuth = useCallback(async () => {
@@ -397,6 +405,7 @@ function App() {
       path.startsWith('/settings/profile') || path.startsWith('/info') ? 'My Profile' :
       path.startsWith('/team') ? 'Team AI Library' :
       path.startsWith('/cli') ? 'Command Line Tools' :
+      path.startsWith('/codex-console') ? 'Codex Console' :
       path.startsWith('/setup') ? 'Setup Guide' :
       path.startsWith('/data/conversations') ? 'Conversations' :
       path.startsWith('/data/projects') || path.startsWith('/projects') ? 'Projects' :
@@ -596,6 +605,13 @@ function App() {
             )}
           </NavLink>
 
+          {localMode && (
+            <NavLink to="/settings/profile#cloud-account" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavIcon name="account" />
+              <span>{tx('云端账号', 'Cloud Account')}</span>
+            </NavLink>
+          )}
+
           <NavLink to="/growth-proposals" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <NavIcon name="growth" />
             <span>{tx('成长提案', 'Growth Proposals')}</span>
@@ -618,6 +634,13 @@ function App() {
             <NavLink to={importsHomePath} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
               <NavIcon name="import" />
               <span>{tx('本地 App Data 导入', 'Local App Data Import')}</span>
+            </NavLink>
+          )}
+
+          {localMode && (
+            <NavLink to="/codex-console" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavIcon name="cli" />
+              <span>Codex Console</span>
             </NavLink>
           )}
 
@@ -683,15 +706,6 @@ function App() {
       </aside>
 
       <main className="main-content">
-        {cloudUserVisible && (
-          <header className="main-account-bar">
-            <span className="main-account-avatar">{currentUserInitial}</span>
-            <span className="main-account-copy">
-              <strong>{currentUserName}</strong>
-              <span>{currentUserHint}</span>
-            </span>
-          </header>
-        )}
         <RouteErrorBoundary key={location.pathname} fallback={routeErrorFallback}>
         <Suspense fallback={routeFallback}>
           <Routes>
@@ -712,6 +726,7 @@ function App() {
             <Route path="/settings/developer" element={<Navigate to="/settings/developer-access" replace />} />
             <Route path="/team" element={<TeamLibraryPage />} />
             <Route path="/cli" element={<CommandLineToolsPage />} />
+            <Route path="/codex-console" element={localMode ? <CodexConsolePage /> : <Navigate to="/" replace />} />
             <Route path="/mcp-hub" element={<McpHubPage />} />
             <Route path="/command-line-tools" element={<Navigate to="/cli" replace />} />
 

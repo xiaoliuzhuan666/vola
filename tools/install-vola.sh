@@ -14,9 +14,9 @@ usage() {
   cat <<'EOF'
 Usage: tools/install-vola.sh [--bin-dir DIR] [--force] [--no-rc]
 
-Builds the local Vola binaries, installs `neu`, `vola`, `vol`, and legacy
-compatibility commands into a writable bin directory, and adds that directory
-to your shell PATH if needed.
+Builds the local Vola binaries, installs the recommended `neu` command plus
+compatible `vola`, `vol`, `neudrive`, and `xlzdrive` commands into a writable
+bin directory, and adds that directory to your shell PATH if needed.
 
 Options:
   --bin-dir DIR  Install into this directory instead of auto-selecting one
@@ -219,7 +219,9 @@ if is_in_path_now "$INSTALL_DIR"; then
   echo
   echo "You can use them now:"
   echo "  ${PRIMARY_BIN} status"
-  echo "  vola status"
+  echo "  vola status        # compatibility alias"
+  echo "  vol status         # compatibility alias"
+  echo "  neudrive status    # legacy compatibility alias"
   exit 0
 fi
 
@@ -231,7 +233,9 @@ if [[ "$PATH_UPDATED" -eq 1 ]]; then
   echo
   echo "Then use:"
   echo "  ${PRIMARY_BIN} status"
-  echo "  vola status"
+  echo "  vola status        # compatibility alias"
+  echo "  vol status         # compatibility alias"
+  echo "  neudrive status    # legacy compatibility alias"
   exit 0
 fi
 
@@ -240,4 +244,6 @@ echo "Add it manually, or rerun with --bin-dir pointing to a writable PATH direc
 echo
 echo "Then use:"
 echo "  ${PRIMARY_BIN} status"
-echo "  vola status"
+echo "  vola status        # compatibility alias"
+echo "  vol status         # compatibility alias"
+echo "  neudrive status    # legacy compatibility alias"

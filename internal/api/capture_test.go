@@ -127,11 +127,18 @@ func TestInferCaptureSourceFromSyntheticSignals(t *testing.T) {
 		expected    string
 	}{
 		{
-			name:        "explicit platform header wins",
+			name:        "legacy explicit platform header wins",
 			contentType: "application/json",
 			body:        `{"params":{"clientInfo":{"name":"codex-mcp-client"}}}`,
 			headers:     map[string]string{"X-NeuDrive-Platform": "perplexity"},
 			expected:    "perplexity",
+		},
+		{
+			name:        "vola explicit platform header wins",
+			contentType: "application/json",
+			body:        `{"params":{"clientInfo":{"name":"codex-mcp-client"}}}`,
+			headers:     map[string]string{"X-Vola-Platform": "kimi"},
+			expected:    "kimi",
 		},
 		{
 			name:        "copilot client name",

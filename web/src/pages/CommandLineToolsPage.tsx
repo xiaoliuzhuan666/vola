@@ -87,6 +87,12 @@ export default function CommandLineToolsPage() {
             <p className="materials-section-copy">
               {tx('从安装、登录到导入和备份，按需要复制对应命令。', 'Copy the command you need, from install and login to import and backup.')}
             </p>
+            <p className="materials-section-copy">
+              {tx(
+                '推荐使用 neu；vola、vol、neudrive 和 xlzdrive 仅作为兼容入口保留给已有脚本。',
+                'Use neu for new work. vola, vol, neudrive, and xlzdrive are compatibility aliases for existing scripts.',
+              )}
+            </p>
           </div>
         </div>
         <div className="cli-command-list">

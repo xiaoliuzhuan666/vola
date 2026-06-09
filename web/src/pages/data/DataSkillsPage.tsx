@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, type FileNode, type LocalSkillSyncResponse, type SkillAgentAssignment, type SkillAssignmentsState, type SkillConversionRequest, type SkillConversionResponse, type SkillLearningNote, type SkillLearningSummary, type SkillSummary, type Team } from '../../api'
+import { api, type FileNode, type LocalSkillSyncResponse, type SkillAgentAssignment, type SkillAssignmentsState, type SkillConversionRequest, type SkillConversionResponse, type SkillLearningNote, type SkillLearningSummary, type SkillSummary, type Team, type TeamSkillPublication, type TeamSkillSubscriptionStatus } from '../../api'
 import GitHubTreeList from '../../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../../components/MaterialsSectionToolbar'
 import FileMaterialsTile from '../../components/FileMaterialsTile'
@@ -42,6 +42,12 @@ type SkillBundle = SkillSummary & {
 }
 
 type SkillScope = 'personal' | 'team'
+type TeamSkillInstallStatus = 'not_installed' | 'installed' | 'update_available' | 'personal_newer'
+type PersonalSkillCopyInfo = {
+  bundlePath: string
+  created_at?: string
+  updated_at?: string
+}
 
 const TEAM_SELECTION_KEY = 'vola:selected-team-id'
 const SKILL_SCOPE_KEY = 'vola:skills-scope'
@@ -84,6 +90,107 @@ Describe when this skill should not be used.
 
 function normalizeSkillPath(path: string) {
   return skillBundlePathFromSkillPath(path).replace(/\/+$/g, '')
+}
+
+function dateMillis(value?: string) {
+  if (!value) return 0
+  const parsed = Date.parse(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function personalSkillCopyLookup(skills: SkillSummary[], skillsRoot: FileNode | null) {
+  const folderLookup = (skillsRoot?.children || []).reduce<Record<string, FileNode>>((acc, child) => {
+    acc[normalizeSkillPath(child.path)] = child
+    return acc
+  }, {})
+  return skills
+    .filter((skill) => skill.path.startsWith('/skills/'))
+    .reduce<Record<string, PersonalSkillCopyInfo>>((acc, skill) => {
+      const bundlePath = normalizeSkillPath(skill.bundle_path || skillBundlePathFromSkillPath(skill.path))
+      const folder = folderLookup[bundlePath]
+      acc[bundlePath] = {
+        bundlePath,
+        created_at: folder?.created_at,
+        updated_at: folder?.updated_at || folder?.created_at,
+      }
+      return acc
+    }, {})
+}
+
+function teamSkillSubscriptionLookup(items: TeamSkillSubscriptionStatus[]) {
+  return items.reduce<Record<string, TeamSkillSubscriptionStatus>>((acc, item) => {
+    acc[normalizeSkillPath(item.source_path)] = item
+    return acc
+  }, {})
+}
+
+function teamSkillPublicationLookup(items: TeamSkillPublication[]) {
+  return items.reduce<Record<string, TeamSkillPublication>>((acc, item) => {
+    acc[normalizeSkillPath(item.skill_path)] = item
+    return acc
+  }, {})
+}
+
+function defaultTeamSkillPublication(skill: SkillBundle): TeamSkillPublication {
+  return {
+    skill_path: normalizeSkillPath(skill.bundlePath || skill.path),
+    status: 'published',
+    visibility: 'team',
+    implicit: true,
+  }
+}
+
+function teamSkillInstallStatus(
+  skill: SkillBundle,
+  personalLookup: Record<string, PersonalSkillCopyInfo>,
+  subscriptions: Record<string, TeamSkillSubscriptionStatus> = {},
+): TeamSkillInstallStatus {
+  const bundlePath = normalizeSkillPath(skill.bundlePath || skill.path)
+  const subscription = subscriptions[bundlePath]
+  if (subscription) {
+    if (subscription.update_available) return 'update_available'
+    return 'installed'
+  }
+  const personal = personalLookup[bundlePath]
+  if (!personal) return 'not_installed'
+  const teamUpdatedAt = dateMillis(skill.updated_at || skill.created_at)
+  const personalUpdatedAt = dateMillis(personal.updated_at || personal.created_at)
+  if (teamUpdatedAt && personalUpdatedAt && teamUpdatedAt > personalUpdatedAt + 1000) return 'update_available'
+  if (teamUpdatedAt && personalUpdatedAt && personalUpdatedAt > teamUpdatedAt + 1000) return 'personal_newer'
+  return 'installed'
+}
+
+function teamSkillInstallLabel(status: TeamSkillInstallStatus, tx: (zh: string, en: string) => string) {
+  if (status === 'not_installed') return tx('未安装到个人', 'Not installed')
+  if (status === 'update_available') return tx('团队有新版', 'Team update available')
+  if (status === 'personal_newer') return tx('个人副本较新', 'Personal copy newer')
+  return tx('已安装到个人', 'Installed')
+}
+
+function teamSkillInstallHint(status: TeamSkillInstallStatus, tx: (zh: string, en: string) => string) {
+  if (status === 'not_installed') return tx('安装后可在个人空间分配给 Codex、Claude、Cursor 等工具。', 'Install it into your personal space, then assign it to Codex, Claude, Cursor, and other tools.')
+  if (status === 'update_available') return tx('团队版本更新了，可以把个人副本更新到团队版本。', 'The team version changed; update your personal copy when ready.')
+  if (status === 'personal_newer') return tx('你的个人副本比团队版本新，建议人工确认后再覆盖。', 'Your personal copy is newer than the team version. Review before overwriting.')
+  return tx('个人空间已有同名 Skill，可直接用于 Agent 分配。', 'A matching personal skill is available for agent assignment.')
+}
+
+function teamSkillInstallActionLabel(status: TeamSkillInstallStatus, tx: (zh: string, en: string) => string) {
+  if (status === 'not_installed') return tx('安装到个人', 'Install')
+  if (status === 'update_available') return tx('更新个人副本', 'Update copy')
+  return ''
+}
+
+function teamSkillPublicationLabel(publication: TeamSkillPublication, tx: (zh: string, en: string) => string) {
+  if (publication.status === 'archived') return tx('已归档', 'Archived')
+  if (publication.status === 'published' && publication.visibility === 'team') return publication.implicit ? tx('团队可见', 'Team visible') : tx('已发布', 'Published')
+  return tx('草稿', 'Draft')
+}
+
+function teamSkillReviewLabel(publication: TeamSkillPublication, tx: (zh: string, en: string) => string) {
+  if (publication.review_status === 'requested') return tx('待审查', 'Review requested')
+  if (publication.review_status === 'approved') return tx('已通过', 'Approved')
+  if (publication.review_status === 'changes_requested') return tx('需修改', 'Changes requested')
+  return ''
 }
 
 function assignmentLookup(assignments: SkillAgentAssignment[]) {
@@ -239,6 +346,9 @@ export default function DataSkillsPage() {
   const isBundleView = Boolean(currentBundlePath)
 
   const [skills, setSkills] = useState<SkillBundle[]>([])
+  const [personalSkillCopies, setPersonalSkillCopies] = useState<Record<string, PersonalSkillCopyInfo>>({})
+  const [teamSkillPublications, setTeamSkillPublications] = useState<TeamSkillPublication[]>([])
+  const [teamSkillSubscriptions, setTeamSkillSubscriptions] = useState<TeamSkillSubscriptionStatus[]>([])
   const [bundleNode, setBundleNode] = useState<FileNode | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -285,6 +395,8 @@ export default function DataSkillsPage() {
   const [qualityReviewAcknowledged, setQualityReviewAcknowledged] = useState(false)
   const [scopeMessage, setScopeMessage] = useState('')
   const [copyingSkillPath, setCopyingSkillPath] = useState('')
+  const [teamSkillPublishingPath, setTeamSkillPublishingPath] = useState('')
+  const [bulkUpdatingTeamSkills, setBulkUpdatingTeamSkills] = useState(false)
   const [conversionSourcePath, setConversionSourcePath] = useState('')
   const [conversionSourcePlatform, setConversionSourcePlatform] = useState<'claude-code' | 'codex'>('claude-code')
   const [conversionTargetPlatform, setConversionTargetPlatform] = useState<'claude-code' | 'codex'>('codex')
@@ -341,7 +453,7 @@ export default function DataSkillsPage() {
         return
       }
 
-      const [skillData, skillsRootResult, assignments, learning, notes, growthProposals, publicConfig] = await Promise.all([
+      const [skillData, skillsRootResult, assignments, learning, notes, growthProposals, publicConfig, personalSkillData, personalSkillsRoot, publications, subscriptions] = await Promise.all([
         teamID ? api.getTeamSkills(teamID) : api.getSkills(),
         (teamID ? api.getTeamTree(teamID, '/skills') : api.getTree('/skills')).catch(() => emptyTreeNode('/skills')),
         api.getSkillAssignments(teamID || undefined),
@@ -349,6 +461,10 @@ export default function DataSkillsPage() {
         api.getSkillLearningNotes(teamID || undefined, 14).catch(() => ({ notes: [] })),
         api.getGrowthProposals(teamID || undefined, 'pending_review').catch(() => ({ proposals: [] })),
         api.getPublicConfig(),
+        teamID ? api.getSkills().catch(() => [] as SkillSummary[]) : Promise.resolve([] as SkillSummary[]),
+        teamID ? api.getTree('/skills').catch(() => emptyTreeNode('/skills')) : Promise.resolve(emptyTreeNode('/skills')),
+        teamID ? api.getTeamSkillPublications(teamID).catch(() => ({ publications: [] as TeamSkillPublication[] })) : Promise.resolve({ publications: [] as TeamSkillPublication[] }),
+        teamID ? api.getTeamSkillSubscriptions(teamID).catch(() => ({ subscriptions: [] as TeamSkillSubscriptionStatus[] })) : Promise.resolve({ subscriptions: [] as TeamSkillSubscriptionStatus[] }),
       ])
       const skillsRoot = skillsRootResult || emptyTreeNode('/skills')
 
@@ -374,6 +490,9 @@ export default function DataSkillsPage() {
       const firstBundlePath = bundles[0] ? normalizeSkillPath(bundles[0].bundlePath || bundles[0].path) : ''
 
       setSkills(bundles)
+      setPersonalSkillCopies(teamID ? personalSkillCopyLookup(personalSkillData, personalSkillsRoot) : {})
+      setTeamSkillPublications(teamID ? publications.publications || [] : [])
+      setTeamSkillSubscriptions(teamID ? subscriptions.subscriptions || [] : [])
       setLocalMode(Boolean(publicConfig.local_mode))
       setAssignmentState(assignments)
       setLearningSummary(learning)
@@ -393,6 +512,7 @@ export default function DataSkillsPage() {
       setSkillSyncError('')
       setQualityReviewAcknowledged(false)
       setScopeMessage('')
+      setTeamSkillPublishingPath('')
       setBundleNode(null)
       closeMenu()
       setSelectedBundlePath(null)
@@ -502,6 +622,37 @@ export default function DataSkillsPage() {
     () => sortedSkills.filter((skill) => matchesSourceFilter(skillSource(skill), sourceFilter)),
     [sortedSkills, sourceFilter],
   )
+  const teamSkillSubscriptionByPath = useMemo(
+    () => teamSkillSubscriptionLookup(teamSkillSubscriptions),
+    [teamSkillSubscriptions],
+  )
+  const teamSkillPublicationByPath = useMemo(
+    () => teamSkillPublicationLookup(teamSkillPublications),
+    [teamSkillPublications],
+  )
+  const teamInstallSummary = useMemo(() => {
+    return skills.reduce((acc, skill) => {
+      if (!activeTeamID) return acc
+      const status = teamSkillInstallStatus(skill, personalSkillCopies, teamSkillSubscriptionByPath)
+      acc[status] += 1
+      return acc
+    }, {
+      not_installed: 0,
+      installed: 0,
+      update_available: 0,
+      personal_newer: 0,
+    } as Record<TeamSkillInstallStatus, number>)
+  }, [activeTeamID, personalSkillCopies, skills, teamSkillSubscriptionByPath])
+  const teamPublicationSummary = useMemo(() => {
+    return skills.reduce((acc, skill) => {
+      if (!activeTeamID) return acc
+      const publication = teamSkillPublicationByPath[normalizeSkillPath(skill.bundlePath || skill.path)] || defaultTeamSkillPublication(skill)
+      if (publication.status === 'archived') acc.archived += 1
+      else if (publication.status === 'published' && publication.visibility === 'team') acc.published += 1
+      else acc.draft += 1
+      return acc
+    }, { published: 0, draft: 0, archived: 0 })
+  }, [activeTeamID, skills, teamSkillPublicationByPath])
   const skillSourceOptions = useMemo(
     () => buildSourceFilterOptions(skills, skillSource, locale),
     [locale, skills],
@@ -585,24 +736,117 @@ export default function DataSkillsPage() {
     }
   }, [activeTeamID, closeMenu, tx])
 
-  const copyTeamSkillToPersonal = useCallback(async (sourcePath: string) => {
+  const copyTeamSkillToPersonal = useCallback(async (sourcePath: string, overwrite = false) => {
     if (!activeTeamID || copyingSkillPath) return
     const normalizedPath = normalizeSkillPath(sourcePath)
     setCopyingSkillPath(normalizedPath)
     setError('')
     setScopeMessage('')
     try {
-      const response = await api.copyTeamSkillToPersonal(activeTeamID, normalizedPath)
+      const response = await api.copyTeamSkillToPersonal(activeTeamID, normalizedPath, undefined, overwrite)
       setScopeMessage(tx(
-        `已复制到个人空间：${response.data.target_path}`,
-        `Copied to personal space: ${response.data.target_path}`,
+        overwrite
+          ? `已更新个人副本：${response.data.target_path}`
+          : `已安装到个人空间：${response.data.target_path}`,
+        overwrite
+          ? `Personal copy updated: ${response.data.target_path}`
+          : `Installed to personal space: ${response.data.target_path}`,
       ))
+      void load()
     } catch (err: any) {
-      setError(err.message || tx('复制到个人空间失败', 'Failed to copy to personal space'))
+      setError(err.message || tx('安装到个人空间失败', 'Failed to install to personal space'))
     } finally {
       setCopyingSkillPath('')
     }
-  }, [activeTeamID, copyingSkillPath, tx])
+  }, [activeTeamID, copyingSkillPath, load, tx])
+
+  const updateTeamSkillPublication = useCallback(async (sourcePath: string, status: 'draft' | 'published' | 'archived') => {
+    if (!activeTeamID || teamSkillPublishingPath) return
+    const normalizedPath = normalizeSkillPath(sourcePath)
+    setTeamSkillPublishingPath(normalizedPath)
+    setError('')
+    setScopeMessage('')
+    try {
+      const response = await api.saveTeamSkillPublication(activeTeamID, {
+        skill_path: normalizedPath,
+        status,
+        visibility: status === 'published' ? 'team' : 'private',
+      })
+      setTeamSkillPublications(response.publications || [])
+      setScopeMessage(status === 'published'
+        ? tx('已发布给团队成员。', 'Published for team members.')
+        : status === 'archived'
+          ? tx('已归档，普通成员不会再看到它。', 'Archived. Regular members will no longer see it.')
+          : tx('已转为草稿，仅管理员可见。', 'Moved to draft. Only admins can see it.'))
+    } catch (err: any) {
+      setError(err.message || tx('更新团队可见性失败', 'Failed to update team visibility'))
+    } finally {
+      setTeamSkillPublishingPath('')
+    }
+  }, [activeTeamID, teamSkillPublishingPath, tx])
+
+  const requestTeamSkillReview = useCallback(async (sourcePath: string) => {
+    if (!activeTeamID || teamSkillPublishingPath) return
+    const normalizedPath = normalizeSkillPath(sourcePath)
+    setTeamSkillPublishingPath(normalizedPath)
+    setError('')
+    setScopeMessage('')
+    try {
+      await api.requestTeamSkillReview(activeTeamID, {
+        asset_type: 'skill',
+        skill_path: normalizedPath,
+      })
+      setScopeMessage(tx('已提交给管理员审查。', 'Review requested for admins.'))
+      await load()
+    } catch (err: any) {
+      setError(err.message || tx('提交审查失败', 'Failed to request review'))
+    } finally {
+      setTeamSkillPublishingPath('')
+    }
+  }, [activeTeamID, load, teamSkillPublishingPath, tx])
+
+  const resolveTeamSkillReview = useCallback(async (sourcePath: string, decision: 'approved' | 'changes_requested') => {
+    if (!activeTeamID || teamSkillPublishingPath) return
+    const normalizedPath = normalizeSkillPath(sourcePath)
+    setTeamSkillPublishingPath(normalizedPath)
+    setError('')
+    setScopeMessage('')
+    try {
+      await api.resolveTeamSkillReview(activeTeamID, {
+        asset_type: 'skill',
+        skill_path: normalizedPath,
+        decision,
+      })
+      setScopeMessage(decision === 'approved'
+        ? tx('审查已通过，团队成员可见。', 'Review approved. Team members can see it.')
+        : tx('已要求修改，普通成员暂不可见。', 'Changes requested. Regular members cannot see it yet.'))
+      await load()
+    } catch (err: any) {
+      setError(err.message || tx('处理审查失败', 'Failed to resolve review'))
+    } finally {
+      setTeamSkillPublishingPath('')
+    }
+  }, [activeTeamID, load, teamSkillPublishingPath, tx])
+
+  const updateAllTeamSkillCopies = useCallback(async () => {
+    if (!activeTeamID || bulkUpdatingTeamSkills) return
+    const updates = Object.values(teamSkillSubscriptionByPath).filter((item) => item.update_available && !item.source_missing)
+    if (updates.length === 0) return
+    setBulkUpdatingTeamSkills(true)
+    setError('')
+    setScopeMessage('')
+    try {
+      for (const item of updates) {
+        await api.copyTeamSkillToPersonal(activeTeamID, item.source_path, item.target_path, true)
+      }
+      setScopeMessage(tx(`已更新 ${updates.length} 个个人 Skill 副本。`, `Updated ${updates.length} personal skill copies.`))
+      await load()
+    } catch (err: any) {
+      setError(err.message || tx('批量更新个人副本失败', 'Failed to update personal copies'))
+    } finally {
+      setBulkUpdatingTeamSkills(false)
+    }
+  }, [activeTeamID, bulkUpdatingTeamSkills, load, teamSkillSubscriptionByPath, tx])
 
   const handleCreateSkill = async (event: FormEvent) => {
     event.preventDefault()
@@ -623,6 +867,19 @@ export default function DataSkillsPage() {
           mimeType: 'text/markdown',
           metadata: { source: 'manual', team_id: activeTeamID },
         })
+        if (selectedTeam?.can_manage_members) {
+          await api.saveTeamSkillPublication(activeTeamID, {
+            skill_path: `/skills/${bundleName}`,
+            status: 'draft',
+            visibility: 'private',
+          }).catch(() => null)
+        } else {
+          await api.requestTeamSkillReview(activeTeamID, {
+            asset_type: 'skill',
+            skill_path: `/skills/${bundleName}`,
+            note: 'Created by a team member.',
+          }).catch(() => null)
+        }
       } else {
         await api.writeTree(path, {
           content: skillStarterMarkdown(bundleName),
@@ -976,13 +1233,17 @@ export default function DataSkillsPage() {
           <div className="materials-actions">
             {skillScopeControl}
             {activeTeamID && currentBundleContext ? (
+              personalSkillCopies[normalizeSkillPath(currentBundlePath)] ? (
+                <span className="materials-tile-pill team-skill-install-pill is-installed">{tx('已安装到个人', 'Installed')}</span>
+              ) : (
               <button
                 className="btn"
                 disabled={copyingSkillPath === normalizeSkillPath(currentBundlePath)}
                 onClick={() => { void copyTeamSkillToPersonal(currentBundlePath) }}
               >
-                {copyingSkillPath === normalizeSkillPath(currentBundlePath) ? tx('复制中...', 'Copying...') : tx('复制到个人空间', 'Copy to personal')}
+                {copyingSkillPath === normalizeSkillPath(currentBundlePath) ? tx('安装中...', 'Installing...') : tx('安装到个人空间', 'Install to personal')}
               </button>
+              )
             ) : null}
           </div>
         </section>
@@ -1893,6 +2154,32 @@ export default function DataSkillsPage() {
           <SourceFilterBar options={skillSourceOptions} value={sourceFilter} onChange={setSourceFilter} />
         )}
 
+        {activeTeamID ? (
+          <div className="team-skill-share-panel">
+            <div>
+              <strong>{tx('团队共享 Skill', 'Shared team skills')}</strong>
+              <p>{tx('成员上传到团队空间的 Skill 会在这里汇总；Vola 会提示哪些还没安装到个人空间、哪些有团队新版，也会保留发布状态。', 'Skills uploaded to this team appear here. Vola shows what is not installed personally, what has a newer team version, and the publication state.')}</p>
+            </div>
+            <div className="team-skill-share-stats">
+              <span>{tx(`已发布 ${teamPublicationSummary.published}`, `${teamPublicationSummary.published} published`)}</span>
+              <span>{tx(`草稿 ${teamPublicationSummary.draft}`, `${teamPublicationSummary.draft} drafts`)}</span>
+              <span>{tx(`待安装 ${teamInstallSummary.not_installed}`, `${teamInstallSummary.not_installed} to install`)}</span>
+              <span>{tx(`可更新 ${teamInstallSummary.update_available}`, `${teamInstallSummary.update_available} updates`)}</span>
+              <span>{tx(`已安装 ${teamInstallSummary.installed + teamInstallSummary.personal_newer}`, `${teamInstallSummary.installed + teamInstallSummary.personal_newer} installed`)}</span>
+              {teamInstallSummary.update_available > 0 ? (
+                <button
+                  type="button"
+                  className="btn btn-sm btn-primary"
+                  disabled={bulkUpdatingTeamSkills}
+                  onClick={() => { void updateAllTeamSkillCopies() }}
+                >
+                  {bulkUpdatingTeamSkills ? tx('更新中...', 'Updating...') : tx('更新全部个人副本', 'Update all copies')}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         {filteredSkills.length === 0 ? (
           <div className="empty-state">
             <p>{tx('还没有技能内容', 'No skills yet')}</p>
@@ -1906,15 +2193,20 @@ export default function DataSkillsPage() {
                 (item) => normalizeHubPath(item.path) === bundlePath
               )
               const tile = buildSkillBundleTileModel(skill, locale, learningItem)
+              const publication = activeTeamID
+                ? teamSkillPublicationByPath[normalizeSkillPath(skill.bundlePath || skill.path)] || defaultTeamSkillPublication(skill)
+                : null
+              const installStatus = activeTeamID ? teamSkillInstallStatus(skill, personalSkillCopies, teamSkillSubscriptionByPath) : null
+              const installActionLabel = installStatus ? teamSkillInstallActionLabel(installStatus, tx) : ''
+              const installActionBusy = copyingSkillPath === normalizeSkillPath(skill.bundlePath)
+              const installActionOverwrite = installStatus === 'update_available'
 
-              // 构造状态 Pill
               const statusPill = tile.learningStatus ? (
                 <span className={`materials-tile-pill skill-status-${tile.learningStatus}`}>
                   {learningStatusLabel(tile.learningStatus, tx)}
                 </span>
               ) : null
 
-              // 构造健康评分 Pill
               const scoreClass = tile.learningScore !== undefined
                 ? (tile.learningScore >= 80 ? 'good' : tile.learningScore >= 60 ? 'medium' : 'poor')
                 : ''
@@ -1924,36 +2216,55 @@ export default function DataSkillsPage() {
                 </span>
               ) : null
 
-              // 构造已分配 Agent 标签
               const agentPills = tile.assignedAgents?.map((agentId) => (
                 <span key={agentId} className="materials-tile-pill skill-agents-pill">
                   {agentId}
                 </span>
               ))
 
-              // 组合额外的徽标信息
+              const teamInstallPill = installStatus ? (
+                <span className={`materials-tile-pill team-skill-install-pill is-${installStatus.replace('_', '-')}`}>
+                  {teamSkillInstallLabel(installStatus, tx)}
+                </span>
+              ) : null
+              const teamPublicationPill = publication ? (
+                <span className={`materials-tile-pill team-skill-publication-pill is-${publication.status}`}>
+                  {teamSkillPublicationLabel(publication, tx)}
+                </span>
+              ) : null
+              const reviewLabel = publication ? teamSkillReviewLabel(publication, tx) : ''
+              const teamReviewPill = publication && reviewLabel ? (
+                <span className={`materials-tile-pill team-skill-review-pill is-${publication.review_status || 'none'}`}>
+                  {reviewLabel}
+                </span>
+              ) : null
+
               const customExtraPills = (
                 <>
                   {tile.source ? <span className="materials-tile-pill materials-source-pill">{sourceLabel(tile.source, locale)}</span> : null}
+                  {teamPublicationPill}
+                  {teamReviewPill}
+                  {teamInstallPill}
                   {statusPill}
                   {scorePill}
                   {agentPills}
                 </>
               )
 
-              // 构造质量状态 Subtitle
               const qualityClass = tile.qualityStatus
                 ? `skill-quality-${tile.qualityStatus}`
                 : ''
-              const customSubtitle = tile.qualityStatus ? (
+              const customSubtitle = installStatus || tile.qualityStatus ? (
                 <div className="skill-tile-subtitle">
-                  <span className={qualityClass}>
-                    {tx('质量评级: ', 'Quality: ')}{qualityStatusLabel(tile.qualityStatus, tx)}
-                  </span>
+                  {installStatus ? <span>{teamSkillInstallHint(installStatus, tx)}</span> : null}
+                  {tile.qualityStatus ? (
+                    <span className={qualityClass}>
+                      {tx('质量评级: ', 'Quality: ')}{qualityStatusLabel(tile.qualityStatus, tx)}
+                    </span>
+                  ) : null}
                 </div>
               ) : tile.subtitle
 
-              // 构造包含质量 Findings 的自定义描述
               const customDescription = (
                 <div>
                   <div style={{ wordBreak: 'break-all' }}>{tile.description}</div>
@@ -1973,6 +2284,16 @@ export default function DataSkillsPage() {
                   subtitle={customSubtitle}
                   description={customDescription}
                   extraPills={customExtraPills}
+                  actions={installActionLabel ? (
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-primary"
+                      disabled={Boolean(copyingSkillPath)}
+                      onClick={() => { void copyTeamSkillToPersonal(skill.bundlePath, installActionOverwrite) }}
+                    >
+                      {installActionBusy ? tx('处理中...', 'Working...') : installActionLabel}
+                    </button>
+                  ) : undefined}
                   path={tile.path}
                   footerStart={tile.footerStart}
                   footerEnd={tile.footerEnd}
@@ -2000,11 +2321,77 @@ export default function DataSkillsPage() {
                         ...(activeTeamID
                           ? [{
                               key: 'copy-to-personal',
-                              label: copyingSkillPath === normalizeSkillPath(skill.bundlePath) ? tx('复制中...', 'Copying...') : tx('复制到个人空间', 'Copy to personal'),
-                              disabled: Boolean(copyingSkillPath),
+                              label: installActionLabel || teamSkillInstallLabel(installStatus || 'installed', tx),
+                              disabled: Boolean(copyingSkillPath) || !installActionLabel,
                               onSelect: () => {
                                 closeMenu()
-                                void copyTeamSkillToPersonal(skill.bundlePath)
+                                if (installActionLabel) void copyTeamSkillToPersonal(skill.bundlePath, installActionOverwrite)
+                              },
+                            }]
+                          : []),
+                        ...(activeTeamID && selectedTeam?.can_manage_members
+                          ? [
+                              ...(publication?.review_status === 'requested'
+                                ? [
+                                    {
+                                      key: 'approve-review',
+                                      label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('通过审查', 'Approve review'),
+                                      disabled: Boolean(teamSkillPublishingPath),
+                                      onSelect: () => {
+                                        closeMenu()
+                                        void resolveTeamSkillReview(skill.bundlePath, 'approved')
+                                      },
+                                    },
+                                    {
+                                      key: 'request-changes',
+                                      label: tx('要求修改', 'Request changes'),
+                                      disabled: Boolean(teamSkillPublishingPath),
+                                      onSelect: () => {
+                                        closeMenu()
+                                        void resolveTeamSkillReview(skill.bundlePath, 'changes_requested')
+                                      },
+                                    },
+                                  ]
+                                : []),
+                              ...(publication?.status === 'published' && publication.visibility === 'team'
+                                ? [{
+                                    key: 'draft-publication',
+                                    label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('转为草稿', 'Move to draft'),
+                                    disabled: Boolean(teamSkillPublishingPath),
+                                    onSelect: () => {
+                                      closeMenu()
+                                      void updateTeamSkillPublication(skill.bundlePath, 'draft')
+                                    },
+                                  }]
+                                : [{
+                                    key: 'publish-skill',
+                                    label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('发布给团队', 'Publish to team'),
+                                    disabled: Boolean(teamSkillPublishingPath),
+                                    onSelect: () => {
+                                      closeMenu()
+                                      void updateTeamSkillPublication(skill.bundlePath, 'published')
+                                    },
+                                  }]),
+                              {
+                                key: 'archive-publication',
+                                label: tx('归档团队共享', 'Archive team share'),
+                                tone: 'danger' as const,
+                                disabled: Boolean(teamSkillPublishingPath) || publication?.status === 'archived',
+                                onSelect: () => {
+                                  closeMenu()
+                                  void updateTeamSkillPublication(skill.bundlePath, 'archived')
+                                },
+                              },
+                            ]
+                          : []),
+                        ...(activeTeamID && selectedTeam?.can_write && !selectedTeam?.can_manage_members && publication?.status !== 'published'
+                          ? [{
+                              key: 'request-review',
+                              label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('提交审查', 'Request review'),
+                              disabled: Boolean(teamSkillPublishingPath) || publication?.review_status === 'requested',
+                              onSelect: () => {
+                                closeMenu()
+                                void requestTeamSkillReview(skill.bundlePath)
                               },
                             }]
                           : []),

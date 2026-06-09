@@ -435,6 +435,7 @@ const integrations: IntegrationGuide[] = [
       { zh: '用 `neu login` 登录 Vola 官网账号。', en: 'Use `neu login` to sign in to your Vola website account.' },
       { zh: '为 Claude Code 或 Codex CLI 添加 remote MCP。', en: 'Add remote MCP for Claude Code or Codex CLI.' },
       { zh: '用 neu 命令导入、浏览和验证资料。', en: 'Use neu commands to import, browse, and verify material.' },
+      { zh: '`vola`、`vol`、`neudrive` 和 `xlzdrive` 只是兼容入口。', en: '`vola`, `vol`, `neudrive`, and `xlzdrive` are compatibility aliases.' },
     ],
     detailLimits: [
       { zh: 'CLI 接入需要一个可访问的 HTTPS Vola 地址。', en: 'CLI setup needs a reachable HTTPS Vola URL.' },

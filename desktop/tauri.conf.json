@@ -5,10 +5,11 @@
   "identifier": "cn.vola.desktop",
   "build": {
     "beforeDevCommand": "npm run build:backend",
-    "beforeBuildCommand": "npm run build:backend && cd ../web && npm run build",
+    "beforeBuildCommand": "cd ../web && npm run build && cd ../desktop && npm run build:backend",
     "frontendDist": "../web/dist"
   },
   "app": {
+    "withGlobalTauri": true,
     "windows": [
       {
         "label": "main",

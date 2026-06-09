@@ -64,7 +64,7 @@ func CORSMiddleware(allowedOrigins []string, isLocal bool) func(http.Handler) ht
 				}
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
 				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, X-NeuDrive-Source, X-NeuDrive-Platform")
+				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, "+sourceHintAllowedHeaders())
 				w.Header().Set("Access-Control-Expose-Headers", "Link, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After, X-Request-ID")
 				w.Header().Set("Access-Control-Max-Age", "300")
 				w.Header().Set("Vary", "Origin")
@@ -80,7 +80,7 @@ func CORSMiddleware(allowedOrigins []string, isLocal bool) func(http.Handler) ht
 					w.Header().Set("Access-Control-Allow-Origin", origin)
 					w.Header().Set("Access-Control-Allow-Credentials", "true")
 					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, X-NeuDrive-Source, X-NeuDrive-Platform")
+					w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, "+sourceHintAllowedHeaders())
 					w.Header().Set("Access-Control-Expose-Headers", "Link, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After, X-Request-ID")
 					w.Header().Set("Access-Control-Max-Age", "300")
 					w.Header().Set("Vary", "Origin")

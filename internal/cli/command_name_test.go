@@ -12,14 +12,14 @@ func TestUsageLineUsesInvokedCommandName(t *testing.T) {
 		os.Args = origArgs
 	})
 
-	os.Args = []string{"neu"}
-	if got := usageLine("connect <platform>"); got != "usage: neu connect <platform>" {
-		t.Fatalf("got %q", got)
-	}
-
-	os.Args = []string{"vola"}
-	if got := usageLine("connect <platform>"); got != "usage: vola connect <platform>" {
-		t.Fatalf("got %q", got)
+	for _, name := range []string{"neu", "vola", "vol", "neudrive", "xlzdrive"} {
+		t.Run(name, func(t *testing.T) {
+			os.Args = []string{name}
+			want := "usage: " + name + " connect <platform>"
+			if got := usageLine("connect <platform>"); got != want {
+				t.Fatalf("got %q want %q", got, want)
+			}
+		})
 	}
 }
 
@@ -41,5 +41,30 @@ func TestRootUsageRendersShortCommandWhenInvokedAsNeu(t *testing.T) {
 	}
 	if strings.Contains(stdout, "vola status") {
 		t.Fatalf("did not expect canonical command in short help output: %q", stdout)
+	}
+}
+
+func TestRootUsageRendersCompatibilityCommandNames(t *testing.T) {
+	origArgs := os.Args
+	t.Cleanup(func() {
+		os.Args = origArgs
+	})
+
+	for _, name := range []string{"vol", "neudrive", "xlzdrive"} {
+		t.Run(name, func(t *testing.T) {
+			os.Args = []string{name}
+			stdout, stderr, code := captureRunForTest(t, func() int {
+				return Run(nil)
+			})
+			if code != 0 {
+				t.Fatalf("code=%d stdout=%q stderr=%q", code, stdout, stderr)
+			}
+			if !strings.Contains(stdout, name+" status") {
+				t.Fatalf("expected %s command in help output: %q", name, stdout)
+			}
+			if !strings.Contains(stdout, "Recommended command name: neu.") {
+				t.Fatalf("expected recommended command note in help output: %q", stdout)
+			}
+		})
 	}
 }

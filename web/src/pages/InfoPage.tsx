@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useLocation } from 'react-router-dom'
 import { api, isTauri, type FileNode, type MemoryConflict } from '../api'
 import { useI18n } from '../i18n'
 import CustomSelect from '../components/CustomSelect'
@@ -36,6 +37,7 @@ type DesktopUpdateStatus = 'idle' | 'checking' | 'downloading' | 'ready' | 'up-t
 
 export default function InfoPage() {
   const { locale, tx } = useI18n()
+  const location = useLocation()
   const [values, setValues] = useState<Record<string, string>>({})
   const [userProfile, setUserProfile] = useState<Record<string, any>>({})
   const [entries, setEntries] = useState<FileNode[]>([])
@@ -93,6 +95,21 @@ export default function InfoPage() {
   useEffect(() => {
     void load()
   }, [])
+
+  useEffect(() => {
+    if (loading || location.hash !== '#cloud-account') return
+    const scrollToCloudAccount = () => {
+      document.getElementById('cloud-account')?.scrollIntoView({ block: 'start', inline: 'nearest' })
+    }
+    const frame = window.requestAnimationFrame(() => {
+      scrollToCloudAccount()
+    })
+    const timeout = window.setTimeout(scrollToCloudAccount, 180)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      window.clearTimeout(timeout)
+    }
+  }, [loading, location.hash])
 
   const saveProfile = async () => {
     setSaving('profile')
@@ -378,7 +395,7 @@ export default function InfoPage() {
       )}
 
       {localMode && (
-        <section className="card cloud-sync-card">
+        <section id="cloud-account" className="card cloud-sync-card">
           <div className="card-header">
             <h3 className="card-title">{tx('云同步与团队协作', 'Cloud Sync & Team Collaboration')}</h3>
           </div>

@@ -188,6 +188,15 @@ assert_contains() {
   fi
 }
 
+assert_not_contains() {
+  local haystack="$1"
+  local needle="$2"
+  local label="$3"
+  if [[ "$haystack" == *"$needle"* ]]; then
+    fail_current "$label should not contain: $needle"
+  fi
+}
+
 run_setup() {
   local label="$1"
   shift
@@ -252,6 +261,24 @@ seed_secret() {
     exit 1
   fi
   printf '%s\n' "$LAST_STDOUT"
+}
+
+test_compatibility_alias_help() {
+  start_test "compatibility aliases render clear help"
+  local alias_name alias_path
+  for alias_name in neu vola vol neudrive xlzdrive; do
+    alias_path="$TMP_ROOT/$alias_name"
+    run_cmd "$alias_path" help
+    assert_command_ok
+    assert_nonempty "$LAST_STDOUT" "$alias_name stdout"
+    assert_contains "$LAST_STDOUT" "Root-directory command surface for local and hosted Vola data." "$alias_name help output"
+    assert_contains "$LAST_STDOUT" "Recommended command name: neu." "$alias_name help output"
+    assert_contains "$LAST_STDOUT" "$alias_name status" "$alias_name help output"
+    if [[ "$alias_name" == "neudrive" || "$alias_name" == "xlzdrive" ]]; then
+      assert_not_contains "$LAST_STDOUT" "vola status" "$alias_name help output"
+    fi
+  done
+  finish_test
 }
 
 test_help_surface() {
@@ -426,9 +453,13 @@ main() {
 
   VOLA_BIN="$TMP_ROOT/vola"
   run_setup "build vola binary" go build -o "$VOLA_BIN" ./cmd/vola
+  for alias_name in neu vol neudrive xlzdrive; do
+    cp "$VOLA_BIN" "$TMP_ROOT/$alias_name"
+  done
   bootstrap_local_hub
   seed_secret
 
+  test_compatibility_alias_help
   test_help_surface
   test_ls_root
   test_profile_read_write

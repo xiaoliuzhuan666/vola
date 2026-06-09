@@ -40,10 +40,19 @@ GIT_MIRROR_HOSTED_ROOT=/data/git-mirrors
 `docker-compose.yml` 使用 Postgres 作为主存储，并给 hosted Git mirror 挂载 `gitmirrors` volume：
 
 ```yaml
+DATABASE_URL=postgres://...@db:5432/vola?sslmode=disable
 GIT_MIRROR_HOSTED_ROOT=/data/git-mirrors
 ```
 
+`POSTGRES_PORT` 只用于宿主机端口映射。`server` 容器访问同一个 Compose 网络里的 `db` 服务时固定使用容器内端口 `5432`，避免把宿主机端口改成 `5433`、`15432` 等值后导致服务连错端口。
+
 这个 volume 只保存可见文件树的 Git working tree；完整服务恢复仍然需要 Postgres 备份、原 `JWT_SECRET`、原 `VAULT_MASTER_KEY`，以及至少一个离开当前服务器的备份目标。
+
+## 命名兼容配置
+
+新部署统一使用 `vola.env`、`VOLA_ENV_FILE`、`VOLA_HOST_PORT` 和 `VOLA_*` 配置名。部分部署脚本仍会读取 `neudrive.env`、`NEUDRIVE_ENV_FILE`、`NEUDRIVE_HOST_PORT`，这是为了让旧服务器自动化继续可用，不是新部署推荐命名。
+
+API source header 推荐使用 `X-Vola-Platform` / `X-Vola-Source`。旧客户端仍可继续发送 `X-NeuDrive-Platform` / `X-NeuDrive-Source`。
 
 ## 账号和容量
 

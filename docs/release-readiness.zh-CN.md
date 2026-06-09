@@ -1,209 +1,109 @@
 # Vola Release Readiness
 
-更新时间：2026-05-13
+更新时间：2026-06-05 13:04 CST
 
-## 评估范围
+## 评估结论
 
-本次评估面向当前工作区，把 Vola 整理为可评审、可演示、可部署的 release candidate。重点检查：
+当前 checkout 可以进入内部演示评审；小范围 self-hosted release candidate 可以继续准备，但不能写成已经完成生产验收。
 
-- Agent 个人数据 Hub 的产品表达是否清楚。
-- README、部署文档、备份恢复文档、阶段计划是否一致。
-- 本地开发、测试、构建、部署命令是否可执行或有明确限制。
-- GitHub Backup、WebDAV / S3-compatible 备份、Skill 导入、Skill 分配、Claude / Codex 转换、`/api/ops/status` 是否有可验证说明。
+本次验证证明的是：
 
-## 工作区状态
+- 本地 SQLite 临时环境可启动，关键页面可渲染，CLI smoke 可通过。
+- 构建链路可通过，内嵌前端产物已刷新。
+- Compose 的 Postgres 容器内连接端口已修正，宿主机端口变更不会影响 `server -> db` 内部连接。
+- Rename 兼容审计通过：公开页面和 CLI 文档以 Vola / `neu` 为主，`vola`、`vol`、`neudrive`、`xlzdrive`、`NEUDRIVE_*`、`X-NeuDrive-*` 作为兼容入口保留并有测试覆盖。
 
-`AGENTS.md`：工作区根目录没有该文件；本次按用户消息中提供的 AGENTS 约束执行。
+本次没有证明的是：
 
-已有改动按功能域分为：
+- prod-like Postgres 数据库已经验证。
+- Postgres dump 和临时库恢复已经完成。
+- 真实 GitHub Backup、WebDAV 或 S3-compatible provider 已经上传、删除或恢复。
+- 真实生产环境 `/api/ops/status` 健康。
 
-| 类型 | 文件或目录 | 处理建议 |
+## 当前发布边界
+
+Vola 的产品表达保持为：Agent 个人数据 Hub。它集中管理 profile、memory、projects、conversations、skills、vault 和 Agent 访问权限。
+
+需要继续保持这些边界：
+
+- GitHub Backup 只备份用户可见文件树，不包含 secret 明文，也不能替代 Postgres 备份。
+- WebDAV / S3-compatible 目标上传的是 Vola export zip，适合离开服务器保存恢复包，不覆盖账号、session、billing、连接 token 等完整内部状态。
+- SQLite 适合本地模式和临时验证；生产或长期 self-hosted 主存储应使用持久化 Postgres。
+- Skill 自动写入只覆盖 Claude Code 和 Codex；Cursor 与 Gemini CLI 当前是可分配、可预览、可导出，不自动修改本地配置。
+- Claude / Codex Skill 转换会保留脚本、依赖、assets 和外部引用；MCP、plugin、hook 仍需要人工检查。
+- Team Library 当前按小团队共享资料库验收，不等同企业级组织管理、SSO、审批或审计产品。
+
+## 本次修改
+
+- 修正 `docker-compose.yml`：`server` 容器连接 Postgres 时固定使用 `db:5432`，`POSTGRES_PORT` 只控制宿主机端口映射。
+- 更新 `docs/deployment-reliability.zh-CN.md`：说明 Compose 内部端口和宿主机端口的区别。
+- 完成 rename 兼容审计：README、CLI 文档、安装脚本、CLI 页面和部署说明都明确推荐 `neu`，并把旧入口写成兼容项。
+- 更新 CLI help 渲染和 smoke 覆盖：`neudrive`、`vol`、`xlzdrive` 入口会显示自己的命令名，同时提示推荐入口是 `neu`。
+- API source header 新增 `X-Vola-Platform` / `X-Vola-Source`，旧 `X-NeuDrive-Platform` / `X-NeuDrive-Source` 继续可用；webhook 同时发送 `X-Vola-*` 和 `X-NeuDrive-*`。
+- Aliyun Flow 文档明确 `VOLA_IMAGE` 是新部署使用的镜像变量；脚本继续打印 `NEUDRIVE_IMAGE` 只是为了旧自动化兼容。
+- 更新本文件：把验证记录改为 2026-06-05 的 rename 兼容审计结果。
+
+## Verified
+
+以下项目已在当前 checkout 实际执行：
+
+| 项目 | 结果 | 证据摘要 |
 | --- | --- | --- |
-| 产品与文档 | `README.md`、`README.zh-CN.md`、`docs/github-backup*.md`、`docs/deployment-reliability.zh-CN.md`、`docs/agent-data-hub-iteration-plan.zh-CN.md`、`docs/agent-skill-targets.zh-CN.md` | 纳入评审 |
-| 部署配置 | `deploy/k8s/app.yaml`、`deploy/prod/README.md`、`deploy/prod/deploy.sh`、`docker-compose.yml`、`vola.env.example` | 纳入评审 |
-| 备份恢复 | `internal/api/backup_*`、`internal/backups/`、`internal/storage/sqlite/backup_targets.go`、`migrations/021_*`、`022_*`、`023_*`、`internal/jobs/scheduler.go` | 纳入评审 |
-| Skill Hub | `internal/api/local_skill_sync.go`、`skill_assignments.go`、`skill_conversion.go`、`internal/skillsarchive/manifest.go`、`web/src/pages/data/DataSkillsPage.tsx`、`web/src/pages/SkillsImportPage.tsx` | 纳入评审 |
-| 页面状态 | `web/src/api.ts`、`web/src/pages/GitMirrorPage.tsx`、`DashboardPage.tsx`、`OnboardingPage.tsx`、`PublicPages.tsx`、`web/src/index.css` | 纳入评审 |
-| 测试 | `internal/api/sqlite_shared_test.go`、`internal/platforms/claude_migration_test.go`、`internal/skillsarchive/archive_test.go` | 纳入评审 |
-| 截图与阶段记录 | `vola-local-home.png`、`stage3-skill-manifest-upload.png`、`stage4-*.png`、`sync-backup-*.png`、`stage4-*.md` | 建议作为演示证据单独归档，不直接混入 release commit |
-| 临时输出 | `.playwright-mcp/`、`console-stage4*.txt` | 建议归档或忽略；本次不删除 |
+| 工作区状态 | 通过 | 开始前 `git status --short --branch` 显示当前分支 `codex/xlzdrive-desktop-app...xiaoliuzhuan-ssh/main` 且已有未提交改动；本次未 commit / push。 |
+| 指定文件阅读 | 通过 | 已阅读 README、中文 README、命名调研、CLI/setup 文档、release readiness、Makefile、`cmd/vola`/`cmd/neu`/`cmd/vol`/`cmd/neudrive`、`internal/cli`、安装/测试脚本、env example、`web/src`、`internal/web/dist` 生成规则。 |
+| 命名残留分类 | 通过 | 公开展示需改项已处理；兼容入口、历史迁移记录、SDK 旧 export、部署旧变量和测试 fixture 均保留。 |
+| `go test ./...` | 通过 | 全仓 Go 测试通过；`internal/api`、`internal/cli`、`internal/services` 含新增兼容测试。 |
+| `tools/test-neudrive-cli.sh` | 通过 | safe-smoke 总计 8 项，passed 8，failed 0；新增 `neu`、`vola`、`vol`、`neudrive`、`xlzdrive` help 渲染检查。 |
+| `cd web && npm run build` | 通过 | `tsc && vite build` 成功；仍有 Vite chunk 大小 warning，非失败。 |
+| `make build` | 通过 | `npm ci && npm run build` 成功，刷新 `internal/web/dist`，生成 `bin/vola`、`bin/vol`、`bin/neu`、`bin/neudrive`。 |
+| `bin/* help` | 通过 | `bin/neu help`、`bin/vola help`、`bin/vol help`、`bin/neudrive help` 均成功，且都包含 `Recommended command name: neu.` 和对应命令名的 `status` 示例。 |
+| `/api/health` | 通过 | 临时 SQLite 服务 `GET /api/health` 返回 HTTP 200，`service=vola`、`status=ok`、`storage=sqlite`。 |
+| 浏览器 `/` | 通过 | 标题 `Home — Vola`，可见 Vola，未出现 neuDrive/NEUDRIVE/X-NeuDrive，route error 0，console error 0。 |
+| 浏览器 `/cli` | 通过 | 标题 `Command Line Tools — Vola`，可见 `neu` 和兼容入口说明，未出现旧品牌误导，console error 0。 |
+| 浏览器 `/setup/cli` | 通过 | 标题 `Setup Guide — Vola`，CLI setup 页面可渲染，未出现旧品牌误导，console error 0。 |
+| 浏览器 `/guides/cli` 与 `/integrations/cli` | 通过 | 公开 CLI 指南和集成页可渲染；`/integrations/cli` 可见兼容入口说明；两页均未出现旧品牌误导，console error 0。 |
 
-## 当前能力
+## Unverified
 
-### Agent 个人数据 Hub
+这些项目本次没有真实执行，不能写成通过：
 
-- 支持 profile、memory、projects、conversations、skills、vault、connections 等数据面。
-- 提供 Web UI、HTTP API、MCP 工具和 CLI 接入路径。
-- 通过 scoped token 和 trust level 控制 Agent 访问范围。
+- prod-like Postgres 验证：没有提供专用 Postgres `DATABASE_URL` / `VOLA_TEST_DB`。
+- Postgres dump：没有生产或 prod-like 数据库凭据，未执行 `pg_dump`。
+- 临时库恢复：没有 dump 文件和临时 Postgres 库，未执行 `pg_restore`。
+- 真实 GitHub Backup：没有真实 GitHub App / repo 凭据，未创建仓库、同步或推送。
+- 真实 WebDAV / S3-compatible provider：没有真实 provider 凭据，未验证上传、远端删除和保留策略。
+- 真实生产环境：没有生产域名、生产 admin token、生产数据库和外部备份目标，未验证线上 `/api/health` 或 `/api/ops/status`。
+- 目标 Agent 真实运行：没有在 Claude Code、Codex、Cursor、Gemini CLI 中逐平台执行真实 Skill。
 
-### Skill 管理
+## Blocked
 
-- Skill 导入会生成 `manifest.vola.json`。
-- manifest 记录入口文件、脚本、依赖文件、assets、二进制、环境变量、外部 Claude tools/plugins 引用。
-- Claude Code / Codex 支持本地同步预览、应用和清理。
-- Cursor / Gemini CLI 当前是“可分配、可导出、暂不自动写入”。
-- Claude Code / Codex 支持转换预览和生成副本；复杂 Skill 的 MCP、plugin、hook 只生成报告。
+- `docker build -t vola:rc .` 未通过：本机 Docker daemon 未运行。`docker build` 和 `docker info` 都失败，错误为无法连接 `unix:///Users/zhongmoshu/.docker/run/docker.sock`。
+- 真实外部备份、GitHub App、生产数据库和生产 admin token 都需要凭据；本次按要求没有接触真实 secret。
 
-### 备份与恢复
+## Human Follow-Up
 
-- GitHub Backup 保存用户可见文件树的 Git 版本历史。
-- WebDAV / S3-compatible / OSS / R2 通过 S3-compatible endpoint 上传 Vola 导出 zip。
-- 外部备份目标支持手动运行、自动计划、运行历史、最近失败、保留策略。
-- ZIP 恢复支持预览、跳过已有文件、覆盖已有文件，并拒绝路径穿越。
-- Postgres dump 仍是完整服务恢复的必要条件。
+进入小范围 self-hosted 试用前，建议由运维或项目负责人补齐：
 
-### 运维状态
+1. 启动 Docker Desktop 或可用 Docker daemon 后重跑 `docker build -t vola:rc .`。
+2. 准备 prod-like Postgres，执行 migrations，启动服务并记录 `/api/health`、`/api/ops/status`。
+3. 生成一次 Postgres dump，并恢复到临时库验证登录、Skills、Memory、Projects、Vault scope。
+4. 至少配置一个离开服务器的备份目标：GitHub Backup、WebDAV 或 S3-compatible。
+5. 用真实 provider 验证上传、历史记录、恢复预览、恢复应用和保留策略。
+6. 准备测试账号、测试团队和测试资料；不要用生产用户隐私数据做演示。
 
-- `/api/health` 用于服务存活检查。
-- `/api/ops/status` 用于管理员查看主存储、Git mirror、GitHub Backup、外部备份、最近成功和最近错误。
-- 页面已在 GitHub Backup 区域展示备份历史、最近失败、自动备份状态、保留策略、恢复预览和恢复结果。
+## Release 判断
 
-## 部署前检查
-
-部署前必须确认：
-
-1. `PUBLIC_BASE_URL` 是最终访问域名。
-2. `JWT_SECRET` 和 `VAULT_MASTER_KEY` 已保存在安全位置，恢复时继续使用原值。
-3. `DATABASE_URL` 指向持久化 Postgres；不要把单机 SQLite 当成生产主存储。
-4. `GIT_MIRROR_HOSTED_ROOT` 已配置并挂载可写持久卷，推荐 `/data/git-mirrors`。
-5. Hosted GitHub Backup 需要 `GITHUB_APP_CLIENT_ID`、`GITHUB_APP_CLIENT_SECRET`、`GITHUB_APP_SLUG`。
-6. 至少配置一个离开当前服务器的备份目标：GitHub、WebDAV 或 S3-compatible。
-7. 至少完成一次 Postgres dump。
-8. 至少在临时环境做一次恢复演练。
-9. `/api/ops/status` 返回不是 `critical`。
-10. 明确记录外部备份目标的保留策略和最近成功对象名。
-
-## 本地开发命令
-
-```bash
-cp vola.env.example vola.env
-set -a; source vola.env; set +a
-go run ./cmd/vola server --listen :8080
-cd web && npm run dev
-```
-
-前端开发服务：`http://localhost:3000`
-
-后端 API：`http://localhost:8080`
-
-## 构建与测试命令
-
-```bash
-go test ./...
-cd web && npm run build
-make build
-docker build -t vola:rc .
-```
-
-如果 Docker build 因 registry、镜像下载或网络问题失败，不应写成构建成功；记录失败摘要即可。
-
-## 演示脚本
-
-### 首页
-
-1. 打开 `http://localhost:3000/`。
-2. 检查首屏是否表达为 Agent 个人数据 Hub。
-3. 检查 GitHub Backup、Skills、Vault、MCP、CLI 等入口没有夸大承诺。
-
-### Dashboard
-
-1. 使用本地 owner token 或登录流程进入后台。
-2. 打开 Dashboard。
-3. 检查 Profile、Memory、Projects、Skills、Connections 等模块是否能看到。
-
-### GitHub Backup
-
-1. 打开 `GitHub 备份` 页面。
-2. 检查数据位置说明、GitHub 远端仓库状态、WebDAV / S3-compatible 目标。
-3. 检查备份历史、最近失败、自动备份、保留策略、恢复预览和恢复应用入口。
-4. 不在演示中承诺 GitHub Backup 等同数据库备份。
-
-### Skills
-
-1. 打开 `Skills` 页面。
-2. 导入一个包含 `SKILL.md`、scripts、requirements、assets 的 Skill。
-3. 查看 manifest 和风险提示。
-4. 在 Agent 分配表中分配给 Claude Code、Codex、Cursor、Gemini CLI。
-5. 预览本地同步：Claude / Codex 可写入；Cursor / Gemini CLI 可导出但不自动写入。
-6. 预览 Claude Code 与 Codex 的转换报告。
-
-### 运维状态
-
-```bash
-curl -fsS "$PUBLIC_BASE_URL/api/ops/status" \
-  -H "Authorization: Bearer $ADMIN_TOKEN"
-```
-
-演示时说明：`/api/ops/status` 只能说明当前配置和最近运行状态，不能替代真实恢复演练。
-
-## 已完成
-
-- 产品表达已从 Skill 备份工具扩展为 Agent 个人数据 Hub。
-- GitHub Backup 与 WebDAV / S3-compatible 外部备份进入页面和 API。
-- 外部备份支持自动计划、运行历史、最近失败、保留策略。
-- ZIP 恢复支持预览、跳过已有文件、覆盖已有文件。
-- Skill 导入支持 manifest 和外部 Claude tools/plugins 纳入。
-- Agent Skill 分配覆盖 Claude Code、Codex、Cursor、Gemini CLI。
-- Claude Code / Codex 支持本地同步与转换。
-- `/api/ops/status` 能展示备份和运维状态。
-- K8s 和 prod 脚本已对齐 Git mirror PVC 和 GitHub App 环境变量。
-- Docker Compose 已配置 Postgres 主存储和 Git mirror 持久 volume。
-
-## 已知限制
-
-- GitHub Backup 不保存 secret 明文，不能替代数据库备份。
-- WebDAV / S3-compatible zip 不包含完整账号、session、billing、连接 token 状态。
-- Vault 恢复只恢复范围清单，secret 原值依赖数据库备份或密钥系统。
-- Cursor / Gemini CLI 不自动写入本地配置，只提供分配、预览和导出包。
-- MCP、plugin、hook 不自动启用，转换报告只提示人工处理项。
-- 目标 Agent 的 Skill 真实运行效果还没有逐平台自动化验证。
-- 外部备份保留策略的远端删除需要对坚果云、R2、OSS、MinIO 等真实服务做兼容性验证。
-- 告警通道尚未接入，当前只能通过页面和 `/api/ops/status` 查看异常。
-- 多副本 hosted 部署需要额外处理 Git mirror worker 与共享卷并发问题。
+| 场景 | 判断 |
+| --- | --- |
+| 内部演示评审 | 可以进入；使用本地 SQLite 临时环境或准备好的 self-hosted 环境演示，演示时说明备份和生产恢复边界。 |
+| 小范围 self-hosted | 可以作为 RC 继续准备；正式放入真实用户数据前，需要补齐 Postgres、外部备份和恢复演练。 |
+| 公开 SaaS 生产 | 不建议直接开放；仍缺真实恢复演练、生产运维状态、外部备份验证和告警链路。 |
 
 ## 不建议承诺
 
-- 不建议承诺“全平台 Skill 自动同步”。
-- 不建议承诺“GitHub Backup 就是完整灾备”。
-- 不建议承诺“WebDAV / S3 zip 可以单独恢复整个服务”。
-- 不建议承诺“复杂 Skill 转换后无需人工检查即可运行”。
-- 不建议承诺“当前版本已适合公开 SaaS 大规模生产”。
-
-## 验证记录
-
-2026-05-13 验证结果：
-
-- 文档和前端文案检查：README、部署可靠性文档、GitHub Backup 文档、Skill 目标规则和主要页面未发现“全平台 Skill 自动同步”“GitHub Backup 等同完整灾备”“SQLite 可作为生产主存储”这类承诺；价格页已把“自动同步”改为“托管同步/自动备份”，避免被误读为所有 Agent Skill 自动写入。
-- API / 前端入口检查：`internal/api/router.go`、`web/src/api.ts`、`web/src/pages/GitMirrorPage.tsx`、`web/src/pages/data/DataSkillsPage.tsx` 对应到了 `/api/backup/*`、`/api/ops/status`、Skill 分配、本地同步、转换预览和导出入口。
-- 部署配置检查：K8s 和 prod 脚本已有 `GIT_MIRROR_HOSTED_ROOT=/data/git-mirrors` 与持久卷；本次把 `docker-compose.yml` 也对齐为 `gitmirrors:/data/git-mirrors`，并在 `docs/deployment-reliability.zh-CN.md` 增加 Compose 持久化说明。
-- `go test ./...`：通过。
-- `cd web && npm run build`：通过。Vite 仍提示 `WorkbenchCodeEditor` 和主入口 chunk 超过 500 KB，这是体积提醒，不是构建失败。
-- `make build`：通过。已刷新 `internal/web/dist`，并生成 `bin/vola`、`bin/neu`。
-- 本地服务验证：首次在普通沙箱启动 `./bin/vola server --storage sqlite --sqlite-path /private/tmp/vola-rc-20260513.db --listen 127.0.0.1:42701 --local-mode ...` 失败，错误为 `listen tcp 127.0.0.1:42701: bind: operation not permitted`；获得权限后同一服务启动成功。
-- `curl -fsS http://127.0.0.1:42701/api/health`：通过，返回 `storage: sqlite`。
-- 首页静态 HTML 验证：`curl -fsS http://127.0.0.1:42701/` 返回 `Personal data hub for AI agents — Vola`，description 为 Agent 个人数据 Hub 表达。
-- 页面渲染验证：内置浏览器检查两次超时，随后用 Playwright 打开 `/`、`/team`、`/sync-backup`、`/skills`，页面标题和关键内容可见，没有 route error；`/sync-backup` 和 `/skills` 控制台 error 数为 0。
-- `/api/ops/status`：不带 token 的 GET 返回 401；使用本地 owner admin token 调用返回 `status: warning`，原因是临时 SQLite 环境没有配置 GitHub Backup 或 WebDAV / S3-compatible 目标。这符合本地临时验证环境预期，不代表生产状态。
-- 未执行 `docker build -t vola:rc .`；本次没有验证 Docker 镜像构建。
-- 仍未验证：Postgres dump 与临时库恢复、真实 GitHub 仓库同步、真实 WebDAV / S3-compatible provider 上传/删除兼容性、生产配置下的 `/api/ops/status`、目标 Agent 的 Skill 真实运行效果。
-
-2026-05-12 验证结果：
-
-- 已合入 `origin/main` 的 `2f255a1 Hide browser extension from user-facing surfaces`，并处理 README、Dashboard、PublicPages 的交集改动。
-- `go test ./...`：通过。
-- `cd web && npm run build`：通过。Vite 提示 `WorkbenchCodeEditor` 和主入口 chunk 超过 500 KB，这是体积提醒，不是构建失败。
-- `make build`：通过。已用最后一次前端构建刷新 `internal/web/dist`，并生成 `bin/vola`、`bin/neu`。
-- `docker build -t vola:rc .`：通过，最终镜像 sha256 为 `d4af768d960d0ad792c2161ad94fdb0b3650a53da625e4d1812bc06746c476a0`。
-- 本地服务验证：用 SQLite 临时库启动，`curl -fsS http://127.0.0.1:42690/api/health` 返回 `storage: sqlite`。
-- 首页静态 HTML 验证：`curl -fsS http://127.0.0.1:42690/` 返回 `Personal data hub for AI agents — Vola`，description 已更新为 Agent 个人数据 Hub 表达。
-- 页面冒烟验证：Playwright 打开 `/`、`/team`、`/sync-backup`、`/skills`，页面可渲染，没有 route error，控制台没有 error。
-- `/api/ops/status`：直接不带 token `curl` 返回 401，符合鉴权预期；真实生产配置下的管理员状态未验证。
-- browser extension 对外展示检查：README、主要 docs、`web/src`、`internal/web` 中未发现公开展示文案残留；执行计划文档中的相关词只用于记录本次合入检查背景。
-
-## 当前判断
-
-| 场景 | 分数 | 判断 |
-| --- | --- | --- |
-| 内部演示 | 88 / 100 | 可用；需避免承诺自动化验证尚未覆盖的目标 Agent 运行效果 |
-| 小范围 self-hosted | 78 / 100 | 可试用；前提是配置 Postgres、外部备份和恢复演练 |
-| 公开 SaaS | 62 / 100 | 不建议直接开放；仍缺告警、真实恢复演练记录、多副本可靠性和更完整的运营保护 |
+- 不承诺 GitHub Backup 是完整数据库灾备。
+- 不承诺 WebDAV / S3 zip 可单独恢复整套服务。
+- 不承诺 SQLite 可作为生产主存储。
+- 不承诺全平台 Skill 自动同步。
+- 不承诺复杂 Skill 转换后无需人工检查即可运行。
+- 不承诺当前版本已经完成公开 SaaS 大规模生产验收。

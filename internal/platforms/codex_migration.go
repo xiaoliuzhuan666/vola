@@ -148,6 +148,9 @@ func scanLocalCodexMigration() (*codexLocalScanResult, error) {
 	if err := scanCodexMemoryTree(result, expandUser("~/.codex/memories")); err != nil {
 		return nil, err
 	}
+	if err := scanCodexMemoryTreeWithPrefix(result, expandUser("~/.codex/memories_extensions/chronicle"), "chronicle"); err != nil {
+		return nil, err
+	}
 	if err := scanCodexConfig(result, expandUser("~/.codex/config.toml")); err != nil {
 		return nil, err
 	}
@@ -208,9 +211,17 @@ func scanCodexRuleTree(result *codexLocalScanResult, dir string) error {
 }
 
 func scanCodexMemoryTree(result *codexLocalScanResult, dir string) error {
+	return scanCodexMemoryTreeWithPrefix(result, dir, "memories")
+}
+
+func scanCodexMemoryTreeWithPrefix(result *codexLocalScanResult, dir, titlePrefix string) error {
 	info, err := os.Stat(dir)
 	if err != nil || !info.IsDir() {
 		return nil
+	}
+	titlePrefix = strings.Trim(strings.TrimSpace(titlePrefix), "/")
+	if titlePrefix == "" {
+		titlePrefix = "memories"
 	}
 	return filepath.Walk(dir, func(path string, info os.FileInfo, walkErr error) error {
 		if walkErr != nil {
@@ -232,7 +243,7 @@ func scanCodexMemoryTree(result *codexLocalScanResult, dir string) error {
 			return err
 		}
 		result.MemoryItems = append(result.MemoryItems, sqlite.AgentMemoryItem{
-			Title:       "memories/" + filepath.ToSlash(strings.TrimSuffix(rel, filepath.Ext(rel))),
+			Title:       titlePrefix + "/" + filepath.ToSlash(strings.TrimSuffix(rel, filepath.Ext(rel))),
 			Content:     strings.TrimSpace(content),
 			Exactness:   "exact",
 			SourcePaths: []string{path},
@@ -912,6 +923,7 @@ func scanCodexAutomations(result *codexLocalScanResult, dir string) error {
 				"kind":     metadata["kind"],
 				"status":   metadata["status"],
 				"schedule": metadata["schedule"],
+				"prompt":   metadata["prompt"],
 			},
 		})
 	}

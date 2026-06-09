@@ -1,6 +1,6 @@
 # Vola CLI Test Matrix
 
-This matrix maps every user-facing `neu` command to its automated coverage layer. The compatible `vola` alias follows the same coverage.
+This matrix maps every user-facing `neu` command to its automated coverage layer. Compatible `vola`, `vol`, `neudrive`, and `xlzdrive` aliases follow the same command implementation; alias help rendering is covered by `internal/cli/command_name_test.go` and `tools/test-neudrive-cli.sh`.
 
 - `L1`: command surface, usage, exit codes
 - `L2`: SQLite local CLI integration with a real built `vola` binary
