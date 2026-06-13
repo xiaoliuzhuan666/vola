@@ -104,7 +104,7 @@ jobs:
           cache-dependency-path: |
             web/package-lock.json
             sdk/javascript/package-lock.json
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - run: cd sdk/javascript && npm ci
