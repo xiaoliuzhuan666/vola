@@ -6,7 +6,7 @@
 
 ## 1. 核心技术方案与落地详情
 
-### 1.1 mcp.json 并发安全锁、冷备灾备与原子性写入
+### 1.1 mcp.json 与 config.json 并发安全锁、冷备灾备与原子性写入
 1. **轻量级跨平台进程锁**：
    * 在读写各 IDE 配置文件（如 `~/.cursor/mcp.json`）之前，尝试在同级目录下创建临时锁定文件 `.mcp.json.lock`。
    * 采用带重试的非阻塞创建模式（`os.O_CREATE|os.O_EXCL`），单次等待 100ms，最大重试 3 秒。
@@ -14,10 +14,18 @@
 2. **首次自动安全冷备**：
    * 在首次对配置执行修改前，若同级目录下不存在备份 `mcp.json.vola.bak`，则对原文件执行一次完整物理备份。
    * 在 `Disconnect` 时，如果清理后文件无其他配置，提供一键将 `.vola.bak` 恢复的灾备恢复机制。
-3. **原子性覆盖写入 (Atomic Write)**：
-   * 写入配置时不直接操作目标文件，而是先将 JSON 写入同一目录下的临时文件（如 `mcp.json.tmp`），然后调用操作系统的原子级重命名 `os.Rename` 替换原配置，彻底杜绝写出一半文件导致 JSON 格式损毁的现象。
+3. **主配置与 mcp.json 损坏自愈 (Self-Healing) [NEW]**：
+   * **全局配置自愈**：在 `SaveConfig` 后自动将配置冷备至 `config.json.vola.bak`。加载配置若解析出错或文件为空，自动恢复备份内容并物理覆盖写入主配置，实现秒级自愈。
+   * **mcp.json 自愈**：在 `safeUpdateMcpConfig` 中增加反序列化解析错误拦截，若由于异常断电导致 JSON 写坏，自动从 `.vola.bak` 物理恢复回滚。
+4. **原子性覆盖写入 (Atomic Write)**：
+   * 写入配置时不直接操作目标文件，先写入 `.tmp` 文件，再调用操作系统的原子级重命名 `os.Rename` 替换原配置，彻底杜绝写出一半文件导致 JSON 格式损毁的现象。
 
-### 1.2 共享 HTTP MCP 本地存活度与延时检测 (Health Check)
+### 1.2 SQLite 存储层多路并发读取优化 [NEW]
+1. **解除单连接池限制**：
+   * 移除了 `sqlite.Open` 中限制单连接并发的 `db.SetMaxOpenConns(1)` 约束，重构为最大 10 个活跃连接 `db.SetMaxOpenConns(10)` 与 5 个空闲连接 `db.SetMaxIdleConns(5)`。
+   * 结合 SQLite 的 WAL 模式，实现了多客户端/多协程并发读取本地数据库的高吞吐，写锁冲突依靠 DSN 内的 `busy_timeout(5000)` 安全阻塞等待。
+
+### 1.3 共享 HTTP MCP 本地存活度与延时检测 (Health Check)
 1. **常驻存活探测器**：
    * 在 Vola 本地守护进程中启动常驻健康检查协程，每 30 秒轮询检测本机关接的所有远程 `http` 团队 MCP 终点。
    * 发送轻量级请求（3 秒超时 `HEAD` 或 `GET`），计算往返延时并检测服务是否在线，结果缓存在本地守护进程的 `sync.Map` 中。
@@ -25,50 +33,37 @@
    * 新增 API：`GET /api/local/mcp/health`，向前端实时返回已装配 HTTP MCP 的在线状态（`online` / `offline`）和延迟（`latency_ms`）。
 3. **前端可视化健康微章与呼吸灯**：
    * 在 `TeamLibraryPage.tsx` 和 `DashboardPage.tsx` 的团队 MCP 列表及配置详情中展示检测面板。离线服务伴有红色呼吸发光效果徽章，在线服务标注绿色微章并显示延迟。
+4. **失效键值清理**：
+   * 在每次检测时，自动比对最新配置，对从配置中删除或解绑的已下线服务从 `mcpHealthCache` 内存缓存中执行 `Delete` 彻底清除。
+5. **探测自适应退避与按需唤醒**：
+   * **连续失败退避**：对连续检测失败的离线远程 HTTP MCP 服务，自动递增其检测间隔周期（连续失败 1 次时每 2 个周期检查一次；失败 2 次时每 4 个周期检查一次；失败 3 次以上时每 8 个周期），降低离线节点造成的 DNS 解析负荷与 TCP 超时浪费。
+   * **Dashboard 强制唤醒**：在 API 请求被调用且距上一次刷新超过 5 秒时，会在后台自动重置退避并触发一次全量刷新检查。
 
-### 1.3 MCP 健康检测缓存失效自动清理
-1. **失效键值清理**：
-   * 在每次执行 `checkAllMcpServers` 检测时，比对最新的检测名单，对从配置中删除或解绑的 MCP 键值执行 `Delete` 操作。
-   * 保证了内存状态的健康，防止前端获取并渲染已失效的已下线服务卡片。
+### 1.4 安全日志属性脱敏与 Panic 凭证掩码拦截 [NEW]
+1. **slog 日志拦截掩码 (ReplaceAttr)**：
+   * 在 `Init` 流程中配置 `ReplaceAttr` 处理逻辑。
+   * 检测键名为 `token`、`password`、`secret`、`jwt`、`authorization` 等字段的 KV 属性，将其脱敏替换为 `"[MASKED]"`。
+   * 对所有包含 `Bearer ` 头的字符串属性值进行掩码拦截清洗，杜绝任何 API Key 进入日志文件。
 
-### 1.4 HTTP MCP 健康探测自适应退避与按需唤醒
-1. **连续失败自适应退避 (Failure Backoff)**：
-   * 对连续检测失败的离线远程 HTTP MCP 服务，自动递增其检测间隔周期（连续失败 1 次时每 2 个周期检查一次；失败 2 次时每 4 个周期检查一次；失败 3 次以上时每 8 个周期，即约每 4 分钟检查一次）。
-   * 极大降低离线节点造成的 DNS 解析负荷与 TCP 超时，防止本端套接字浪费。
-2. **Dashboard 按需强制唤醒 (On-Demand Wakeup)**：
-   * 在 `GET /api/local/mcp/health` 请求被前端调用时，若距上一次手动刷新时间超过 5 秒，则在后台自动重置所有退避并触发一次全量刷新检查。
-   * 保证用户打开 Dashboard 仪表盘时能迅速在后台刷新状态，又避免平时无人使用时对离线节点的持续探测。
-
-### 1.5 基于 SSE (Server-Sent Events) 的协作更新秒级实时推送
+### 1.5 基于 SSE 的协作更新秒级实时推送与瞬间重连重放 [UPDATE]
 1. **服务端事件流端点**：
-   * 在中心 Go 服务端提供 `GET /api/teams/{team}/events` SSE 协议端点。
-   * 涉及该团队的 Skill 发布、更新、或是团队 MCP 的变动事件，通过事件广播机制下发至客户端。
+   * 在中心 Go 服务端提供 `GET /api/teams/{team}/events` SSE 协议端点。涉及该团队的 Skill 发布、更新、或是团队 MCP 的变动事件，通过事件广播机制下发至客户端。
 2. **多协程连接池生命周期解耦**：
    * 解除全局阻塞，为每个 team 分配独立的生命周期协程，单独管理连接建立、异常捕获和重连。
-3. **指数退避重连机制 (Exponential Backoff)**：
-   * 针对独立重连任务，增加指数退避等待逻辑（从 1s 开始，每次失败翻倍，最大为 60s），防止由于服务端波动或网络中断引发高频重试风暴。
-4. **团队变更动态同步与热装配**：
-   * 周期性检查（每 30 秒）当前用户的团队列表变更，动态拉起新团队的 SSE 监听，并主动取消已被移出的团队的 SSE 监听。
-   * 在 SSE 收到 `mcp_update` 事件时，热重载读取磁盘最新的本地配置文件，防止采用过期缓存配置覆盖装配。
+3. **指数退避重连与看门狗自愈**：
+   * 增加指数退避等待逻辑（从 1s 开始，每次失败翻倍，最大为 60s），防止由于服务端波动或网络中断引发高频重试风暴。
+   * 启动 45s 数据流看门狗（Watchdog），在超时间隔无有效数据时主动断流熔断，强制唤醒读取协程抛出 `EOF` 并自愈重连。
+4. **增量事件瞬间重放 (Event Replay Log) [NEW]**：
+   * **服务端定长缓存**：在 `EventBroker` 中加入定长历史变更队列（保留 5 分钟），客户端重连时通过携带 Query 参数 `?last_seen_ms` 指明自己看到的数据时间戳。
+   * **瞬间增量补发**：服务端自动提取并定向重放补发这期间错失的所有变更事件，消除瞬间网络抖动造成的通知盲区。
 
-### 1.6 客户端 SSE 读超时看门狗与 TCP 半开连接自愈
-1. **读超时检测 (Read Watchdog)**：
-   * 服务端心跳每 15 秒发送一次 `: ping`。客户端连接拉起后，额外启动一个异步看门狗检测协程，每 10 秒检测一次数据更新时间。
-2. **主动连接熔断重建 (Half-Open Recovery)**：
-   * 若超过 45 秒没有收到任何来自服务端的有效字符，判定底层 TCP 连接已处于“半开死锁”状态。
-   * 看门狗在后台主动执行 `resp.Body.Close()` 截断阻塞读流，强制唤醒读取协程抛出 `EOF` 并自动触发下层指数退避重连流程。
-
-### 1.7 并发团队 MCP 资产同步优化
-1. **团队列表并发查询 (Concurrent Fetching)**：
-   * 利用 Goroutines 进行并发拉取，通过 `sync.WaitGroup` 归集所有团队的 MCP 同步工作，并引入 `sync.Mutex` 保护公共 slice 的并发追加操作。
-   * 同步耗时从 $O(N)$ 降到 $O(1)$，解决了网络波动导致的命令行连接卡死、响应缓慢问题。
-
-### 1.8 高精度按需装配
-1. **装配连接结构扩展**：
-   * 在 `LocalConnection` 结构中扩展 `Tags []string` 配置项。
+### 1.6 高精度项目级装配与沙箱穿越防御 [UPDATE]
+1. **装配连接结构扩展与 Tags 过滤**：
    * 允许在连接特定 IDE 时配置仅同步含有特定 Tags 的团队 MCP。
-2. **项目级局部装配支持**：
-   * 支持读取开发目录下的 `.volarc`（如指定特定的 tags 和项目所属 team id）。当守护进程在该项目目录中执行连接或更新时，依据项目标签执行局部高精装配，防止全局配置文件冗余，降低 LLM 提示词 Token 消耗。
+2. **项目级局部装配**：
+   * 支持读取开发目录下的 `.volarc` 配置，依据项目标签执行局部高精装配，防止全局配置文件冗余，降低提示词 Token 消耗。
+3. **路径规范化防穿越 (Path Traversal 防御) [NEW]**：
+   * 在加载 `.volarc` 时，通过 `filepath.EvalSymlinks` 展开真实路径，强力拦截并阻断命中系统核心敏感前缀（如 `/etc/`，`/var/`，`/private/` 等）的路径加载，确保沙箱安全性。
 
 ---
 
@@ -77,18 +72,14 @@
 为了验证上述机制，项目新编写并运行了极具代表性的单元与集成测试：
 
 1. **文件读写锁及原子写入测试**：[platforms_lock_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/platforms/platforms_lock_test.go)
-   * 验证在高并发并发写入下，配置文件没有出现损坏，并且生成了 `.vola.bak` 备份文件。
-2. **本地 HTTP MCP 健康探测与自适应退避及按需唤醒测试**：[mcp_health_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/api/mcp_health_test.go)
-   * 验证多节点下的探测准确性，失效清理的正确性，退避计数的自适应翻倍，以及 API 接口 5 秒限频的手动刷新检查。
-3. **SSE 读看门狗断连自愈与多路解耦测试**：[sse_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/api/sse_test.go)
-   * 验证 SSE 服务端广播订阅逻辑，将读超时缩短到 60ms 测试看门狗确实在超时无数据时关闭连接并触发客户端重连动作。
-
----
-
-## 3. 固化为 Vola 技能的价值
-
-本地客户端的装配健壮性管理本身是一套复杂的 **系统级配置状态管理（System State Management）** 任务。为确保多 IDE 并发修改、网络波动探测、远程失效清理能以规范、安全的方式执行，我们可以将此场景固化为 Vola 系统内的一个 **共享技能 (Skill)**，供开发人员的 AI 助理 (Cursor, Claude Code 等) 直接运行：
-
-* **名称**：`local-mcp-management-robustness`
-* **适用场景**：AI 助手在开发环境诊断本地 MCP 服务离线原因，并发安全读写 `mcp.json` 配置，按需裁剪装配标签，自愈网络通道。
-* **主要功能**：支持自动化排查多 IDE 冲突、提供配置备份灾备和一键回滚、批量检测本地 HTTP 节点延迟。
+   * `TestMcpConfigSafeAtomicWriteAndLock`：验证在高并发并发写入下，配置文件没有出现损坏，并且生成了 `.vola.bak` 备份文件。
+2. **SQLite 存储并发读取性能测试 [NEW]**：[store_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/storage/sqlite/store_test.go)
+   * `TestSQLiteWALModeReadConcurrency`：并发 10 个 goroutines 进行高频读取，验证 WAL 连接池性能，无 database locked 锁死现象。
+3. **配置损坏崩溃与自愈测试 [NEW]**：[platforms_lock_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/platforms/platforms_lock_test.go)
+   * `TestMcpConfigSelfHealing`：手动将配置文件改写成乱码损坏状态，验证 Connect 触发时自动从 `.vola.bak` 恢复完好配置并写回。
+4. **安全日志脱敏掩码测试 [NEW]**：[logger_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/logger/logger_test.go)
+   * `TestLogMaskingSecurity`：验证 `token`/`password`/`secret`/`authorization` 以及 `Bearer ` 头信息输出时被成功替换为 `"[MASKED]"`。
+5. **SSE 事件断连历史重放测试 [NEW]**：[sse_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/api/sse_test.go)
+   * `TestSSEEventReplayOnReconnect`：模拟客户端在断开期间云端产生变更，重连时发送时间戳立刻定向补发这期间错失的事件。
+6. **项目装配路径沙箱防穿越测试 [NEW]**：[platforms_lock_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/platforms/platforms_lock_test.go)
+   * `TestVolarcPathSandboxing`：向 `.volarc` 植入系统敏感路径软链接，测试 `loadLocalVolarc` 成功阻断加载。
