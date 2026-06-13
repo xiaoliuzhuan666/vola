@@ -943,7 +943,30 @@ func loadLocalVolarc() []string {
 		return nil
 	}
 	volarcPath := filepath.Join(cwd, ".volarc")
-	data, err := os.ReadFile(volarcPath)
+	
+	// Resolve absolute physical path and evaluate symlinks
+	absPath, err := filepath.Abs(volarcPath)
+	if err != nil {
+		return nil
+	}
+	realPath, err := filepath.EvalSymlinks(absPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return nil
+	}
+
+	// Sandboxing check: block reading symlinks leading to sensitive system paths
+	lowerPath := strings.ToLower(realPath)
+	sensitivePrefixes := []string{"/etc/", "/var/", "/system/", "/private/", "/bin/", "/sbin/", "/usr/"}
+	for _, pref := range sensitivePrefixes {
+		if strings.HasPrefix(lowerPath, pref) {
+			return nil
+		}
+	}
+
+	data, err := os.ReadFile(realPath)
 	if err != nil {
 		return nil
 	}
@@ -1044,7 +1067,17 @@ func safeUpdateMcpConfig(configPath string, modifyFunc func(current map[string]a
 		if _, statErr := os.Stat(bakPath); os.IsNotExist(statErr) {
 			_ = os.WriteFile(bakPath, rawData, 0o644)
 		}
-		_ = json.Unmarshal(rawData, &current)
+		unmarshalErr := json.Unmarshal(rawData, &current)
+		if unmarshalErr != nil {
+			// Try to heal from backup
+			if bakData, bakErr := os.ReadFile(bakPath); bakErr == nil {
+				var bakCurrent map[string]any
+				if json.Unmarshal(bakData, &bakCurrent) == nil {
+					current = bakCurrent
+					_ = os.WriteFile(configPath, bakData, 0o644)
+				}
+			}
+		}
 	}
 
 	if err := modifyFunc(current); err != nil {

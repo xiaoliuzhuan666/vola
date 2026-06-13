@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"os"
+	"strings"
 )
 
 // ctxKey is an unexported type for context keys defined in this package.
@@ -19,6 +20,19 @@ func Init(level string, format string) {
 	var handler slog.Handler
 	opts := &slog.HandlerOptions{
 		Level: parseLevel(level),
+		ReplaceAttr: func(groups []string, a slog.Attr) slog.Attr {
+			key := strings.ToLower(a.Key)
+			if key == "token" || key == "password" || key == "secret" || key == "jwt" || key == "authorization" {
+				return slog.String(a.Key, "[MASKED]")
+			}
+			if a.Value.Kind() == slog.KindString {
+				val := a.Value.String()
+				if strings.HasPrefix(strings.ToLower(val), "bearer ") {
+					return slog.String(a.Key, "Bearer [MASKED]")
+				}
+			}
+			return a
+		},
 	}
 
 	switch format {

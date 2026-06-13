@@ -193,15 +193,33 @@ func LoadConfig(path string) (string, *CLIConfig, error) {
 		},
 	}
 	data, err := readFileWithLegacyFallback(path, legacyPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return path, cfg, nil
+	
+	var unmarshalErr error
+	if err == nil {
+		unmarshalErr = json.Unmarshal(data, cfg)
+	}
+
+	if err != nil || unmarshalErr != nil {
+		// Try self-healing from backup
+		bakPath := path + ".vola.bak"
+		if bakData, bakErr := os.ReadFile(bakPath); bakErr == nil {
+			if json.Unmarshal(bakData, cfg) == nil {
+				// Re-write to main config path to self-heal
+				_ = writeConfigBytes(path, bakData)
+				normalizeCLIConfig(cfg)
+				return path, cfg, nil
+			}
 		}
-		return path, nil, err
+
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				return path, cfg, nil
+			}
+			return path, nil, err
+		}
+		return path, nil, unmarshalErr
 	}
-	if err := json.Unmarshal(data, cfg); err != nil {
-		return path, nil, err
-	}
+
 	normalizeCLIConfig(cfg)
 	return path, cfg, nil
 }
@@ -229,14 +247,34 @@ func LoadRawConfig(path string) (string, string, error) {
 		legacyPath = legacyDarwinConfigPath()
 	}
 	data, err := readFileWithLegacyFallback(path, legacyPath)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			raw, rawErr := defaultRawConfig()
-			return path, raw, rawErr
-		}
-		return path, "", err
+	
+	var checkErr error
+	if err == nil {
+		var dummy map[string]any
+		checkErr = json.Unmarshal(data, &dummy)
 	}
-	if strings.TrimSpace(string(data)) == "" {
+
+	if err != nil || checkErr != nil || strings.TrimSpace(string(data)) == "" {
+		// Try to read raw config from backup
+		bakPath := path + ".vola.bak"
+		if bakData, bakErr := os.ReadFile(bakPath); bakErr == nil {
+			var dummy map[string]any
+			if json.Unmarshal(bakData, &dummy) == nil {
+				_ = writeConfigBytes(path, bakData)
+				return path, string(bakData), nil
+			}
+		}
+
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				raw, rawErr := defaultRawConfig()
+				return path, raw, rawErr
+			}
+			return path, "", err
+		}
+		if checkErr != nil {
+			return path, "", checkErr
+		}
 		raw, rawErr := defaultRawConfig()
 		return path, raw, rawErr
 	}
@@ -254,6 +292,10 @@ func writeConfigBytes(path string, content []byte) error {
 	if err := os.Rename(tmp, path); err != nil {
 		return err
 	}
+	// Copy to backup path
+	bakPath := path + ".vola.bak"
+	_ = os.WriteFile(bakPath, content, 0o600)
+
 	if legacyPath := legacyDarwinConfigPath(); legacyPath != "" && legacyPath != path {
 		_ = os.Remove(legacyPath)
 	}

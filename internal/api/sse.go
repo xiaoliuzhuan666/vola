@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -15,9 +16,17 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
+type sseEventRecord struct {
+	TeamID    string
+	EventType string
+	Data      string
+	Timestamp time.Time
+}
+
 type EventBroker struct {
 	mu        sync.RWMutex
 	listeners map[string][]chan string // teamID -> channels
+	history   []sseEventRecord
 }
 
 var GlobalBroker = &EventBroker{
@@ -46,6 +55,29 @@ func (b *EventBroker) Unsubscribe(teamID string, ch chan string) {
 }
 
 func (b *EventBroker) Publish(teamID string, eventType string, data string) {
+	b.mu.Lock()
+	record := sseEventRecord{
+		TeamID:    teamID,
+		EventType: eventType,
+		Data:      data,
+		Timestamp: time.Now(),
+	}
+	b.history = append(b.history, record)
+
+	// Keep history only for the last 5 minutes
+	cutoff := time.Now().Add(-5 * time.Minute)
+	prunedIdx := -1
+	for i, r := range b.history {
+		if r.Timestamp.After(cutoff) {
+			prunedIdx = i
+			break
+		}
+	}
+	if prunedIdx > 0 {
+		b.history = b.history[prunedIdx:]
+	}
+	b.mu.Unlock()
+
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	payload := fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, data)
@@ -56,6 +88,18 @@ func (b *EventBroker) Publish(teamID string, eventType string, data string) {
 			// Non-blocking
 		}
 	}
+}
+
+func (b *EventBroker) GetHistory(teamID string, since time.Time) []string {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	var out []string
+	for _, r := range b.history {
+		if r.TeamID == teamID && r.Timestamp.After(since) {
+			out = append(out, fmt.Sprintf("event: %s\ndata: %s\n\n", r.EventType, r.Data))
+		}
+	}
+	return out
 }
 
 // handleTeamEvents serves the SSE stream for a team.
@@ -77,12 +121,24 @@ func (s *Server) handleTeamEvents(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	ch := GlobalBroker.Subscribe(teamID)
-	defer GlobalBroker.Unsubscribe(teamID, ch)
-
 	// Send an initial handshake comment to establish connection
 	_, _ = fmt.Fprint(w, ": ok\n\n")
 	flusher.Flush()
+
+	// Replay missed events during brief disconnection
+	if lastSeenStr := r.URL.Query().Get("last_seen_ms"); lastSeenStr != "" {
+		if ms, err := strconv.ParseInt(lastSeenStr, 10, 64); err == nil && ms > 0 {
+			since := time.Unix(0, ms*int64(time.Millisecond))
+			missedEvents := GlobalBroker.GetHistory(teamID, since)
+			for _, msg := range missedEvents {
+				_, _ = fmt.Fprint(w, msg)
+			}
+			flusher.Flush()
+		}
+	}
+
+	ch := GlobalBroker.Subscribe(teamID)
+	defer GlobalBroker.Unsubscribe(teamID, ch)
 
 	ticker := time.NewTicker(15 * time.Second)
 	defer ticker.Stop()
@@ -196,13 +252,14 @@ func syncTeamListeners(ctx context.Context) {
 func runTeamSseLoop(ctx context.Context, apiBase, token, teamID string) {
 	backoff := 1 * time.Second
 	maxBackoff := 60 * time.Second
+	var lastSeenTime time.Time
 
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			err := subscribeTeamSse(ctx, apiBase, token, teamID)
+			err := subscribeTeamSse(ctx, apiBase, token, teamID, &lastSeenTime)
 			if err != nil {
 				// Log or handle error if needed
 			}
@@ -220,9 +277,19 @@ func runTeamSseLoop(ctx context.Context, apiBase, token, teamID string) {
 	}
 }
 
-func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string) error {
+func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string, lastSeenTime *time.Time) error {
 	client := &http.Client{Timeout: 0}
+
+	var lastSeenMs int64 = 0
+	if lastSeenTime != nil && !lastSeenTime.IsZero() {
+		lastSeenMs = lastSeenTime.UnixNano() / int64(time.Millisecond)
+	}
+
 	url := fmt.Sprintf("%s/api/teams/%s/events", strings.TrimRight(apiBase, "/"), teamID)
+	if lastSeenMs > 0 {
+		url = fmt.Sprintf("%s?last_seen_ms=%d", url, lastSeenMs)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return err
@@ -277,9 +344,13 @@ func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string) error 
 			return err
 		}
 
+		now := time.Now()
 		mu.Lock()
-		lastSeen = time.Now()
+		lastSeen = now
 		mu.Unlock()
+		if lastSeenTime != nil {
+			*lastSeenTime = now
+		}
 
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "event:") {
@@ -289,9 +360,13 @@ func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string) error 
 				return err
 			}
 
+			now = time.Now()
 			mu.Lock()
-			lastSeen = time.Now()
+			lastSeen = now
 			mu.Unlock()
+			if lastSeenTime != nil {
+				*lastSeenTime = now
+			}
 
 			dataLine = strings.TrimSpace(dataLine)
 			if strings.HasPrefix(dataLine, "data:") {

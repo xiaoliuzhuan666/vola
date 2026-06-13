@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -735,3 +736,42 @@ func TestBundlePreviewIncludesBinarySHA(t *testing.T) {
 		t.Fatalf("binary export mismatch: err=%v len=%d", err, len(decoded))
 	}
 }
+
+func TestSQLiteWALModeReadConcurrency(t *testing.T) {
+	ctx, store, userID := openTestStore(t)
+
+	// Pre-populate a test entry
+	_, err := store.WriteEntry(ctx, userID, "/skills/concurrency/SKILL.md", "# Concurrency Test\n", "text/markdown", models.FileTreeWriteOptions{
+		MinTrustLevel: models.TrustLevelGuest,
+	})
+	if err != nil {
+		t.Fatalf("failed to write test entry: %v", err)
+	}
+
+	workers := 10
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+
+	// Simulate concurrent read workers from sqlite connection pool
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			for j := 0; j < 5; j++ {
+				_, err := store.Read(ctx, userID, "/skills/concurrency/SKILL.md", models.TrustLevelGuest)
+				if err != nil {
+					errs <- err
+					return
+				}
+			}
+		}(i)
+	}
+
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent read worker failed: %v", err)
+	}
+}
+

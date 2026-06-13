@@ -40,7 +40,8 @@ func Open(path string) (*Store, error) {
 	if err != nil {
 		return nil, err
 	}
-	db.SetMaxOpenConns(1)
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
 	store := &Store{path: path, db: db}
 	if err := store.init(context.Background()); err != nil {
 		_ = db.Close()
