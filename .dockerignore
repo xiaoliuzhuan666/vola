@@ -17,11 +17,13 @@ coverage
 .env
 .env.*
 vola.env
+neudrive.env
 
 .pnpm-store
 .npm
 .cache
 .playwright-mcp
+.playwright-cli
 
 *.log
 *.sqlite

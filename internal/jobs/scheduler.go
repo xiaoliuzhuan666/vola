@@ -2,13 +2,22 @@ package jobs
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
 	"log/slog"
+	pathpkg "path"
+	"sort"
+	"strings"
 	"sync"
 	"time"
 
 	"github.com/agi-bar/vola/internal/backups"
 	"github.com/agi-bar/vola/internal/localgitsync"
+	"github.com/agi-bar/vola/internal/models"
 	"github.com/agi-bar/vola/internal/services"
+	"github.com/google/uuid"
 )
 
 // JobConfig controls whether a job is enabled and how often it runs.
@@ -26,6 +35,7 @@ type SchedulerConfig struct {
 	GenerateDailySkillLearning JobConfig
 	RunQueuedGitMirrors        JobConfig
 	RunExternalBackups         JobConfig
+	CheckTeamSkillUpdates      JobConfig
 }
 
 // DefaultSchedulerConfig returns the default configuration for all jobs.
@@ -59,6 +69,10 @@ func DefaultSchedulerConfig() SchedulerConfig {
 			Enabled:  true,
 			Interval: 1 * time.Hour,
 		},
+		CheckTeamSkillUpdates: JobConfig{
+			Enabled:  true,
+			Interval: 1 * time.Hour,
+		},
 	}
 }
 
@@ -72,14 +86,15 @@ type Scheduler struct {
 	skillLearning *services.SkillLearningService
 	gitMirror     *localgitsync.Service
 	backup        *backups.Service
+	fileTree      *services.FileTreeService
+	team          *services.TeamService
 	logger        *slog.Logger
 	config        SchedulerConfig
 	stop          chan struct{}
 	wg            sync.WaitGroup
 }
 
-// NewScheduler creates a new Scheduler with default configuration.
-func NewScheduler(memory *services.MemoryService, token *services.TokenService, userSvc *services.UserService, inbox *services.InboxService, syncSvc *services.SyncService, skillLearningSvc *services.SkillLearningService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, logger *slog.Logger) *Scheduler {
+func NewScheduler(memory *services.MemoryService, token *services.TokenService, userSvc *services.UserService, inbox *services.InboxService, syncSvc *services.SyncService, skillLearningSvc *services.SkillLearningService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, fileTree *services.FileTreeService, teamSvc *services.TeamService, logger *slog.Logger) *Scheduler {
 	return &Scheduler{
 		memory:        memory,
 		token:         token,
@@ -89,14 +104,15 @@ func NewScheduler(memory *services.MemoryService, token *services.TokenService, 
 		skillLearning: skillLearningSvc,
 		gitMirror:     gitMirrorSvc,
 		backup:        backupSvc,
+		fileTree:      fileTree,
+		team:          teamSvc,
 		logger:        logger,
 		config:        DefaultSchedulerConfig(),
 		stop:          make(chan struct{}),
 	}
 }
 
-// NewSchedulerWithConfig creates a new Scheduler with the given configuration.
-func NewSchedulerWithConfig(memory *services.MemoryService, token *services.TokenService, userSvc *services.UserService, inbox *services.InboxService, syncSvc *services.SyncService, skillLearningSvc *services.SkillLearningService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, logger *slog.Logger, config SchedulerConfig) *Scheduler {
+func NewSchedulerWithConfig(memory *services.MemoryService, token *services.TokenService, userSvc *services.UserService, inbox *services.InboxService, syncSvc *services.SyncService, skillLearningSvc *services.SkillLearningService, gitMirrorSvc *localgitsync.Service, backupSvc *backups.Service, fileTree *services.FileTreeService, teamSvc *services.TeamService, logger *slog.Logger, config SchedulerConfig) *Scheduler {
 	return &Scheduler{
 		memory:        memory,
 		token:         token,
@@ -106,6 +122,8 @@ func NewSchedulerWithConfig(memory *services.MemoryService, token *services.Toke
 		skillLearning: skillLearningSvc,
 		gitMirror:     gitMirrorSvc,
 		backup:        backupSvc,
+		fileTree:      fileTree,
+		team:          teamSvc,
 		logger:        logger,
 		config:        config,
 		stop:          make(chan struct{}),
@@ -136,6 +154,9 @@ func (s *Scheduler) Start(ctx context.Context) {
 	}
 	if s.config.RunExternalBackups.Enabled && s.backup != nil {
 		s.startJob(ctx, "RunExternalBackups", s.config.RunExternalBackups.Interval, s.runExternalBackups)
+	}
+	if s.config.CheckTeamSkillUpdates.Enabled && s.user != nil && s.fileTree != nil && s.team != nil {
+		s.startJob(ctx, "CheckTeamSkillUpdates", s.config.CheckTeamSkillUpdates.Interval, s.checkTeamSkillUpdates)
 	}
 
 	s.logger.Info("background job scheduler started")
@@ -335,4 +356,148 @@ func (s *Scheduler) runExternalBackups(ctx context.Context) {
 		"skipped", result.Skipped,
 		"duration", duration.String(),
 	)
+}
+
+func (s *Scheduler) checkTeamSkillUpdates(ctx context.Context) {
+	name := "CheckTeamSkillUpdates"
+	start := time.Now()
+	s.logger.Info("job started", "job", name)
+
+	accounts, err := s.user.ListAccounts(ctx, 0)
+	if err != nil {
+		s.logger.Error("job failed to list accounts", "job", name, "error", err)
+		return
+	}
+
+	var count int
+	for _, acc := range accounts {
+		userID := acc.ID
+		subEntry, err := s.fileTree.Read(ctx, userID, "/settings/team-skill-subscriptions.json", models.TrustLevelFull)
+		if err != nil {
+			continue
+		}
+		var subDoc struct {
+			Version       string `json:"version"`
+			Subscriptions []struct {
+				TeamID            string `json:"team_id"`
+				TeamSlug          string `json:"team_slug,omitempty"`
+				SourcePath        string `json:"source_path"`
+				TargetPath        string `json:"target_path"`
+				SourceFingerprint string `json:"source_fingerprint,omitempty"`
+			} `json:"subscriptions"`
+		}
+		if err := json.Unmarshal([]byte(subEntry.Content), &subDoc); err != nil {
+			continue
+		}
+
+		var updatedNotifications []map[string]interface{}
+
+		for _, sub := range subDoc.Subscriptions {
+			var team *models.Team
+			if teamID, err := uuid.Parse(sub.TeamID); err == nil {
+				team, _ = s.team.GetForUser(ctx, userID, teamID)
+			}
+			if team == nil && sub.TeamSlug != "" {
+				team, _ = s.team.GetBySlugForUser(ctx, userID, sub.TeamSlug)
+			}
+			if team == nil {
+				continue
+			}
+
+			currentFingerprint, err := s.computeTeamSkillFingerprint(ctx, team.HubUserID, sub.SourcePath)
+			if err != nil {
+				continue
+			}
+
+			if sub.SourceFingerprint != "" && currentFingerprint != "" && sub.SourceFingerprint != currentFingerprint {
+				count++
+				updatedNotifications = append(updatedNotifications, map[string]interface{}{
+					"team_id":     team.ID.String(),
+					"team_slug":   team.Slug,
+					"skill_path":  sub.SourcePath,
+					"target_path": sub.TargetPath,
+					"status":      "update_available",
+					"updated_at":  time.Now().UTC().Format(time.RFC3339),
+				})
+
+				threadID := "update-skill-" + team.ID.String() + "-" + sub.SourcePath
+				existingMsgs, _ := s.inbox.GetMessages(ctx, userID, "user", "incoming")
+				alreadySent := false
+				for _, msg := range existingMsgs {
+					if msg.ThreadID == threadID {
+						alreadySent = true
+						break
+					}
+				}
+				if !alreadySent {
+					_, _ = s.inbox.Send(ctx, userID, models.InboxMessage{
+						ID:             uuid.New(),
+						FromAddress:    "system",
+						ToAddress:      userID.String(),
+						ThreadID:       threadID,
+						Priority:       "normal",
+						ActionRequired: true,
+						Domain:         "skills",
+						Subject:        "团队共享技能有新版本: " + pathpkg.Base(sub.SourcePath),
+						Body:           fmt.Sprintf("您的团队 %s 发布了 %s 的最新修改版本，请前往团队资料库进行一键更新。", team.Name, pathpkg.Base(sub.SourcePath)),
+						Status:         "incoming",
+						CreatedAt:      time.Now(),
+					})
+				}
+			}
+		}
+
+		if len(updatedNotifications) > 0 {
+			notifDoc := map[string]interface{}{
+				"version":       "vola.personal-update-notifications/v1",
+				"notifications": updatedNotifications,
+				"updated_at":    time.Now().UTC().Format(time.RFC3339),
+			}
+			notifData, _ := json.MarshalIndent(notifDoc, "", "  ")
+			_, _ = s.fileTree.WriteEntry(ctx, userID, "/settings/personal-update-notifications.json", string(append(notifData, '\n')), "application/json", models.FileTreeWriteOptions{
+				Kind:          "personal_update_notifications",
+				MinTrustLevel: models.TrustLevelFull,
+			})
+		} else {
+			_ = s.fileTree.Delete(ctx, userID, "/settings/personal-update-notifications.json")
+		}
+	}
+
+	duration := time.Since(start)
+	s.logger.Info("job completed", "job", name, "detected_updates", count, "duration", duration.String())
+}
+
+func (s *Scheduler) computeTeamSkillFingerprint(ctx context.Context, teamHubUserID uuid.UUID, skillPath string) (string, error) {
+	snapshot, err := s.fileTree.Snapshot(ctx, teamHubUserID, skillPath, models.TrustLevelFull)
+	if err != nil {
+		return "", err
+	}
+	type skillFile struct {
+		relPath string
+		data    []byte
+	}
+	var files []skillFile
+	for _, entry := range snapshot.Entries {
+		if entry.IsDirectory || entry.DeletedAt != nil {
+			continue
+		}
+		rel := strings.TrimPrefix(entry.Path, skillPath)
+		rel = strings.TrimPrefix(rel, "/")
+		files = append(files, skillFile{
+			relPath: rel,
+			data:    []byte(entry.Content),
+		})
+	}
+	if len(files) == 0 {
+		return "", nil
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].relPath < files[j].relPath })
+	h := sha256.New()
+	for _, f := range files {
+		h.Write([]byte(f.relPath))
+		h.Write([]byte{0})
+		h.Write(f.data)
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil)), nil
 }

@@ -48,7 +48,7 @@ docker:
 # Run all tests
 test:
 	go test ./...
-	cd web && npm test -- --run 2>/dev/null || true
+	cd web && npm run test
 
 clean:
 	rm -rf bin/ internal/web/dist web/dist src-tauri/target/

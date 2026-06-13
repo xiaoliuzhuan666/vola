@@ -25,7 +25,6 @@ FROM ${RUNTIME_BASE_IMAGE}
 RUN apk add --no-cache ca-certificates git tzdata
 WORKDIR /app
 COPY --from=builder /vola .
-COPY --from=builder /vola ./vola
 COPY migrations/ ./migrations/
 EXPOSE 8080
 CMD ["./vola", "server", "--listen", ":8080"]

@@ -89,13 +89,24 @@ load_config() {
   require_env VAULT_MASTER_KEY
 
   if [[ -z "${PUBLIC_BASE_URL:-}" ]]; then
-    PUBLIC_BASE_URL="https://vola.ai"
+    PUBLIC_BASE_URL="https://www.vola.ai"
   fi
   if [[ "$PUBLIC_BASE_URL" != http://* && "$PUBLIC_BASE_URL" != https://* ]]; then
     die "PUBLIC_BASE_URL must start with http:// or https://"
   fi
 
-  CORS_ORIGINS="${CORS_ORIGINS:-$PUBLIC_BASE_URL,http://localhost:3000,http://localhost:5173}"
+  if [[ -z "${CORS_ORIGINS:-}" ]]; then
+    CORS_ORIGINS="$PUBLIC_BASE_URL"
+    case "$PUBLIC_BASE_URL" in
+      "https://www.vola.ai")
+        CORS_ORIGINS="$CORS_ORIGINS,https://vola.ai"
+        ;;
+      "https://vola.ai")
+        CORS_ORIGINS="$CORS_ORIGINS,https://www.vola.ai"
+        ;;
+    esac
+    CORS_ORIGINS="$CORS_ORIGINS,http://localhost:3000,http://localhost:5173"
+  fi
   DATABASE_URL="${DATABASE_URL:-postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@vola-postgres.${NAMESPACE}.svc.cluster.local:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable}"
   GIT_MIRROR_HOSTED_ROOT="${GIT_MIRROR_HOSTED_ROOT:-/data/git-mirrors}"
 

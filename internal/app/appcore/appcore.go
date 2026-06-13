@@ -65,6 +65,8 @@ type App struct {
 	GitMirrorService      *localgitsync.Service
 	BackupService         *backups.Service
 	MCPGateway            *mcp.MCPGateway
+	FileTreeService       *services.FileTreeService
+	TeamService           *services.TeamService
 }
 
 const (
@@ -236,6 +238,8 @@ func buildSQLite(ctx context.Context, opts Options) (*App, error) {
 		SyncService:           syncSvc,
 		GitMirrorService:      localGitSyncSvc,
 		BackupService:         backupSvc,
+		FileTreeService:       fileTreeSvc,
+		TeamService:           teamSvc,
 		NewMCPServer: func(token string) (mcp.JSONRPCHandler, error) {
 			scopedToken, err := tokenSvc.ValidateToken(ctx, token)
 			if err != nil {
@@ -369,6 +373,8 @@ func buildPostgres(ctx context.Context, opts Options) (*App, error) {
 		SyncService:           deps.syncSvc,
 		GitMirrorService:      localGitSyncSvc,
 		BackupService:         backupSvc,
+		FileTreeService:       deps.fileTreeSvc,
+		TeamService:           deps.teamSvc,
 		NewMCPServer: func(token string) (mcp.JSONRPCHandler, error) {
 			scopedToken, err := deps.tokenSvc.ValidateToken(ctx, token)
 			if err != nil {

@@ -291,6 +291,7 @@ func (s *Server) handleTeamSkillPublicationSave(w http.ResponseWriter, r *http.R
 		respondInternalError(w, err)
 		return
 	}
+	GlobalBroker.Publish(team.ID.String(), "skill_update", `{"skill_path": "`+publication.SkillPath+`"}`)
 	if err := s.appendTeamSkillReviewEvent(s.requestSourceContext(r, "team-skill-publication"), team.HubUserID, teamSkillReviewEvent{
 		ID:         uuid.NewString(),
 		AssetType:  "skill",
@@ -1021,6 +1022,9 @@ func (s *Server) teamSkillPublicationsForSkills(doc teamSkillPublicationsDocumen
 	lookup := teamSkillPublicationLookup(doc)
 	out := make([]teamSkillPublication, 0, len(skills))
 	for _, skill := range skills {
+		if !isTeamOwnedSkillSummary(skill) {
+			continue
+		}
 		path := normalizeAssignedSkillPath(firstNonEmpty(skill.BundlePath, skill.Path))
 		if path == "" || path == "/skills" {
 			continue
@@ -1049,12 +1053,16 @@ func teamSkillPublicationVisible(item teamSkillPublication) bool {
 }
 
 func filterTeamSkillSummariesForVisibility(skills []models.SkillSummary, doc teamSkillPublicationsDocument, team *models.Team) []models.SkillSummary {
-	if team == nil || team.CanManageMembers {
-		return skills
-	}
 	lookup := teamSkillPublicationLookup(doc)
 	out := make([]models.SkillSummary, 0, len(skills))
 	for _, skill := range skills {
+		if !isTeamOwnedSkillSummary(skill) {
+			continue
+		}
+		if team == nil || team.CanManageMembers {
+			out = append(out, skill)
+			continue
+		}
 		skillPath := normalizeAssignedSkillPath(firstNonEmpty(skill.BundlePath, skill.Path))
 		if skillPath == "" || skillPath == "/skills" {
 			out = append(out, skill)
@@ -1066,6 +1074,17 @@ func filterTeamSkillSummariesForVisibility(skills []models.SkillSummary, doc tea
 		}
 	}
 	return out
+}
+
+func isTeamOwnedSkillSummary(skill models.SkillSummary) bool {
+	source := strings.TrimSpace(strings.ToLower(skill.Source))
+	if source == "system" {
+		return false
+	}
+	if skill.ReadOnly && source == "" {
+		return false
+	}
+	return true
 }
 
 func filterTeamFileEntriesForVisibility(entries []models.FileTreeEntry, doc teamSkillPublicationsDocument, team *models.Team) []models.FileTreeEntry {
@@ -1298,7 +1317,13 @@ func (s *Server) resolveTeamForSubscription(ctx context.Context, userID uuid.UUI
 		return nil, errors.New("team service not configured")
 	}
 	if teamID, err := uuid.Parse(strings.TrimSpace(item.TeamID)); err == nil {
-		return s.TeamService.GetForUser(ctx, userID, teamID)
+		team, teamErr := s.TeamService.GetForUser(ctx, userID, teamID)
+		if teamErr == nil {
+			return team, nil
+		}
+		if item.TeamSlug == "" {
+			return nil, teamErr
+		}
 	}
 	if item.TeamSlug != "" {
 		return s.TeamService.GetBySlugForUser(ctx, userID, item.TeamSlug)
@@ -1325,7 +1350,7 @@ func (s *Server) buildTeamSkillSubscriptionReport(ctx context.Context, team *mod
 		}
 		byPath := map[string]teamSkillSubscription{}
 		for _, item := range doc.Subscriptions {
-			if item.TeamID == team.ID.String() {
+			if teamSkillSubscriptionMatchesTeam(item, team) {
 				byPath[item.SourcePath] = item
 			}
 		}
@@ -1342,6 +1367,9 @@ func (s *Server) buildTeamSkillSubscriptionReport(ctx context.Context, team *mod
 	publicationLookup := teamSkillPublicationLookup(publications)
 	reports := make([]teamSkillSubscriptionSkillReport, 0, len(skills))
 	for _, skill := range skills {
+		if !isTeamOwnedSkillSummary(skill) {
+			continue
+		}
 		skillPath := normalizeAssignedSkillPath(firstNonEmpty(skill.BundlePath, skill.Path))
 		if skillPath == "" || skillPath == "/skills" {
 			continue
@@ -1413,6 +1441,20 @@ func (s *Server) buildTeamSkillSubscriptionReport(ctx context.Context, team *mod
 		GeneratedAt: checkedAt,
 		Skills:      reports,
 	}, nil
+}
+
+func teamSkillSubscriptionMatchesTeam(item teamSkillSubscription, team *models.Team) bool {
+	if team == nil {
+		return false
+	}
+	teamID := team.ID.String()
+	if strings.TrimSpace(item.TeamID) == teamID {
+		return true
+	}
+	if item.TeamSlug != "" && strings.EqualFold(strings.TrimSpace(item.TeamSlug), team.Slug) {
+		return true
+	}
+	return false
 }
 
 func teamSkillNotificationsFromReport(team *models.Team, report teamSkillSubscriptionReportResponse, now string) []teamSkillUpdateNotification {

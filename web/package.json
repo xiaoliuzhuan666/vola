@@ -5,7 +5,10 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "npm run test && vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run typecheck",
+    "e2e": "playwright test",
     "preview": "vite preview",
     "demo:vola": "bash ./tools/vola_demo.sh 8787",
     "tauri": "tauri",

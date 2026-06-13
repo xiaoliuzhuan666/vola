@@ -4,12 +4,14 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/agi-bar/vola/internal/models"
@@ -72,6 +74,9 @@ func Registry() []Adapter {
 		&codexAdapter{},
 		&geminiAdapter{},
 		&cursorAdapter{},
+		&traeAdapter{},
+		&codebuddyAdapter{},
+		&workbuddyAdapter{},
 	}
 }
 
@@ -258,6 +263,9 @@ type claudeAdapter struct{ baseAdapter }
 type codexAdapter struct{ baseAdapter }
 type geminiAdapter struct{ baseAdapter }
 type cursorAdapter struct{ baseAdapter }
+type traeAdapter struct{ baseAdapter }
+type codebuddyAdapter struct{ baseAdapter }
+type workbuddyAdapter struct{ baseAdapter }
 
 func newBaseAdapter(id, displayName, command, configPath, entrypointType, entrypointPath string, aliases []string, chatUsage, domains []string, sources []Source, agentMediated string) baseAdapter {
 	return baseAdapter{
@@ -312,6 +320,24 @@ func (a *claudeAdapter) Connect(ctx context.Context, cfg *runtimecfg.CLIConfig, 
 	if err := run(ctx, "claude", "mcp", "add", "--scope", "user", "--transport", "http", LocalServerName, strings.TrimRight(daemonURL, "/")+"/mcp", "--header", "Authorization: Bearer "+connection.Token); err != nil {
 		return connection, err
 	}
+	// 拉取团队 MCP 并动态装配
+	if mcps, err := fetchTeamMcps(ctx, daemonURL, connection.Token); err == nil {
+		for _, mcp := range mcps {
+			serverKey := "team-mcp-" + mcp.Slug
+			_ = run(ctx, "claude", "mcp", "remove", "--scope", "user", serverKey)
+			if mcp.Transport == "stdio" {
+				args := []string{"claude", "mcp", "add", "--scope", "user", "--transport", "stdio", serverKey, "--", mcp.Command}
+				args = append(args, mcp.Args...)
+				_ = run(ctx, args[0], args[1:]...)
+			} else if mcp.Transport == "http" {
+				args := []string{"claude", "mcp", "add", "--scope", "user", "--transport", "http", serverKey, mcp.URL}
+				for k, v := range mcp.Headers {
+					args = append(args, "--header", k+": "+v)
+				}
+				_ = run(ctx, args[0], args[1:]...)
+			}
+		}
+	}
 	skillPath, managedPaths, err := installManagedSkill(expandUser(claudeEntrypointDir), "claude-code")
 	if err != nil {
 		return connection, err
@@ -333,6 +359,11 @@ func (a *claudeAdapter) Disconnect(ctx context.Context, cfg *runtimecfg.CLIConfi
 	for _, target := range managedPathsForPlatform(cfg, a.ID(), expandUser(claudeEntrypointDir), expandUser(claudeCommandEntrypoint)) {
 		if err := removeManagedPath(target); err != nil {
 			return err
+		}
+	}
+	if mcps, err := fetchTeamMcps(ctx, cfg.Local.PublicBaseURL, cfg.Local.OwnerToken); err == nil {
+		for _, mcp := range mcps {
+			_ = run(ctx, "claude", "mcp", "remove", "--scope", "user", "team-mcp-"+mcp.Slug)
 		}
 	}
 	return run(ctx, "claude", "mcp", "remove", "--scope", "user", LocalServerName)
@@ -397,6 +428,28 @@ func (a *codexAdapter) Connect(ctx context.Context, cfg *runtimecfg.CLIConfig, e
 	); err != nil {
 		return connection, err
 	}
+	// 拉取团队 MCP 并动态装配
+	if mcps, err := fetchTeamMcps(ctx, daemonURL, connection.Token); err == nil {
+		for _, mcp := range mcps {
+			serverKey := "team-mcp-" + mcp.Slug
+			_ = run(ctx, "codex", "mcp", "remove", serverKey)
+			if mcp.Transport == "stdio" {
+				args := []string{"codex", "mcp", "add", serverKey}
+				for k, v := range mcp.Env {
+					args = append(args, "--env", k+"="+v)
+				}
+				args = append(args, "--", mcp.Command)
+				args = append(args, mcp.Args...)
+				_ = run(ctx, args[0], args[1:]...)
+			} else if mcp.Transport == "http" {
+				args := []string{"codex", "mcp", "add", serverKey, "--url", mcp.URL}
+				for k, v := range mcp.Headers {
+					args = append(args, "--header", k+": "+v)
+				}
+				_ = run(ctx, args[0], args[1:]...)
+			}
+		}
+	}
 	skillPath, managedPaths, err := installManagedSkill(expandUser(codexEntrypointDir), "codex")
 	if err != nil {
 		return connection, err
@@ -413,6 +466,11 @@ func (a *codexAdapter) Disconnect(ctx context.Context, cfg *runtimecfg.CLIConfig
 	for _, target := range managedPathsForPlatform(cfg, a.ID(), expandUser(codexEntrypointDir)) {
 		if err := removeManagedPath(target); err != nil {
 			return err
+		}
+	}
+	if mcps, err := fetchTeamMcps(ctx, cfg.Local.PublicBaseURL, cfg.Local.OwnerToken); err == nil {
+		for _, mcp := range mcps {
+			_ = run(ctx, "codex", "mcp", "remove", "team-mcp-"+mcp.Slug)
 		}
 	}
 	return run(ctx, "codex", "mcp", "remove", LocalServerName)
@@ -502,29 +560,7 @@ func (a *cursorAdapter) Detect(cfg *runtimecfg.CLIConfig, daemonURL string) Stat
 }
 func (a *cursorAdapter) Connect(ctx context.Context, cfg *runtimecfg.CLIConfig, executable, daemonURL string, connection runtimecfg.LocalConnection) (runtimecfg.LocalConnection, error) {
 	configPath := expandUser("~/.cursor/mcp.json")
-	current := map[string]any{"mcpServers": map[string]any{}}
-	if data, err := os.ReadFile(configPath); err == nil {
-		_ = json.Unmarshal(data, &current)
-	}
-	servers, _ := current["mcpServers"].(map[string]any)
-	if servers == nil {
-		servers = map[string]any{}
-	}
-	servers[LocalServerName] = map[string]any{
-		"url": strings.TrimRight(daemonURL, "/") + "/mcp",
-		"headers": map[string]string{
-			"Authorization": "Bearer " + connection.Token,
-		},
-	}
-	current["mcpServers"] = servers
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return connection, err
-	}
-	data, err := json.MarshalIndent(current, "", "  ")
-	if err != nil {
-		return connection, err
-	}
-	if err := os.WriteFile(configPath, append(data, '\n'), 0o644); err != nil {
+	if err := connectMcpPlatform(ctx, daemonURL, connection, configPath); err != nil {
 		return connection, err
 	}
 	connection.Transport = "http"
@@ -533,23 +569,142 @@ func (a *cursorAdapter) Connect(ctx context.Context, cfg *runtimecfg.CLIConfig, 
 }
 func (a *cursorAdapter) Disconnect(ctx context.Context, cfg *runtimecfg.CLIConfig) error {
 	configPath := expandUser("~/.cursor/mcp.json")
-	current := map[string]any{"mcpServers": map[string]any{}}
-	if data, err := os.ReadFile(configPath); err == nil {
-		if err := json.Unmarshal(data, &current); err != nil {
-			return err
-		}
+	return disconnectMcpPlatform(configPath)
+}
+
+// ---------------- Trae Adapter ----------------
+
+func (a *traeAdapter) init() *traeAdapter {
+	if a.id == "" {
+		*a = traeAdapter{newBaseAdapter(
+			"trae-agent",
+			"Trae Agent",
+			"trae-agent",
+			"~/.trae/mcp.json",
+			"",
+			"",
+			[]string{"trae"},
+			nil,
+			[]string{"connections", "skills", "projects", "prompts", "archives"},
+			[]Source{
+				{Domain: "connections", Label: "mcp.json", Path: expandUser("~/.trae/mcp.json")},
+			},
+			"planned",
+		)}
 	}
-	servers, _ := current["mcpServers"].(map[string]any)
-	if servers == nil {
-		return nil
+	return a
+}
+
+func (a *traeAdapter) ID() string                 { return a.init().baseAdapter.ID() }
+func (a *traeAdapter) DisplayName() string        { return a.init().baseAdapter.DisplayName() }
+func (a *traeAdapter) Aliases() []string          { return a.init().baseAdapter.Aliases() }
+func (a *traeAdapter) SupportedDomains() []string { return a.init().baseAdapter.SupportedDomains() }
+func (a *traeAdapter) DiscoverSources() []Source  { return a.init().baseAdapter.DiscoverSources() }
+func (a *traeAdapter) Detect(cfg *runtimecfg.CLIConfig, daemonURL string) Status {
+	return a.init().baseAdapter.Detect(cfg, daemonURL)
+}
+func (a *traeAdapter) Connect(ctx context.Context, cfg *runtimecfg.CLIConfig, executable, daemonURL string, connection runtimecfg.LocalConnection) (runtimecfg.LocalConnection, error) {
+	configPath := expandUser("~/.trae/mcp.json")
+	if err := connectMcpPlatform(ctx, daemonURL, connection, configPath); err != nil {
+		return connection, err
 	}
-	delete(servers, LocalServerName)
-	current["mcpServers"] = servers
-	data, err := json.MarshalIndent(current, "", "  ")
-	if err != nil {
-		return err
+	connection.Transport = "http"
+	connection.ConfigPath = configPath
+	return connection, nil
+}
+func (a *traeAdapter) Disconnect(ctx context.Context, cfg *runtimecfg.CLIConfig) error {
+	configPath := expandUser("~/.trae/mcp.json")
+	return disconnectMcpPlatform(configPath)
+}
+
+// ---------------- Codebuddy Adapter ----------------
+
+func (a *codebuddyAdapter) init() *codebuddyAdapter {
+	if a.id == "" {
+		*a = codebuddyAdapter{newBaseAdapter(
+			"codebuddy-agent",
+			"Codebuddy Agent",
+			"codebuddy-agent",
+			"~/.codebuddy/mcp.json",
+			"",
+			"",
+			[]string{"codebuddy"},
+			nil,
+			[]string{"connections", "skills", "projects", "prompts", "archives"},
+			[]Source{
+				{Domain: "connections", Label: "mcp.json", Path: expandUser("~/.codebuddy/mcp.json")},
+			},
+			"planned",
+		)}
 	}
-	return os.WriteFile(configPath, append(data, '\n'), 0o644)
+	return a
+}
+
+func (a *codebuddyAdapter) ID() string                 { return a.init().baseAdapter.ID() }
+func (a *codebuddyAdapter) DisplayName() string        { return a.init().baseAdapter.DisplayName() }
+func (a *codebuddyAdapter) Aliases() []string          { return a.init().baseAdapter.Aliases() }
+func (a *codebuddyAdapter) SupportedDomains() []string { return a.init().baseAdapter.SupportedDomains() }
+func (a *codebuddyAdapter) DiscoverSources() []Source  { return a.init().baseAdapter.DiscoverSources() }
+func (a *codebuddyAdapter) Detect(cfg *runtimecfg.CLIConfig, daemonURL string) Status {
+	return a.init().baseAdapter.Detect(cfg, daemonURL)
+}
+func (a *codebuddyAdapter) Connect(ctx context.Context, cfg *runtimecfg.CLIConfig, executable, daemonURL string, connection runtimecfg.LocalConnection) (runtimecfg.LocalConnection, error) {
+	configPath := expandUser("~/.codebuddy/mcp.json")
+	if err := connectMcpPlatform(ctx, daemonURL, connection, configPath); err != nil {
+		return connection, err
+	}
+	connection.Transport = "http"
+	connection.ConfigPath = configPath
+	return connection, nil
+}
+func (a *codebuddyAdapter) Disconnect(ctx context.Context, cfg *runtimecfg.CLIConfig) error {
+	configPath := expandUser("~/.codebuddy/mcp.json")
+	return disconnectMcpPlatform(configPath)
+}
+
+// ---------------- Workbuddy Adapter ----------------
+
+func (a *workbuddyAdapter) init() *workbuddyAdapter {
+	if a.id == "" {
+		*a = workbuddyAdapter{newBaseAdapter(
+			"workbuddy-agent",
+			"Workbuddy Agent",
+			"workbuddy-agent",
+			"~/.workbuddy/mcp.json",
+			"",
+			"",
+			[]string{"workbuddy"},
+			nil,
+			[]string{"connections", "skills", "projects", "prompts", "archives"},
+			[]Source{
+				{Domain: "connections", Label: "mcp.json", Path: expandUser("~/.workbuddy/mcp.json")},
+			},
+			"planned",
+		)}
+	}
+	return a
+}
+
+func (a *workbuddyAdapter) ID() string                 { return a.init().baseAdapter.ID() }
+func (a *workbuddyAdapter) DisplayName() string        { return a.init().baseAdapter.DisplayName() }
+func (a *workbuddyAdapter) Aliases() []string          { return a.init().baseAdapter.Aliases() }
+func (a *workbuddyAdapter) SupportedDomains() []string { return a.init().baseAdapter.SupportedDomains() }
+func (a *workbuddyAdapter) DiscoverSources() []Source  { return a.init().baseAdapter.DiscoverSources() }
+func (a *workbuddyAdapter) Detect(cfg *runtimecfg.CLIConfig, daemonURL string) Status {
+	return a.init().baseAdapter.Detect(cfg, daemonURL)
+}
+func (a *workbuddyAdapter) Connect(ctx context.Context, cfg *runtimecfg.CLIConfig, executable, daemonURL string, connection runtimecfg.LocalConnection) (runtimecfg.LocalConnection, error) {
+	configPath := expandUser("~/.workbuddy/mcp.json")
+	if err := connectMcpPlatform(ctx, daemonURL, connection, configPath); err != nil {
+		return connection, err
+	}
+	connection.Transport = "http"
+	connection.ConfigPath = configPath
+	return connection, nil
+}
+func (a *workbuddyAdapter) Disconnect(ctx context.Context, cfg *runtimecfg.CLIConfig) error {
+	configPath := expandUser("~/.workbuddy/mcp.json")
+	return disconnectMcpPlatform(configPath)
 }
 
 func claudeSources() []Source {
@@ -768,3 +923,213 @@ func removeManagedPath(target string) error {
 	}
 	return os.Remove(target)
 }
+
+type teamMcpConfig struct {
+	Slug      string            `json:"slug"`
+	Name      string            `json:"name"`
+	Transport string            `json:"transport"`
+	Command   string            `json:"command,omitempty"`
+	Args      []string          `json:"args,omitempty"`
+	Env       map[string]string `json:"env,omitempty"`
+	URL       string            `json:"url,omitempty"`
+	Headers   map[string]string `json:"headers,omitempty"`
+	Status    string            `json:"status"`
+	Tags      []string          `json:"tags,omitempty"`
+}
+
+func loadLocalVolarc() []string {
+	cwd, err := os.Getwd()
+	if err != nil {
+		return nil
+	}
+	volarcPath := filepath.Join(cwd, ".volarc")
+	data, err := os.ReadFile(volarcPath)
+	if err != nil {
+		return nil
+	}
+	var config struct {
+		Tags []string `json:"tags"`
+	}
+	if err := json.Unmarshal(data, &config); err == nil {
+		return config.Tags
+	}
+	return nil
+}
+
+func matchTags(mcpTags []string, filterTags []string) bool {
+	if len(filterTags) == 0 {
+		return true
+	}
+	for _, ft := range filterTags {
+		for _, mt := range mcpTags {
+			if strings.EqualFold(ft, mt) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func fetchTeamMcps(ctx context.Context, apiBase, token string) ([]teamMcpConfig, error) {
+	var teamsResp struct {
+		Teams []struct {
+			ID   string `json:"id"`
+			Slug string `json:"slug"`
+		} `json:"teams"`
+	}
+	_, err := localPlatformAPIJSON(ctx, http.MethodGet, apiBase, token, "/api/teams", nil, &teamsResp)
+	if err != nil {
+		return nil, err
+	}
+
+	var mu sync.Mutex
+	var allMcps []teamMcpConfig
+	var wg sync.WaitGroup
+
+	for _, t := range teamsResp.Teams {
+		wg.Add(1)
+		go func(teamID string) {
+			defer wg.Done()
+			var mcpsResp struct {
+				Mcps []teamMcpConfig `json:"mcps"`
+			}
+			_, err := localPlatformAPIJSON(ctx, http.MethodGet, apiBase, token, "/api/teams/"+teamID+"/mcps", nil, &mcpsResp)
+			if err == nil {
+				mu.Lock()
+				for _, mcp := range mcpsResp.Mcps {
+					if mcp.Status == "published" {
+						allMcps = append(allMcps, mcp)
+					}
+				}
+				mu.Unlock()
+			}
+		}(t.ID)
+	}
+	wg.Wait()
+
+	return allMcps, nil
+}
+
+func safeUpdateMcpConfig(configPath string, modifyFunc func(current map[string]any) error) error {
+	lockPath := filepath.Join(filepath.Dir(configPath), "."+filepath.Base(configPath)+".lock")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return err
+	}
+
+	var lockFile *os.File
+	var err error
+	success := false
+	for i := 0; i < 30; i++ {
+		lockFile, err = os.OpenFile(lockPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		if err == nil {
+			success = true
+			break
+		}
+		if !os.IsExist(err) {
+			return fmt.Errorf("failed to create lock file: %w", err)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
+	if !success {
+		return fmt.Errorf("timeout waiting for lock on %s", configPath)
+	}
+	defer func() {
+		_ = lockFile.Close()
+		_ = os.Remove(lockPath)
+	}()
+
+	current := map[string]any{"mcpServers": map[string]any{}}
+	if rawData, err := os.ReadFile(configPath); err == nil {
+		bakPath := configPath + ".vola.bak"
+		if _, statErr := os.Stat(bakPath); os.IsNotExist(statErr) {
+			_ = os.WriteFile(bakPath, rawData, 0o644)
+		}
+		_ = json.Unmarshal(rawData, &current)
+	}
+
+	if err := modifyFunc(current); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(current, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+
+	tmpPath := configPath + ".tmp"
+	if err := os.WriteFile(tmpPath, data, 0o644); err != nil {
+		return err
+	}
+
+	if err := os.Rename(tmpPath, configPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return err
+	}
+
+	return nil
+}
+
+func connectMcpPlatform(ctx context.Context, daemonURL string, connection runtimecfg.LocalConnection, configPath string) error {
+	return safeUpdateMcpConfig(configPath, func(current map[string]any) error {
+		servers, _ := current["mcpServers"].(map[string]any)
+		if servers == nil {
+			servers = map[string]any{}
+		}
+		servers[LocalServerName] = map[string]any{
+			"url": strings.TrimRight(daemonURL, "/") + "/mcp",
+			"headers": map[string]string{
+				"Authorization": "Bearer " + connection.Token,
+			},
+		}
+
+		if mcps, err := fetchTeamMcps(ctx, daemonURL, connection.Token); err == nil {
+			projectTags := loadLocalVolarc()
+			var mergedTags []string
+			mergedTags = append(mergedTags, connection.Tags...)
+			mergedTags = append(mergedTags, projectTags...)
+
+			for _, mcp := range mcps {
+				if !matchTags(mcp.Tags, mergedTags) {
+					continue
+				}
+
+				serverKey := "team-mcp-" + mcp.Slug
+				if mcp.Transport == "stdio" {
+					servers[serverKey] = map[string]any{
+						"command": mcp.Command,
+						"args":    mcp.Args,
+						"env":     mcp.Env,
+					}
+				} else if mcp.Transport == "http" {
+					servers[serverKey] = map[string]any{
+						"url":     mcp.URL,
+						"headers": mcp.Headers,
+					}
+				}
+			}
+		}
+
+		current["mcpServers"] = servers
+		return nil
+	})
+}
+
+func disconnectMcpPlatform(configPath string) error {
+	return safeUpdateMcpConfig(configPath, func(current map[string]any) error {
+		servers, _ := current["mcpServers"].(map[string]any)
+		if servers == nil {
+			return nil
+		}
+		delete(servers, LocalServerName)
+		for key := range servers {
+			if strings.HasPrefix(key, "team-mcp-") {
+				delete(servers, key)
+			}
+		}
+		current["mcpServers"] = servers
+		return nil
+	})
+}
+
+

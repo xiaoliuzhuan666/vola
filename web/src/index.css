@@ -16536,3 +16536,19 @@ input:checked + .toggle-slider:before {
   gap: 4px;
   margin-top: 8px;
 }
+
+@keyframes pulse {
+  0% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(190, 46, 221, 0.7);
+  }
+  70% {
+    transform: scale(1);
+    box-shadow: 0 0 0 6px rgba(190, 46, 221, 0);
+  }
+  100% {
+    transform: scale(0.95);
+    box-shadow: 0 0 0 0 rgba(190, 46, 221, 0);
+  }
+}
+

@@ -1932,6 +1932,16 @@ func TestSQLiteSharedServerTeamSkillUploadAndCopyToPersonal(t *testing.T) {
 		t.Fatalf("team skill upload failed: status=%d body=%+v", status, upload)
 	}
 
+	teamSkills := fetchTeamSkillsForTest(t, ts.URL, teamPayload.Team.ID.String(), adminToken)
+	if !hasSkillSummaryPath(teamSkills, "/skills/shared-skill") {
+		t.Fatalf("expected uploaded team skill in team skill list: %+v", teamSkills)
+	}
+	for _, skill := range teamSkills {
+		if skill.Source == "system" || skill.ReadOnly {
+			t.Fatalf("team skill list should not include system skills: %+v", skill)
+		}
+	}
+
 	teamEntry, err := store.Read(ctx, teamPayload.Team.HubUserID, "/skills/shared-skill/SKILL.md", models.TrustLevelWork)
 	if err != nil {
 		t.Fatalf("Read team skill: %v", err)
@@ -1999,6 +2009,42 @@ func TestSQLiteSharedServerTeamSkillUploadAndCopyToPersonal(t *testing.T) {
 	}
 	if len(beforeUpdate.Subscriptions) != 1 || !beforeUpdate.Subscriptions[0].UpdateAvailable {
 		t.Fatalf("expected update_available before overwrite: %+v", beforeUpdate.Subscriptions)
+	}
+	status, teamReportEnv := doJSON(t, http.MethodGet, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-subscription-report", adminToken, nil)
+	if status != http.StatusOK || !teamReportEnv.OK {
+		t.Fatalf("team subscription report before update failed: status=%d body=%+v", status, teamReportEnv)
+	}
+	var teamReport teamSkillSubscriptionReportResponse
+	if err := json.Unmarshal(teamReportEnv.Data, &teamReport); err != nil {
+		t.Fatalf("decode team subscription report: %v", err)
+	}
+	if !reportHasMemberStatus(teamReport, "/skills/shared-skill", "local", "update_available") {
+		t.Fatalf("expected owner update_available in team subscription report: %+v", teamReport.Skills)
+	}
+	if len(teamReport.Skills) != 1 || teamReport.Skills[0].SkillPath != "/skills/shared-skill" {
+		t.Fatalf("team subscription report should include only team-owned skills: %+v", teamReport.Skills)
+	}
+
+	legacyDoc := subscriptionDoc
+	legacyDoc.Subscriptions[0].TeamID = uuid.NewString()
+	legacyDoc.Subscriptions[0].TeamSlug = teamPayload.Team.Slug
+	legacyDoc.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if _, err := store.WriteEntry(ctx, user.ID, teamSkillSubscriptionsPath, mustJSONForTest(t, legacyDoc), "application/json", models.FileTreeWriteOptions{
+		Kind:          "team_skill_subscriptions",
+		MinTrustLevel: models.TrustLevelWork,
+	}); err != nil {
+		t.Fatalf("write legacy subscription doc: %v", err)
+	}
+	status, legacyCheckEnv := doJSON(t, http.MethodPost, ts.URL+"/api/teams/"+teamPayload.Team.ID.String()+"/skill-subscriptions/check", adminToken, nil)
+	if status != http.StatusOK || !legacyCheckEnv.OK {
+		t.Fatalf("legacy subscription check failed: status=%d body=%+v", status, legacyCheckEnv)
+	}
+	var legacyCheck teamSkillUpdateNotificationsResponse
+	if err := json.Unmarshal(legacyCheckEnv.Data, &legacyCheck); err != nil {
+		t.Fatalf("decode legacy subscription check: %v", err)
+	}
+	if len(legacyCheck.Notifications) == 0 || legacyCheck.Notifications[0].Status != "update_available" || legacyCheck.Notifications[0].UserSlug != "local" {
+		t.Fatalf("expected update notification for owner legacy subscription: %+v", legacyCheck.Notifications)
 	}
 
 	status, overwritten := doJSON(t, http.MethodPost, ts.URL+"/api/skills/copy-to-personal", skillsToken.Token, []byte(`{
@@ -2399,6 +2445,15 @@ func hasSkillSummaryPath(skills []models.SkillSummary, skillPath string) bool {
 		}
 	}
 	return false
+}
+
+func mustJSONForTest(t *testing.T, value any) string {
+	t.Helper()
+	data, err := json.MarshalIndent(value, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal json: %v", err)
+	}
+	return string(append(data, '\n'))
 }
 
 func reportHasMemberStatus(report teamSkillSubscriptionReportResponse, skillPath, userSlug, status string) bool {

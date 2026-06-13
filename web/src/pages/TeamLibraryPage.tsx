@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type FileNode, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse } from '../api'
+import { api, type FileNode, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse, type TeamMcpAsset } from '../api'
 import CustomSelect from '../components/CustomSelect'
 import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsTile from '../components/MaterialsTile'
@@ -202,6 +202,19 @@ export default function TeamLibraryPage() {
   const [newAgentSlug, setNewAgentSlug] = useState('')
   const [newAgentDescription, setNewAgentDescription] = useState('')
   const [newAgentInstructions, setNewAgentInstructions] = useState('')
+  const [teamMcps, setTeamMcps] = useState<TeamMcpAsset[]>([])
+  const [newMcpName, setNewMcpName] = useState('')
+  const [newMcpSlug, setNewMcpSlug] = useState('')
+  const [newMcpDescription, setNewMcpDescription] = useState('')
+  const [newMcpTransport, setNewMcpTransport] = useState<'stdio' | 'http'>('stdio')
+  const [newMcpCommand, setNewMcpCommand] = useState('')
+  const [newMcpArgs, setNewMcpArgs] = useState('')
+  const [newMcpEnv, setNewMcpEnv] = useState('')
+  const [newMcpURL, setNewMcpURL] = useState('')
+  const [newMcpHeaders, setNewMcpHeaders] = useState('')
+  const [newMcpTags, setNewMcpTags] = useState('')
+  const [mcpWorking, setMcpWorking] = useState(false)
+  const [mcpHealth, setMcpHealth] = useState<Record<string, { status: 'online' | 'offline'; latency_ms: number }>>({})
 
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === selectedTeamID) || teams[0] || null,
@@ -234,12 +247,13 @@ export default function TeamLibraryPage() {
       setSkillReviewHistory([])
       return
     }
-    const [teamResult, skillsResult, snapshotResult, membersResult, agentsResult, reviewHistoryResult, subscriptionReportResult, notificationsResult] = await Promise.allSettled([
+    const [teamResult, skillsResult, snapshotResult, membersResult, agentsResult, mcpsResult, reviewHistoryResult, subscriptionReportResult, notificationsResult] = await Promise.allSettled([
       api.getTeamTree(team.id, TEAM_ROOT),
       api.getTeamTree(team.id, '/skills'),
       api.getTeamTreeSnapshot(team.id, '/'),
       api.getTeamMembers(team.id),
       api.getTeamAgents(team.id),
+      api.fetchTeamMcps(team.id),
       api.getTeamSkillReviewHistory(team.id),
       team.can_manage_members ? api.getTeamSkillSubscriptionReport(team.id) : Promise.resolve(null),
       team.can_manage_members ? api.getTeamSkillUpdateNotifications(team.id) : Promise.resolve(null),
@@ -256,6 +270,7 @@ export default function TeamLibraryPage() {
     })
     setMembers(membersResult.status === 'fulfilled' ? membersResult.value : [])
     setTeamAgents(agentsResult.status === 'fulfilled' ? agentsResult.value.agents || [] : [])
+    setTeamMcps(mcpsResult.status === 'fulfilled' ? mcpsResult.value.mcps || [] : [])
     setSkillReviewHistory(reviewHistoryResult.status === 'fulfilled' ? reviewHistoryResult.value.events || [] : [])
     setSkillSubscriptionReport(subscriptionReportResult.status === 'fulfilled' ? subscriptionReportResult.value : null)
     const notificationsResponse = notificationsResult.status === 'fulfilled' ? notificationsResult.value : null
@@ -285,6 +300,21 @@ export default function TeamLibraryPage() {
       setLoading(false)
     }
   }, [loadTeamData, loadTeams, tx])
+
+  useEffect(() => {
+    const fetchHealth = () => {
+      api.getLocalMcpHealth()
+        .then((res) => {
+          if (res) {
+            setMcpHealth(res)
+          }
+        })
+        .catch(() => {})
+    }
+    fetchHealth()
+    const timer = setInterval(fetchHealth, 15000)
+    return () => clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     void load()
@@ -611,6 +641,141 @@ export default function TeamLibraryPage() {
       setError(err?.message || tx('安装 Agent 配方失败', 'Failed to install agent recipe'))
     } finally {
       setInstallingAgentSlug('')
+    }
+  }
+
+  const handleCreateMcp = async () => {
+    if (!selectedTeam) return
+    const slug = normalizeSlugInput(newMcpSlug || newMcpName)
+    const name = newMcpName.trim() || slug
+    if (!slug || !name) {
+      setError(tx('请填写 MCP 名称和 slug。', 'Enter an MCP name and slug.'))
+      return
+    }
+    setMcpWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      const args = newMcpArgs.split(',').map(s => s.trim()).filter(Boolean)
+      const env: Record<string, string> = {}
+      newMcpEnv.split('\n').forEach(line => {
+        const parts = line.split('=')
+        if (parts.length >= 2) {
+          env[parts[0].trim()] = parts.slice(1).join('=').trim()
+        }
+      })
+      const headers: Record<string, string> = {}
+      newMcpHeaders.split('\n').forEach(line => {
+        const parts = line.split(':')
+        if (parts.length >= 2) {
+          headers[parts[0].trim()] = parts.slice(1).join(':').trim()
+        }
+      })
+
+      const tags = newMcpTags.split(',').map(s => s.trim()).filter(Boolean)
+
+      const response = await api.saveTeamMcp(selectedTeam.id, {
+        slug,
+        name,
+        description: newMcpDescription,
+        transport: newMcpTransport,
+        command: newMcpCommand,
+        args: args.length > 0 ? args : undefined,
+        env: Object.keys(env).length > 0 ? env : undefined,
+        url: newMcpURL || undefined,
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
+        status: selectedTeam.can_manage_members ? 'published' : 'draft',
+        visibility: selectedTeam.can_manage_members ? 'team' : 'private',
+        tags: tags.length > 0 ? tags : undefined,
+      })
+      setTeamMcps(response.data.mcps || [])
+      if (!selectedTeam.can_manage_members) {
+        await api.submitTeamMcpReview(selectedTeam.id, slug, 'Created by a team member.')
+      }
+      setNewMcpName('')
+      setNewMcpSlug('')
+      setNewMcpDescription('')
+      setNewMcpCommand('')
+      setNewMcpTags('')
+      setNewMcpArgs('')
+      setNewMcpEnv('')
+      setNewMcpURL('')
+      setNewMcpHeaders('')
+      setMessage(selectedTeam.can_manage_members
+        ? tx('团队 MCP 已发布。', 'Team MCP configuration published.')
+        : tx('团队 MCP 已保存为草稿，等待管理员发布。', 'Team MCP saved as draft for an admin to publish.'))
+      await loadTeamData(selectedTeam)
+    } catch (err: any) {
+      setError(err?.message || tx('保存团队 MCP 失败', 'Failed to save team MCP'))
+    } finally {
+      setMcpWorking(false)
+    }
+  }
+
+  const handlePublishMcp = async (mcp: TeamMcpAsset, status: 'draft' | 'published' | 'archived') => {
+    if (!selectedTeam) return
+    setMcpWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      const response = await api.saveTeamMcp(selectedTeam.id, {
+        slug: mcp.slug,
+        name: mcp.name,
+        description: mcp.description,
+        transport: mcp.transport,
+        command: mcp.command,
+        args: mcp.args,
+        env: mcp.env,
+        url: mcp.url,
+        headers: mcp.headers,
+        status,
+        visibility: status === 'published' ? 'team' : 'private',
+      })
+      setTeamMcps(response.data.mcps || [])
+      setMessage(status === 'published'
+        ? tx('团队 MCP 已发布。', 'Team MCP published.')
+        : status === 'archived'
+          ? tx('团队 MCP 已归档。', 'Team MCP archived.')
+          : tx('团队 MCP 已转为草稿。', 'Team MCP moved to draft.'))
+      await loadTeamData(selectedTeam)
+    } catch (err: any) {
+      setError(err?.message || tx('更新团队 MCP 失败', 'Failed to update team MCP'))
+    } finally {
+      setMcpWorking(false)
+    }
+  }
+
+  const handleRequestMcpReview = async (mcp: TeamMcpAsset) => {
+    if (!selectedTeam) return
+    setMcpWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      await api.submitTeamMcpReview(selectedTeam.id, mcp.slug, 'Request review.')
+      setMessage(tx('团队 MCP 已提交审查。', 'Team MCP review requested.'))
+      await loadTeamData(selectedTeam)
+    } catch (err: any) {
+      setError(err?.message || tx('提交团队 MCP 审查失败', 'Failed to request team MCP review'))
+    } finally {
+      setMcpWorking(false)
+    }
+  }
+
+  const handleResolveMcpReview = async (mcp: TeamMcpAsset, decision: 'approved' | 'rejected') => {
+    if (!selectedTeam) return
+    setMcpWorking(true)
+    setMessage('')
+    setError('')
+    try {
+      await api.resolveTeamMcpReview(selectedTeam.id, mcp.slug, decision === 'approved' ? 'approve' : 'reject')
+      setMessage(decision === 'approved'
+        ? tx('团队 MCP 审查已通过并发布。', 'Team MCP review approved.')
+        : tx('已拒绝团队 MCP 审查。', 'Team MCP review rejected.'))
+      await loadTeamData(selectedTeam)
+    } catch (err: any) {
+      setError(err?.message || tx('处理团队 MCP 审查失败', 'Failed to resolve team MCP review'))
+    } finally {
+      setMcpWorking(false)
     }
   }
 
@@ -950,6 +1115,146 @@ export default function TeamLibraryPage() {
                   <textarea className="input" rows={4} placeholder={tx('Agent 指令、默认工作方式和审批边界', 'Agent instructions, default workflow, and approval boundaries')} value={newAgentInstructions} onChange={(event) => setNewAgentInstructions(event.target.value)} />
                   <button className="btn btn-sm" type="button" disabled={agentWorking || !newAgentName.trim()} onClick={handleCreateAgent}>
                     {agentWorking ? tx('保存中...', 'Saving...') : tx('保存配方', 'Save recipe')}
+                  </button>
+                </div>
+              </MaterialsTile>
+            )}
+          </div>
+        </section>
+      )}
+
+      {selectedTeam && (
+        <section className="materials-section">
+          <div className="materials-section-head">
+            <div>
+              <h3 className="materials-section-title">{tx('团队共享 MCP 配置', 'Team MCP Configurations')}</h3>
+              <p className="materials-section-copy">
+                {tx('将数据库、服务 API 或专用工具包装为团队共享 MCP，成员在本地 connect 时会自动同步拉起。', 'Share databases, service APIs, or custom tools as team MCPs. Wired automatically on local client connection.')}
+              </p>
+            </div>
+          </div>
+
+          <div className="materials-grid materials-grid-wide">
+            {teamMcps.map((mcp) => (
+              <MaterialsTile
+                key={mcp.slug}
+                iconClassName="icon-gear"
+                title={mcp.name}
+                subtitle={(
+                  <span>
+                    {`/${mcp.slug} (${mcp.transport})`}
+                    {(() => {
+                      const health = mcpHealth[`team-mcp-${mcp.slug}`];
+                      if (mcp.transport === 'http' && health) {
+                        return (
+                          <span
+                            className={`badge ${health.status === 'online' ? 'badge-success' : 'badge-danger'}`}
+                            style={{
+                              marginLeft: 8,
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              boxShadow: health.status === 'online' ? '0 0 6px rgba(40, 167, 69, 0.4)' : '0 0 6px rgba(220, 53, 69, 0.4)',
+                              animation: 'pulse 2s infinite'
+                            }}
+                          >
+                            <span
+                              style={{
+                                width: 6,
+                                height: 6,
+                                borderRadius: '50%',
+                                backgroundColor: 'currentColor',
+                                marginRight: 4,
+                                display: 'inline-block'
+                              }}
+                            />
+                            {health.status === 'online' ? `Online (${health.latency_ms}ms)` : 'Offline'}
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </span>
+                )}
+                description={mcp.description || (mcp.transport === 'stdio' ? `${mcp.command} ${mcp.args?.join(' ')}` : mcp.url)}
+                footerStart={agentStatusLabel(mcp.status, mcp.visibility, locale)}
+                footerEnd={mcp.review_status === 'requested'
+                  ? tx('待审查', 'Review requested')
+                  : mcp.review_status === 'rejected'
+                    ? tx('需修改', 'Changes requested')
+                    : tx('可在本地自动拉起', 'Auto-wired locally')}
+                actions={(
+                  <>
+                    {selectedTeam.can_write && !selectedTeam.can_manage_members ? (
+                      <button className="btn btn-sm" type="button" disabled={mcpWorking || mcp.review_status === 'requested'} onClick={() => { void handleRequestMcpReview(mcp) }}>
+                        {mcp.review_status === 'requested' ? tx('待审查', 'Review requested') : tx('提交审查', 'Request review')}
+                      </button>
+                    ) : null}
+                    {selectedTeam.can_manage_members && mcp.review_status === 'requested' ? (
+                      <>
+                        <button className="btn btn-sm btn-primary" type="button" disabled={mcpWorking} onClick={() => { void handleResolveMcpReview(mcp, 'approved') }}>
+                          {tx('通过审查', 'Approve review')}
+                        </button>
+                        <button className="btn btn-sm" type="button" disabled={mcpWorking} onClick={() => { void handleResolveMcpReview(mcp, 'rejected') }}>
+                          {tx('要求修改', 'Request changes')}
+                        </button>
+                      </>
+                    ) : null}
+                    {selectedTeam.can_manage_members ? (
+                      mcp.status === 'published' && mcp.visibility === 'team' ? (
+                        <button className="btn btn-sm" type="button" disabled={mcpWorking} onClick={() => { void handlePublishMcp(mcp, 'draft') }}>
+                          {tx('转草稿', 'Draft')}
+                        </button>
+                      ) : (
+                        <button className="btn btn-sm btn-primary" type="button" disabled={mcpWorking} onClick={() => { void handlePublishMcp(mcp, 'published') }}>
+                          {tx('发布', 'Publish')}
+                        </button>
+                      )
+                    ) : null}
+                    {selectedTeam.can_manage_members && mcp.status !== 'archived' ? (
+                      <button className="btn btn-sm materials-toolbar-control is-danger" type="button" disabled={mcpWorking} onClick={() => { void handlePublishMcp(mcp, 'archived') }}>
+                        {tx('归档', 'Archive')}
+                      </button>
+                    ) : null}
+                  </>
+                )}
+              />
+            ))}
+            {selectedTeam.can_write && (
+              <MaterialsTile
+                iconClassName="icon-file"
+                title={tx('新建共享 MCP', 'New Shared MCP')}
+                subtitle={tx('默认保存为团队资产', 'Saved as a team asset')}
+                description={tx('共享数据库或本地执行命令，实现团队 AI 的统一扩展。', 'Share databases or local commands for unified AI tooling.')}
+                footerStart={selectedTeam.can_manage_members ? tx('创建后发布', 'Publish on create') : tx('创建为草稿', 'Create as draft')}
+              >
+                <div className="form-grid">
+                  <input className="input" placeholder={tx('MCP 名称', 'MCP name')} value={newMcpName} onChange={(event) => {
+                    setNewMcpName(event.target.value)
+                    if (!newMcpSlug) setNewMcpSlug(normalizeSlugInput(event.target.value))
+                  }} />
+                  <input className="input" placeholder="slug" value={newMcpSlug} onChange={(event) => setNewMcpSlug(normalizeSlugInput(event.target.value))} />
+                  <input className="input" placeholder={tx('用途说明', 'Description')} value={newMcpDescription} onChange={(event) => setNewMcpDescription(event.target.value)} />
+                  <input className="input" placeholder={tx('标签 (例如 frontend,devops - 逗号分隔)', 'Tags (e.g. frontend,devops - comma separated)')} value={newMcpTags} onChange={(event) => setNewMcpTags(event.target.value)} />
+                  <select className="input" value={newMcpTransport} onChange={(event) => setNewMcpTransport(event.target.value as 'stdio' | 'http')}>
+                    <option value="stdio">stdio (本地命令)</option>
+                    <option value="http">http (远端 URL)</option>
+                  </select>
+
+                  {newMcpTransport === 'stdio' ? (
+                    <>
+                      <input className="input" placeholder="Command (e.g. npx, python)" value={newMcpCommand} onChange={(event) => setNewMcpCommand(event.target.value)} />
+                      <input className="input" placeholder="Args (e.g. arg1,arg2 - comma separated)" value={newMcpArgs} onChange={(event) => setNewMcpArgs(event.target.value)} />
+                      <textarea className="input" rows={2} placeholder="Env variables (e.g. KEY=VAL - one per line)" value={newMcpEnv} onChange={(event) => setNewMcpEnv(event.target.value)} />
+                    </>
+                  ) : (
+                    <>
+                      <input className="input" placeholder="URL (e.g. https://...)" value={newMcpURL} onChange={(event) => setNewMcpURL(event.target.value)} />
+                      <textarea className="input" rows={2} placeholder="Custom headers (e.g. Header: Val - one per line)" value={newMcpHeaders} onChange={(event) => setNewMcpHeaders(event.target.value)} />
+                    </>
+                  )}
+
+                  <button className="btn btn-primary" type="button" disabled={mcpWorking} onClick={() => { void handleCreateMcp() }}>
+                    {mcpWorking ? tx('保存中...', 'Saving...') : tx('创建并保存', 'Create & Save')}
                   </button>
                 </div>
               </MaterialsTile>

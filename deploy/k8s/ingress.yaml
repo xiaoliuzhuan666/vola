@@ -10,6 +10,16 @@ metadata:
 spec:
   ingressClassName: nginx
   rules:
+    - host: www.vola.ai
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: vola-server
+                port:
+                  number: 8080
     - host: vola.ai
       http:
         paths:

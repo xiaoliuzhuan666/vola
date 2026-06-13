@@ -50,6 +50,9 @@ const brandPaths = {
   cursor: 'M11.503.131 1.891 5.678a.84.84 0 0 0-.42.726v11.188c0 .3.162.575.42.724l9.609 5.55a1 1 0 0 0 .998 0l9.61-5.55a.84.84 0 0 0 .42-.724V6.404a.84.84 0 0 0-.42-.726L12.497.131a1.01 1.01 0 0 0-.996 0M2.657 6.338h18.55c.263 0 .43.287.297.515L12.23 22.918c-.062.107-.229.064-.229-.06V12.335a.59.59 0 0 0-.295-.51l-9.11-5.257c-.109-.063-.064-.23.061-.23',
   windsurf: 'M23.55 5.067c-1.2038-.002-2.1806.973-2.1806 2.1765v4.8676c0 .972-.8035 1.7594-1.7597 1.7594-.568 0-1.1352-.286-1.4718-.7659l-4.9713-7.1003c-.4125-.5896-1.0837-.941-1.8103-.941-1.1334 0-2.1533.9635-2.1533 2.153v4.8957c0 .972-.7969 1.7594-1.7596 1.7594-.57 0-1.1363-.286-1.4728-.7658L.4076 5.1598C.2822 4.9798 0 5.0688 0 5.2882v4.2452c0 .2147.0656.4228.1884.599l5.4748 7.8183c.3234.462.8006.8052 1.3509.9298 1.3771.313 2.6446-.747 2.6446-2.0977v-4.893c0-.972.7875-1.7593 1.7596-1.7593h.003a1.798 1.798 0 0 1 1.4718.7658l4.9723 7.0994c.4135.5905 1.05.941 1.8093.941 1.1587 0 2.1515-.9645 2.1515-2.153v-4.8948c0-.972.7875-1.7594 1.7596-1.7594h.194a.22.22 0 0 0 .2204-.2202v-4.622a.22.22 0 0 0-.2203-.2203Z',
   gemini: 'M11.04 19.32Q12 21.51 12 24q0-2.49.93-4.68.96-2.19 2.58-3.81t3.81-2.55Q21.51 12 24 12q-2.49 0-4.68-.93a12.3 12.3 0 0 1-3.81-2.58 12.3 12.3 0 0 1-2.58-3.81Q12 2.49 12 0q0 2.49-.96 4.68-.93 2.19-2.55 3.81a12.3 12.3 0 0 1-3.81 2.58Q2.49 12 0 12q2.49 0 4.68.96 2.19.93 3.81 2.55t2.55 3.81',
+  trae: 'M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6H8V9h8v2h-3v6z',
+  codebuddy: 'M9.4 16.6L4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0l4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z',
+  workbuddy: 'M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z',
 }
 
 function PlatformIcon({ id }: { id: string }) {
@@ -133,20 +136,45 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
   const [treeEntries, setTreeEntries] = useState<FileNode[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [teamNotifications, setTeamNotifications] = useState<any[]>([])
+  const [mcpHealth, setMcpHealth] = useState<Record<string, { status: 'online' | 'offline'; latency_ms: number }>>({})
 
   const loadOverview = async () => {
     setError('')
-    const [statsResult, connectionsResult, grantsResult, treeResult] = await Promise.allSettled([
+    const [statsResult, connectionsResult, grantsResult, treeResult, notificationsResult, healthResult] = await Promise.allSettled([
       api.getStats(),
       api.getConnections(),
       api.getOAuthGrants(),
       api.getTreeSnapshot('/'),
+      api.getTree('/settings/personal-update-notifications.json'),
+      api.getLocalMcpHealth(),
     ])
     if (statsResult.status === 'fulfilled') setStats(statsResult.value || emptyStats)
     else setError(statsResult.reason?.message || tx('加载概览失败', 'Failed to load overview'))
     if (connectionsResult.status === 'fulfilled') setConnections(connectionsResult.value || [])
     if (grantsResult.status === 'fulfilled') setGrants(grantsResult.value || [])
     if (treeResult.status === 'fulfilled') setTreeEntries(Array.isArray(treeResult.value.entries) ? treeResult.value.entries : [])
+    if (healthResult.status === 'fulfilled') setMcpHealth(healthResult.value || {})
+    
+    if (notificationsResult.status === 'fulfilled') {
+      const node = notificationsResult.value
+      if (node && node.content) {
+        try {
+          const data = JSON.parse(node.content)
+          if (data && Array.isArray(data.notifications)) {
+            setTeamNotifications(data.notifications)
+          } else {
+            setTeamNotifications([])
+          }
+        } catch {
+          setTeamNotifications([])
+        }
+      } else {
+        setTeamNotifications([])
+      }
+    } else {
+      setTeamNotifications([])
+    }
   }
 
   useEffect(() => {
@@ -157,8 +185,18 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
       if (!cancelled) setLoading(false)
     }
     void load()
+
+    const timer = setInterval(() => {
+      api.getLocalMcpHealth()
+        .then((res) => {
+          if (!cancelled && res) setMcpHealth(res)
+        })
+        .catch(() => {})
+    }, 15000)
+
     return () => {
       cancelled = true
+      clearInterval(timer)
     }
   }, [])
 
@@ -194,6 +232,30 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
       to: '/setup/mcp',
       state: { platform: 'windsurf' },
       aliases: ['windsurf'],
+    },
+    {
+      id: 'trae',
+      name: 'Trae',
+      description: tx('连接 Trae 编辑器', 'Connect Trae editor'),
+      to: '/setup/mcp',
+      state: { platform: 'trae' },
+      aliases: ['trae', 'trae-agent'],
+    },
+    {
+      id: 'codebuddy',
+      name: 'Codebuddy',
+      description: tx('连接 Codebuddy 客户端', 'Connect Codebuddy client'),
+      to: '/setup/mcp',
+      state: { platform: 'codebuddy' },
+      aliases: ['codebuddy', 'codebuddy-agent'],
+    },
+    {
+      id: 'workbuddy',
+      name: 'Workbuddy',
+      description: tx('连接 Workbuddy 客户端', 'Connect Workbuddy client'),
+      to: '/setup/mcp',
+      state: { platform: 'workbuddy' },
+      aliases: ['workbuddy', 'workbuddy-agent'],
     },
     {
       id: 'claude-code',
@@ -257,11 +319,129 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
     { label: tx('待处理', 'Pending'), value: pendingCount },
   ]
 
+  if (teamNotifications.length > 0) {
+    summaryItems.push({
+      label: tx('团队更新', 'Team Updates'),
+      value: (
+        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', color: '#be2edd', fontWeight: 'bold' }}>
+          {teamNotifications.length}
+          <span style={{
+            display: 'inline-block',
+            width: '8px',
+            height: '8px',
+            borderRadius: '50%',
+            backgroundColor: '#be2edd',
+            boxShadow: '0 0 8px #be2edd',
+            animation: 'pulse 1.5s infinite'
+          }} />
+        </span>
+      ),
+      compact: false
+    } as any)
+  }
+
   if (loading) return <div className="page-loading">{tx('加载中...', 'Loading...')}</div>
+
+  const offlineMcps = Object.entries(mcpHealth).filter(([_, info]) => info.status === 'offline')
+  const offlineCount = offlineMcps.length
 
   return (
     <div className="page home-page dashboard-redesign-page">
       {error && <div className="alert alert-warn">{error}</div>}
+
+      {teamNotifications.length > 0 && (
+        <div className="alert alert-success team-update-notification-banner" style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+          background: 'linear-gradient(135deg, rgba(190, 46, 221, 0.08) 0%, rgba(190, 46, 221, 0.03) 100%)',
+          borderColor: 'rgba(190, 46, 221, 0.3)',
+          color: '#8c11ad',
+          padding: '16px 20px',
+          boxShadow: '0 8px 32px 0 rgba(190, 46, 221, 0.06)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{
+              display: 'inline-block',
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              backgroundColor: '#be2edd',
+              boxShadow: '0 0 8px #be2edd',
+              animation: 'pulse 1.5s infinite'
+            }} />
+            <span style={{ fontWeight: 500, fontSize: '13px' }}>
+              {tx(
+                `团队共享技能有 ${teamNotifications.length} 个新版本发布，请前往团队资料库一键更新。`,
+                `There are ${teamNotifications.length} updates available for team shared skills. Please update in the Team Library.`
+              )}
+            </span>
+          </div>
+          <Link to="/team" className="btn btn-primary btn-sm" style={{
+            textDecoration: 'none',
+            background: 'linear-gradient(135deg, #be2edd 0%, #e056fd 100%)',
+            border: 'none',
+            borderRadius: '10px',
+            color: '#fff',
+            padding: '6px 16px',
+            fontWeight: 600,
+            fontSize: '12px',
+            boxShadow: '0 4px 12px rgba(190, 46, 221, 0.2)',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer'
+          }}>
+            {tx('立即去更新', 'Update Now')}
+          </Link>
+        </div>
+      )}
+
+      {offlineCount > 0 && (
+        <div className="alert alert-warn team-update-notification-banner" style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          gap: '16px',
+          background: 'linear-gradient(135deg, rgba(235, 77, 75, 0.08) 0%, rgba(235, 77, 75, 0.03) 100%)',
+          borderColor: 'rgba(235, 77, 75, 0.3)',
+          color: '#eb4d4b',
+          padding: '16px 20px',
+          boxShadow: '0 8px 32px 0 rgba(235, 77, 75, 0.06)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <span style={{
+              display: 'inline-block',
+              width: '10px',
+              height: '10px',
+              borderRadius: '50%',
+              backgroundColor: '#eb4d4b',
+              boxShadow: '0 0 8px #eb4d4b',
+              animation: 'pulse 1.5s infinite'
+            }} />
+            <span style={{ fontWeight: 500, fontSize: '13px' }}>
+              {tx(
+                `检测到有 ${offlineCount} 个共享 HTTP MCP 处于离线状态，这可能会影响您的 AI 客户端正常使用。`,
+                `Detected ${offlineCount} shared HTTP MCP server(s) offline. This might affect your AI assistant.`
+              )}
+            </span>
+          </div>
+          <Link to="/team" className="btn btn-sm" style={{
+            textDecoration: 'none',
+            background: 'linear-gradient(135deg, #eb4d4b 0%, #ff7979 100%)',
+            border: 'none',
+            borderRadius: '10px',
+            color: '#fff',
+            padding: '6px 16px',
+            fontWeight: 600,
+            fontSize: '12px',
+            boxShadow: '0 4px 12px rgba(235, 77, 75, 0.2)',
+            transition: 'all 0.2s ease',
+            cursor: 'pointer'
+          }}>
+            {tx('查看详情', 'View Details')}
+          </Link>
+        </div>
+      )}
 
       <section className="dashboard-platform-panel" aria-label={tx('连接方式', 'Connection methods')}>
         <div className="dashboard-section-head">

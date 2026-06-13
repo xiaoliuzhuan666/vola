@@ -846,6 +846,76 @@ export interface SkillCopyToPersonalResponse {
   overwrite: boolean;
 }
 
+export interface SkillDiffFileItem {
+  rel_path: string;
+  status: "added" | "modified" | "deleted" | "unchanged";
+  source_content?: string;
+  target_content?: string;
+}
+
+export interface SkillDiffResponse {
+  version: string;
+  files: SkillDiffFileItem[];
+}
+
+export interface SkillRollbackResponse {
+  version: string;
+  success: boolean;
+  restored: number;
+}
+
+export interface TeamMcpAsset {
+  version: string;
+  slug: string;
+  name: string;
+  description?: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  status: string;
+  visibility: string;
+  review_status?: string;
+  review_note?: string;
+  review_requested_at?: string;
+  review_requested_by?: string;
+  review_requested_by_role?: string;
+  reviewed_at?: string;
+  reviewed_by?: string;
+  reviewed_by_role?: string;
+  source_team_id?: string;
+  source_team_slug?: string;
+  created_at?: string;
+  updated_at?: string;
+  published_at?: string;
+  archived_at?: string;
+  path?: string;
+  tags?: string[];
+}
+
+export interface TeamMcpsResponse {
+  version: string;
+  team?: Team;
+  mcps: TeamMcpAsset[];
+}
+
+export interface TeamMcpSaveRequest {
+  slug: string;
+  name: string;
+  description?: string;
+  transport: "stdio" | "http";
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+  status?: string;
+  visibility?: string;
+  tags?: string[];
+}
+
 export interface TeamSkillPublication {
   skill_path: string;
   status: "draft" | "published" | "archived" | string;
@@ -1580,6 +1650,9 @@ export const api = {
       return created;
     }),
 
+  getLocalMcpHealth: (): Promise<Record<string, { status: "online" | "offline"; latency_ms: number; last_check: string }>> =>
+    request<Record<string, { status: "online" | "offline"; latency_ms: number; last_check: string }>>("/local/mcp/health"),
+
   getSessions: (): Promise<Session[]> => request<Session[]>("/auth/sessions"),
 
   revokeSession: (id: string): Promise<void> =>
@@ -1927,6 +2000,33 @@ export const api = {
         target_path: targetPath || undefined,
         overwrite,
       }),
+    }),
+  diffTeamSkillSubscription: (teamId: string, sourcePath: string, targetPath: string): Promise<SkillDiffResponse> =>
+    request<SkillDiffResponse>("/skills/team-subscriptions/diff", {
+      method: "POST",
+      body: JSON.stringify({ team_id: teamId, source_path: sourcePath, target_path: targetPath }),
+    }),
+  rollbackTeamSkillSubscription: (targetPath: string, backupFilePath: string): Promise<RequestEnvelope<SkillRollbackResponse>> =>
+    requestEnvelope<SkillRollbackResponse>("/skills/team-subscriptions/rollback", {
+      method: "POST",
+      body: JSON.stringify({ target_path: targetPath, backup_file_path: backupFilePath }),
+    }),
+  fetchTeamMcps: (teamId: string): Promise<TeamMcpsResponse> =>
+    request<TeamMcpsResponse>(`/teams/${teamId}/mcps`),
+  saveTeamMcp: (teamId: string, mcp: TeamMcpSaveRequest): Promise<RequestEnvelope<TeamMcpsResponse>> =>
+    requestEnvelope<TeamMcpsResponse>(`/teams/${teamId}/mcps`, {
+      method: "POST",
+      body: JSON.stringify(mcp),
+    }),
+  submitTeamMcpReview: (teamId: string, mcpSlug: string, note?: string): Promise<RequestEnvelope<TeamMcpsResponse>> =>
+    requestEnvelope<TeamMcpsResponse>(`/teams/${teamId}/mcps/${mcpSlug}/review`, {
+      method: "POST",
+      body: JSON.stringify({ note }),
+    }),
+  resolveTeamMcpReview: (teamId: string, mcpSlug: string, decision: "approve" | "reject", note?: string): Promise<RequestEnvelope<TeamMcpsResponse>> =>
+    requestEnvelope<TeamMcpsResponse>(`/teams/${teamId}/mcps/${mcpSlug}/resolve`, {
+      method: "POST",
+      body: JSON.stringify({ decision, note }),
     }),
 
   // File tree

@@ -54,6 +54,7 @@ type LocalConnection struct {
 	ChatUsage       []string `json:"chat_usage,omitempty"`
 	ConnectedAt     string   `json:"connected_at,omitempty"`
 	LastPlatformURL string   `json:"last_platform_url,omitempty"`
+	Tags            []string `json:"tags,omitempty"`
 }
 
 type LocalConfig struct {

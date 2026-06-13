@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"runtime/debug"
 	"strings"
 	"time"
@@ -49,42 +50,14 @@ func CORSMiddleware(allowedOrigins []string, isLocal bool) func(http.Handler) ht
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			origin := r.Header.Get("Origin")
 
-			// 运行时 100% 动态判断本地调试源（tauri 协议、localhost 调试端等）
-			isLocalRequest := isLocal ||
-				strings.HasPrefix(origin, "tauri://") ||
-				strings.HasPrefix(origin, "http://localhost") ||
-				strings.HasPrefix(origin, "http://127.0.0.1") ||
-				origin == ""
-
-			if isLocalRequest {
+			if isLocal && isLocalCORSOrigin(origin) {
 				if origin != "" {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
+					applyCORSHeaders(w, origin)
 				} else {
-					w.Header().Set("Access-Control-Allow-Origin", "http://localhost:3000")
+					applyCORSHeaders(w, "http://localhost:3000")
 				}
-				w.Header().Set("Access-Control-Allow-Credentials", "true")
-				w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-				w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, "+sourceHintAllowedHeaders())
-				w.Header().Set("Access-Control-Expose-Headers", "Link, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After, X-Request-ID")
-				w.Header().Set("Access-Control-Max-Age", "300")
-				w.Header().Set("Vary", "Origin")
-			} else if origin != "" {
-				matched := false
-				for _, o := range allowedOrigins {
-					if o == origin || o == "*" {
-						matched = true
-						break
-					}
-				}
-				if matched {
-					w.Header().Set("Access-Control-Allow-Origin", origin)
-					w.Header().Set("Access-Control-Allow-Credentials", "true")
-					w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
-					w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, "+sourceHintAllowedHeaders())
-					w.Header().Set("Access-Control-Expose-Headers", "Link, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After, X-Request-ID")
-					w.Header().Set("Access-Control-Max-Age", "300")
-					w.Header().Set("Vary", "Origin")
-				}
+			} else if isAllowedCORSOrigin(allowedOrigins, origin) {
+				applyCORSHeaders(w, origin)
 			}
 
 			if r.Method == "OPTIONS" {
@@ -95,6 +68,50 @@ func CORSMiddleware(allowedOrigins []string, isLocal bool) func(http.Handler) ht
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func applyCORSHeaders(w http.ResponseWriter, origin string) {
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Access-Control-Allow-Credentials", "true")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Accept, Authorization, Content-Type, X-CSRF-Token, X-API-Key, "+sourceHintAllowedHeaders())
+	w.Header().Set("Access-Control-Expose-Headers", "Link, X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset, Retry-After, X-Request-ID")
+	w.Header().Set("Access-Control-Max-Age", "300")
+	w.Header().Set("Vary", "Origin")
+}
+
+func isLocalCORSOrigin(origin string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return true
+	}
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.User != nil || parsed.Path != "" || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	switch parsed.Scheme {
+	case "tauri":
+		return host == "localhost"
+	case "http", "https":
+		return host == "localhost" || host == "127.0.0.1" || host == "::1"
+	default:
+		return false
+	}
+}
+
+func isAllowedCORSOrigin(allowedOrigins []string, origin string) bool {
+	origin = strings.TrimSpace(origin)
+	if origin == "" {
+		return false
+	}
+	for _, allowed := range allowedOrigins {
+		allowed = strings.TrimSpace(allowed)
+		if allowed == origin {
+			return true
+		}
+	}
+	return false
 }
 
 // SecurityHeadersMiddleware adds standard security headers to every response.
@@ -215,6 +232,12 @@ type responseWriter struct {
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)
+}
+
+func (rw *responseWriter) Flush() {
+	if flusher, ok := rw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, data interface{}) {

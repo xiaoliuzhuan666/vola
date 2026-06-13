@@ -7,7 +7,7 @@ APP_HOME="${APP_HOME:-$(cd "$REPO_ROOT/.." && pwd)}"
 VOLA_ENV_FILE="${VOLA_ENV_FILE:-}"
 NEUDRIVE_ENV_FILE="${NEUDRIVE_ENV_FILE:-}"
 NAMESPACE="${NAMESPACE:-vola}"
-APP_HOST="${APP_HOST:-vola.ai}"
+APP_HOST="${APP_HOST:-www.vola.ai}"
 HEALTHCHECK_URL="${HEALTHCHECK_URL:-}"
 
 detect_env_file() {

@@ -15,6 +15,12 @@ import (
 
 var pool *pgxpool.Pool
 
+var seedMigrationFiles = map[string]struct{}{
+	"002_seed_data.sql":                    {},
+	"005_realistic_seed_data.sql":          {},
+	"027_rename_seed_neudrive_to_vola.sql": {},
+}
+
 func InitDB(connString string) (*pgxpool.Pool, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
@@ -58,6 +64,7 @@ func Close() {
 func RunMigrations(p *pgxpool.Pool, migrationsDir string) error {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
+	runSeedMigrations := shouldRunSeedMigrations()
 
 	_, err := p.Exec(ctx, `
 		CREATE TABLE IF NOT EXISTS schema_migrations (
@@ -69,22 +76,10 @@ func RunMigrations(p *pgxpool.Pool, migrationsDir string) error {
 		return fmt.Errorf("failed to create migrations table: %w", err)
 	}
 
-	entries, err := os.ReadDir(migrationsDir)
+	files, err := listMigrationFiles(migrationsDir, runSeedMigrations)
 	if err != nil {
-		if os.IsNotExist(err) {
-			slog.Info("no migrations directory found, skipping migrations")
-			return nil
-		}
-		return fmt.Errorf("failed to read migrations directory: %w", err)
+		return err
 	}
-
-	var files []string
-	for _, entry := range entries {
-		if !entry.IsDir() && strings.HasSuffix(entry.Name(), ".sql") {
-			files = append(files, entry.Name())
-		}
-	}
-	sort.Strings(files)
 
 	for _, file := range files {
 		var exists bool
@@ -124,4 +119,38 @@ func RunMigrations(p *pgxpool.Pool, migrationsDir string) error {
 	}
 
 	return nil
+}
+
+func listMigrationFiles(migrationsDir string, includeSeeds bool) ([]string, error) {
+	entries, err := os.ReadDir(migrationsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			slog.Info("no migrations directory found, skipping migrations")
+			return nil, nil
+		}
+		return nil, fmt.Errorf("failed to read migrations directory: %w", err)
+	}
+
+	var files []string
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
+			continue
+		}
+		if _, isSeed := seedMigrationFiles[entry.Name()]; isSeed && !includeSeeds {
+			slog.Info("skipping seed migration", "file", entry.Name())
+			continue
+		}
+		files = append(files, entry.Name())
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func shouldRunSeedMigrations() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("VOLA_RUN_SEED_MIGRATIONS"))) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }

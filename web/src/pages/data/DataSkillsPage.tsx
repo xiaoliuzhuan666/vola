@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
-import { api, type FileNode, type LocalSkillSyncResponse, type SkillAgentAssignment, type SkillAssignmentsState, type SkillConversionRequest, type SkillConversionResponse, type SkillLearningNote, type SkillLearningSummary, type SkillSummary, type Team, type TeamSkillPublication, type TeamSkillSubscriptionStatus } from '../../api'
+import { api, type FileNode, type LocalSkillSyncResponse, type SkillAgentAssignment, type SkillAssignmentsState, type SkillConversionRequest, type SkillConversionResponse, type SkillLearningNote, type SkillLearningSummary, type SkillSummary, type Team, type TeamSkillPublication, type TeamSkillSubscriptionStatus, type SkillDiffFileItem } from '../../api'
 import GitHubTreeList from '../../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../../components/MaterialsSectionToolbar'
 import FileMaterialsTile from '../../components/FileMaterialsTile'
@@ -396,6 +396,14 @@ export default function DataSkillsPage() {
   const [scopeMessage, setScopeMessage] = useState('')
   const [copyingSkillPath, setCopyingSkillPath] = useState('')
   const [teamSkillPublishingPath, setTeamSkillPublishingPath] = useState('')
+  const [showDiffModal, setShowDiffModal] = useState(false)
+  const [diffFiles, setDiffFiles] = useState<SkillDiffFileItem[]>([])
+  const [diffTargetSkillPath, setDiffTargetSkillPath] = useState('')
+  const [diffSourceSkillPath, setDiffSourceSkillPath] = useState('')
+  const [backupsList, setBackupsList] = useState<any[]>([])
+  const [rollbackSkillPath, setRollbackSkillPath] = useState('')
+  const [showRollbackModal, setShowRollbackModal] = useState(false)
+  const [rollingBack, setRollingBack] = useState(false)
   const [bulkUpdatingTeamSkills, setBulkUpdatingTeamSkills] = useState(false)
   const [conversionSourcePath, setConversionSourcePath] = useState('')
   const [conversionSourcePlatform, setConversionSourcePlatform] = useState<'claude-code' | 'codex'>('claude-code')
@@ -759,6 +767,56 @@ export default function DataSkillsPage() {
       setCopyingSkillPath('')
     }
   }, [activeTeamID, copyingSkillPath, load, tx])
+
+  const handleCopySkillAction = useCallback(async (sourcePath: string, overwrite: boolean) => {
+    if (overwrite && activeTeamID) {
+      const targetPath = normalizeSkillPath(sourcePath)
+      setCopyingSkillPath(targetPath)
+      try {
+        const diffData = await api.diffTeamSkillSubscription(activeTeamID, targetPath, targetPath)
+        setDiffFiles(diffData.files)
+        setDiffTargetSkillPath(targetPath)
+        setDiffSourceSkillPath(sourcePath)
+        setShowDiffModal(true)
+      } catch (err: any) {
+        setError(err.message || tx('获取版本差异失败', 'Failed to fetch version diff'))
+      } finally {
+        setCopyingSkillPath('')
+      }
+    } else {
+      void copyTeamSkillToPersonal(sourcePath, false)
+    }
+  }, [activeTeamID, copyTeamSkillToPersonal, tx])
+
+  const handleOpenRollback = useCallback(async (targetPath: string) => {
+    const skillName = targetPath.split('/').filter(Boolean).pop() || ''
+    setError('')
+    try {
+      const tree = await api.getTree(`/settings/team-skill-backups/${skillName}`)
+      const list = (tree.children || []).filter(item => !item.is_dir && item.name.endsWith('-backup.zip'))
+      setBackupsList(list)
+      setRollbackSkillPath(targetPath)
+      setShowRollbackModal(true)
+    } catch (err: any) {
+      setError(tx('暂无该技能的历史备份记录', 'No backup records found for this skill'))
+    }
+  }, [tx])
+
+  const handleRollbackExecute = useCallback(async (backupFilePath: string) => {
+    if (!rollbackSkillPath) return
+    setError('')
+    setScopeMessage('')
+    try {
+      const resp = await api.rollbackTeamSkillSubscription(rollbackSkillPath, backupFilePath)
+      if (resp.data.success) {
+        setScopeMessage(tx('成功回滚到历史版本！', 'Successfully rolled back to historical version!'))
+        setShowRollbackModal(false)
+        void load()
+      }
+    } catch (err: any) {
+      setError(err.message || tx('回滚失败', 'Failed to rollback'))
+    }
+  }, [rollbackSkillPath, load, tx])
 
   const updateTeamSkillPublication = useCallback(async (sourcePath: string, status: 'draft' | 'published' | 'archived') => {
     if (!activeTeamID || teamSkillPublishingPath) return
@@ -2289,7 +2347,7 @@ export default function DataSkillsPage() {
                       type="button"
                       className="btn btn-sm btn-primary"
                       disabled={Boolean(copyingSkillPath)}
-                      onClick={() => { void copyTeamSkillToPersonal(skill.bundlePath, installActionOverwrite) }}
+                      onClick={() => { void handleCopySkillAction(skill.bundlePath, installActionOverwrite) }}
                     >
                       {installActionBusy ? tx('处理中...', 'Working...') : installActionLabel}
                     </button>
@@ -2325,7 +2383,17 @@ export default function DataSkillsPage() {
                               disabled: Boolean(copyingSkillPath) || !installActionLabel,
                               onSelect: () => {
                                 closeMenu()
-                                if (installActionLabel) void copyTeamSkillToPersonal(skill.bundlePath, installActionOverwrite)
+                                if (installActionLabel) void handleCopySkillAction(skill.bundlePath, installActionOverwrite)
+                              },
+                            }]
+                          : []),
+                        ...(installStatus !== 'not_installed'
+                          ? [{
+                              key: 'rollback-version',
+                              label: tx('历史版本回滚...', 'Rollback to backup...'),
+                              onSelect: () => {
+                                closeMenu()
+                                void handleOpenRollback(normalizeSkillPath(skill.bundlePath))
                               },
                             }]
                           : []),
@@ -2441,6 +2509,228 @@ export default function DataSkillsPage() {
         onCancel={closeDeleteDialog}
         onConfirm={() => void confirmDelete()}
       />
+
+      {/* Diff Preview Modal */}
+      {showDiffModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+        }}>
+          <div className="card" style={{
+            width: '80%',
+            maxWidth: '900px',
+            maxHeight: '80vh',
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: 'var(--weui-BG-2, #fff)',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+            border: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))',
+          }}>
+            <div className="card-header" style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
+              <h4 style={{ margin: 0, fontWeight: 'bold' }}>{tx('版本更新差异对比', 'Version Update Diff')}</h4>
+              <button className="btn btn-sm btn-icon" onClick={() => setShowDiffModal(false)}>✕</button>
+            </div>
+            
+            <div className="card-body" style={{
+              padding: '24px',
+              overflowY: 'auto',
+              flex: 1,
+            }}>
+              <p style={{ marginBottom: '16px', color: 'var(--weui-FG-1, rgba(0,0,0,0.6))' }}>
+                {tx('请在覆盖您的本地个人副本前，仔细查看以下与团队最新版本的代码差异：', 'Please carefully inspect the code differences before overwriting your local copy:')}
+              </p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                {diffFiles.map((file) => {
+                  return (
+                    <div key={file.rel_path} style={{
+                      border: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))',
+                      borderRadius: '8px',
+                      overflow: 'hidden',
+                    }}>
+                      <div style={{
+                        padding: '8px 16px',
+                        backgroundColor: 'var(--weui-BG-1, #f7f7f7)',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '14px',
+                      }}>
+                        <strong style={{ fontFamily: 'monospace' }}>{file.rel_path}</strong>
+                        <span className={`pill ${
+                          file.status === 'added' ? 'is-success' :
+                          file.status === 'modified' ? 'is-warning' :
+                          file.status === 'deleted' ? 'is-danger' : ''
+                        }`} style={{ fontSize: '12px' }}>
+                          {file.status === 'added' ? tx('新增', 'Added') :
+                           file.status === 'modified' ? tx('修改', 'Modified') :
+                           file.status === 'deleted' ? tx('删除', 'Deleted') : tx('未变', 'Unchanged')}
+                        </span>
+                      </div>
+                      
+                      {file.status === 'modified' && (
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', padding: '12px', fontSize: '12px', fontFamily: 'monospace', overflowX: 'auto' }}>
+                          <div style={{ padding: '8px', backgroundColor: 'rgba(250,81,81,0.05)', border: '1px solid rgba(250,81,81,0.2)', borderRadius: '4px' }}>
+                            <div style={{ color: 'var(--weui-RED, #fa5151)', fontWeight: 'bold', marginBottom: '4px' }}>{tx('您的旧副本', 'Your Copy')}</div>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{file.target_content}</pre>
+                          </div>
+                          <div style={{ padding: '8px', backgroundColor: 'rgba(7,193,96,0.05)', border: '1px solid rgba(7,193,96,0.2)', borderRadius: '4px' }}>
+                            <div style={{ color: 'var(--weui-BRAND, #07c160)', fontWeight: 'bold', marginBottom: '4px' }}>{tx('团队最新版', 'Team Version')}</div>
+                            <pre style={{ margin: 0, whiteSpace: 'pre-wrap' }}>{file.source_content}</pre>
+                          </div>
+                        </div>
+                      )}
+
+                      {file.status === 'added' && (
+                        <div style={{ padding: '12px', fontSize: '12px', fontFamily: 'monospace', backgroundColor: 'rgba(7,193,96,0.05)', borderTop: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))', overflowX: 'auto' }}>
+                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--weui-BRAND, #07c160)' }}>{file.source_content}</pre>
+                        </div>
+                      )}
+
+                      {file.status === 'deleted' && (
+                        <div style={{ padding: '12px', fontSize: '12px', fontFamily: 'monospace', backgroundColor: 'rgba(250,81,81,0.05)', borderTop: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))', overflowX: 'auto' }}>
+                          <pre style={{ margin: 0, whiteSpace: 'pre-wrap', color: 'var(--weui-RED, #fa5151)' }}>{file.target_content}</pre>
+                        </div>
+                      )}
+                    </div>
+                  )
+                })}
+                {diffFiles.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '32px', color: 'var(--weui-FG-1, rgba(0,0,0,0.6))' }}>
+                    {tx('两个版本完全一致，无需更新。', 'Both versions are identical. No update needed.')}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="card-footer" style={{
+              padding: '16px 24px',
+              borderTop: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))',
+              display: 'flex',
+              justifyContent: 'flex-end',
+              gap: '12px',
+            }}>
+              <button className="btn" onClick={() => setShowDiffModal(false)}>{tx('取消', 'Cancel')}</button>
+              {diffFiles.length > 0 && (
+                <button className="btn btn-primary" onClick={async () => {
+                  setShowDiffModal(false)
+                  await copyTeamSkillToPersonal(diffSourceSkillPath, true)
+                }}>{tx('确认覆盖更新', 'Overwrite & Update')}</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Rollback Modal */}
+      {showRollbackModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)',
+          backdropFilter: 'blur(8px)',
+          display: 'flex',
+          justifyContent: 'center',
+          alignItems: 'center',
+          zIndex: 1000,
+        }}>
+          <div className="card" style={{
+            width: '80%',
+            maxWidth: '500px',
+            maxHeight: '60vh',
+            display: 'flex',
+            flexDirection: 'column',
+            backgroundColor: 'var(--weui-BG-2, #fff)',
+            borderRadius: '12px',
+            overflow: 'hidden',
+            boxShadow: '0 8px 32px rgba(0,0,0,0.25)',
+            border: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))',
+          }}>
+            <div className="card-header" style={{
+              padding: '16px 24px',
+              borderBottom: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center',
+            }}>
+              <h4 style={{ margin: 0, fontWeight: 'bold' }}>{tx('选择历史备份回滚', 'Rollback to backup')}</h4>
+              <button className="btn btn-sm btn-icon" onClick={() => setShowRollbackModal(false)}>✕</button>
+            </div>
+            
+            <div className="card-body" style={{
+              padding: '24px',
+              overflowY: 'auto',
+              flex: 1,
+            }}>
+              <p style={{ marginBottom: '16px', color: 'var(--weui-FG-1, rgba(0,0,0,0.6))', fontSize: '14px' }}>
+                {tx('选择该技能在此前更新时自动保存的备份，可一键将其还原覆盖回本地个人空间：', 'Select a previously auto-saved backup to restore to your personal space:')}
+              </p>
+              
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                {backupsList.map((backup) => {
+                  const dateStr = backup.name.replace('-backup.zip', '')
+                  let formattedDate = dateStr
+                  if (dateStr.length >= 15) {
+                    formattedDate = `${dateStr.substring(0,4)}-${dateStr.substring(4,6)}-${dateStr.substring(6,8)} ${dateStr.substring(9,11)}:${dateStr.substring(11,13)}:${dateStr.substring(13,15)} UTC`
+                  }
+                  return (
+                    <button
+                      key={backup.path}
+                      className="btn"
+                      style={{
+                        width: '100%',
+                        textAlign: 'left',
+                        padding: '12px 16px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        border: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))',
+                        borderRadius: '6px',
+                      }}
+                      disabled={rollingBack}
+                      onClick={() => {
+                        setRollingBack(true)
+                        void handleRollbackExecute(backup.path).finally(() => setRollingBack(false))
+                      }}
+                    >
+                      <span>{formattedDate}</span>
+                      <small style={{ color: 'var(--weui-LINK, #576b95)' }}>{tx('点击回退', 'Restore')}</small>
+                    </button>
+                  )
+                })}
+                {backupsList.length === 0 && (
+                  <div style={{ textAlign: 'center', padding: '32px', color: 'var(--weui-FG-1, rgba(0,0,0,0.6))', fontSize: '14px' }}>
+                    {tx('当前技能暂无历史备份包。', 'No history backups available.')}
+                  </div>
+                )}
+              </div>
+            </div>
+            
+            <div className="card-footer" style={{
+              padding: '16px 24px',
+              borderTop: '1px solid var(--weui-FG-3, rgba(0,0,0,0.1))',
+              display: 'flex',
+              justifyContent: 'flex-end',
+            }}>
+              <button className="btn" disabled={rollingBack} onClick={() => setShowRollbackModal(false)}>{tx('关闭', 'Close')}</button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

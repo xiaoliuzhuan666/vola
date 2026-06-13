@@ -1,17 +1,22 @@
 package api
 
 import (
+	"archive/zip"
+	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
 	pathpkg "path"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/agi-bar/vola/internal/models"
 	"github.com/agi-bar/vola/internal/services"
 	"github.com/agi-bar/vola/internal/skillsarchive"
+	"github.com/google/uuid"
 )
 
 const skillCopyVersion = "vola.skill-copy/v1"
@@ -120,6 +125,32 @@ func (s *Server) handleSkillCopyToPersonal(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	if req.Overwrite {
+		oldFiles, err := s.collectLocalSkillFiles(r.Context(), userID, targetPath)
+		if err == nil && len(oldFiles) > 0 {
+			var buf bytes.Buffer
+			zw := zip.NewWriter(&buf)
+			for _, f := range oldFiles {
+				w, err := zw.Create(f.RelPath)
+				if err == nil {
+					_, _ = w.Write(f.Data)
+				}
+			}
+			_ = zw.Close()
+
+			skillName := pathpkg.Base(targetPath)
+			timestamp := time.Now().UTC().Format("20060102T150405Z")
+			backupFilePath := fmt.Sprintf("/settings/team-skill-backups/%s/%s-backup.zip", skillName, timestamp)
+
+			_, _ = s.FileTreeService.WriteBinaryEntry(r.Context(), userID, backupFilePath, buf.Bytes(), "application/zip", models.FileTreeWriteOptions{
+				Kind:          "skill_backup",
+				MinTrustLevel: models.TrustLevelFull,
+			})
+
+			s.pruneTeamSkillBackups(r.Context(), userID, skillName)
+		}
+	}
+
 	copiedAt := time.Now().UTC().Format(time.RFC3339)
 	writeCtx := s.requestSourceContext(r, "team-copy")
 	var bytesCopied int64
@@ -177,4 +208,27 @@ func (s *Server) handleSkillCopyToPersonal(w http.ResponseWriter, r *http.Reques
 		Bytes:      bytesCopied,
 		Overwrite:  req.Overwrite,
 	}, s.syncLocalGitMirror(r.Context(), userID))
+}
+
+func (s *Server) pruneTeamSkillBackups(ctx context.Context, userID uuid.UUID, skillName string) {
+	backupDir := fmt.Sprintf("/settings/team-skill-backups/%s", skillName)
+	snapshot, err := s.FileTreeService.Snapshot(ctx, userID, backupDir, models.TrustLevelFull)
+	if err != nil {
+		return
+	}
+	var backups []models.FileTreeEntry
+	for _, entry := range snapshot.Entries {
+		if entry.IsDirectory || entry.DeletedAt != nil || !strings.HasSuffix(entry.Path, "-backup.zip") {
+			continue
+		}
+		backups = append(backups, entry)
+	}
+	if len(backups) <= 5 {
+		return
+	}
+	sort.Slice(backups, func(i, j int) bool { return backups[i].Path < backups[j].Path })
+	toDelete := len(backups) - 5
+	for i := 0; i < toDelete; i++ {
+		_ = s.FileTreeService.Delete(ctx, userID, backups[i].Path)
+	}
 }

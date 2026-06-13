@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"math"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -66,6 +67,31 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		return getEnv(key, fallback)
 	}
 
+	tencentCOSPathStyle, err := parseBoolConfig("TENCENT_COS_PATH_STYLE", envOrOverride("TENCENT_COS_PATH_STYLE", "0"), false)
+	if err != nil {
+		return nil, err
+	}
+	rateLimit, err := parsePositiveIntConfig("RATE_LIMIT", envOrOverride("RATE_LIMIT", ""), 100)
+	if err != nil {
+		return nil, err
+	}
+	maxBodySize, err := parsePositiveByteSizeConfig("MAX_BODY_SIZE", envOrOverride("MAX_BODY_SIZE", ""), 10*1024*1024)
+	if err != nil {
+		return nil, err
+	}
+	enableSystemSettings, err := parseBoolConfig("VOLA_ENABLE_SYSTEM_SETTINGS", envOrOverride("VOLA_ENABLE_SYSTEM_SETTINGS", ""), true)
+	if err != nil {
+		return nil, err
+	}
+	enableBilling, err := parseBoolConfig("VOLA_ENABLE_BILLING", envOrOverride("VOLA_ENABLE_BILLING", ""), false)
+	if err != nil {
+		return nil, err
+	}
+	captureOAuth, err := parseBoolConfig("VOLA_CAPTURE_OAUTH", envOrOverride("VOLA_CAPTURE_OAUTH", ""), false)
+	if err != nil {
+		return nil, err
+	}
+
 	cfg := &Config{
 		DatabaseURL:             envOrOverride("DATABASE_URL", "postgres://localhost:5432/vola?sslmode=disable"),
 		Port:                    envOrOverride("PORT", "8080"),
@@ -77,7 +103,7 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		TencentCOSSecretID:      strings.TrimSpace(envOrOverride("TENCENT_COS_SECRET_ID", "")),
 		TencentCOSSecretKey:     strings.TrimSpace(envOrOverride("TENCENT_COS_SECRET_KEY", "")),
 		TencentCOSPrefix:        strings.TrimSpace(envOrOverride("TENCENT_COS_PREFIX", "vola")),
-		TencentCOSPathStyle:     parseBoolString(envOrOverride("TENCENT_COS_PATH_STYLE", "0"), false),
+		TencentCOSPathStyle:     tencentCOSPathStyle,
 		GithubClientID:          envOrOverride("GITHUB_CLIENT_ID", ""),
 		GithubClientSecret:      envOrOverride("GITHUB_CLIENT_SECRET", ""),
 		PocketProviderID:        envOrOverride("POCKET_ID_PROVIDER_ID", "pocket"),
@@ -96,16 +122,20 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		FeishuEncryptKey:        envOrOverride("FEISHU_ENCRYPT_KEY", ""),
 		VaultMasterKey:          envOrOverride("VAULT_MASTER_KEY", ""),
 		PublicBaseURL:           strings.TrimRight(envOrOverride("PUBLIC_BASE_URL", ""), "/"),
-		CORSOrigins:             strings.Split(envOrOverride("CORS_ORIGINS", "http://localhost:3000"), ","),
-		RateLimit:               getEnvInt("RATE_LIMIT", 100),
-		MaxBodySize:             int64(getEnvInt("MAX_BODY_SIZE", 10*1024*1024)),
+		RateLimit:               rateLimit,
+		MaxBodySize:             maxBodySize,
 		LogLevel:                envOrOverride("LOG_LEVEL", "info"),
 		LogFormat:               envOrOverride("LOG_FORMAT", "text"),
-		EnableSystemSettings:    getEnvBool("VOLA_ENABLE_SYSTEM_SETTINGS", true),
-		EnableBilling:           getEnvBool("VOLA_ENABLE_BILLING", false),
-		CaptureOAuth:            getEnvBool("VOLA_CAPTURE_OAUTH", false),
+		EnableSystemSettings:    enableSystemSettings,
+		EnableBilling:           enableBilling,
+		CaptureOAuth:            captureOAuth,
 		CaptureDir:              envOrOverride("VOLA_CAPTURE_DIR", "tmp/oauth-captures"),
 	}
+	corsOrigins, err := parseCORSOrigins(envOrOverride("CORS_ORIGINS", "http://localhost:3000"))
+	if err != nil {
+		return nil, err
+	}
+	cfg.CORSOrigins = corsOrigins
 	if rawCooldown := strings.TrimSpace(envOrOverride("GIT_MIRROR_MANUAL_SYNC_COOLDOWN_SECONDS", "")); rawCooldown != "" {
 		cooldown, err := strconv.Atoi(rawCooldown)
 		if err != nil || cooldown < 0 {
@@ -159,34 +189,48 @@ func getEnv(key, fallback string) string {
 	return fallback
 }
 
-func getEnvInt(key string, fallback int) int {
-	s := getEnv(key, "")
+func parsePositiveIntConfig(key, value string, fallback int) (int, error) {
+	s := strings.TrimSpace(value)
 	if s == "" {
-		return fallback
+		return fallback, nil
 	}
 	v, err := strconv.Atoi(s)
 	if err != nil {
-		return fallback
+		return 0, fmt.Errorf("invalid %s: must be a positive integer", key)
 	}
-	return v
+	if v <= 0 {
+		return 0, fmt.Errorf("invalid %s: must be greater than 0", key)
+	}
+	return v, nil
 }
 
-func getEnvBool(key string, fallback bool) bool {
-	return parseBoolString(getEnv(key, ""), fallback)
+func parsePositiveByteSizeConfig(key, value string, fallback int64) (int64, error) {
+	s := strings.TrimSpace(value)
+	if s == "" {
+		return fallback, nil
+	}
+	size, err := parseByteSize(s)
+	if err != nil {
+		return 0, fmt.Errorf("invalid %s: %w", key, err)
+	}
+	if size <= 0 {
+		return 0, fmt.Errorf("invalid %s: must be greater than 0", key)
+	}
+	return size, nil
 }
 
-func parseBoolString(value string, fallback bool) bool {
+func parseBoolConfig(key, value string, fallback bool) (bool, error) {
 	s := strings.TrimSpace(strings.ToLower(value))
 	if s == "" {
-		return fallback
+		return fallback, nil
 	}
 	switch s {
 	case "1", "true", "yes", "on":
-		return true
+		return true, nil
 	case "0", "false", "no", "off":
-		return false
+		return false, nil
 	default:
-		return fallback
+		return false, fmt.Errorf("invalid %s: must be one of 1, true, yes, on, 0, false, no, off", key)
 	}
 }
 
@@ -196,6 +240,50 @@ func splitScopes(value string) []string {
 		return []string{}
 	}
 	return parts
+}
+
+func parseCORSOrigins(value string) ([]string, error) {
+	seen := make(map[string]struct{})
+	origins := make([]string, 0)
+	for _, raw := range strings.Split(value, ",") {
+		origin := strings.TrimSpace(raw)
+		if origin == "" {
+			continue
+		}
+		if origin == "*" {
+			return nil, fmt.Errorf("CORS_ORIGINS cannot contain * when credentialed requests are enabled")
+		}
+		normalized, err := normalizeCORSOrigin(origin)
+		if err != nil {
+			return nil, err
+		}
+		origin = normalized
+		if _, ok := seen[origin]; ok {
+			continue
+		}
+		seen[origin] = struct{}{}
+		origins = append(origins, origin)
+	}
+	return origins, nil
+}
+
+func normalizeCORSOrigin(origin string) (string, error) {
+	parsed, err := url.Parse(origin)
+	if err != nil || parsed.Scheme == "" || parsed.Host == "" || parsed.Hostname() == "" {
+		return "", fmt.Errorf("invalid CORS_ORIGINS origin %q: expected scheme://host[:port]", origin)
+	}
+	if parsed.User != nil || (parsed.Path != "" && parsed.Path != "/") || parsed.RawQuery != "" || parsed.Fragment != "" {
+		return "", fmt.Errorf("invalid CORS_ORIGINS origin %q: origin must not include user info, path, query, or fragment", origin)
+	}
+	parsed.Scheme = strings.ToLower(parsed.Scheme)
+	parsed.Host = strings.ToLower(parsed.Host)
+	parsed.Path = ""
+	switch parsed.Scheme {
+	case "http", "https", "tauri":
+		return parsed.String(), nil
+	default:
+		return "", fmt.Errorf("invalid CORS_ORIGINS origin %q: unsupported scheme %q", origin, parsed.Scheme)
+	}
 }
 
 func parseByteSize(value string) (int64, error) {

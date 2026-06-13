@@ -221,6 +221,8 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 		s.AuthHandler = auth.NewHandler(deps.UserService, deps.AuthService, deps.JWTSecret, deps.GitHubClientID, deps.GitHubClientSecret)
 	}
 	s.setupRoutes()
+	StartMcpHealthChecker(context.Background())
+	StartTeamEventsListener(context.Background())
 	return s
 }
 
@@ -338,6 +340,8 @@ func (s *Server) setupRoutes() {
 		r.Put("/api/skills/assignments", s.handleSkillAssignmentsSave)
 		r.Get("/api/skills/team-subscriptions", s.handleTeamSkillSubscriptionsList)
 		r.Post("/api/skills/copy-to-personal", s.handleSkillCopyToPersonal)
+		r.Post("/api/skills/team-subscriptions/diff", s.handleSkillSubscriptionsDiff)
+		r.Post("/api/skills/team-subscriptions/rollback", s.handleSkillSubscriptionsRollback)
 		r.Post("/api/skills/convert/preview", s.handleSkillConversionPreview)
 		r.Post("/api/skills/convert/apply", s.handleSkillConversionApply)
 		r.Post("/api/local/skills/sync/preview", s.handleLocalSkillSyncPreview)
@@ -398,7 +402,12 @@ func (s *Server) setupRoutes() {
 		r.Get("/api/teams/{team}/agents", s.handleTeamAgentsList)
 		r.Post("/api/teams/{team}/agents", s.handleTeamAgentSave)
 		r.Post("/api/teams/{team}/agents/{agent}/install", s.handleTeamAgentInstall)
+		r.Get("/api/teams/{team}/mcps", s.handleTeamMcpList)
+		r.Post("/api/teams/{team}/mcps", s.handleTeamMcpSave)
+		r.Post("/api/teams/{team}/mcps/{mcp}/review", s.handleTeamMcpReviewRequest)
+		r.Post("/api/teams/{team}/mcps/{mcp}/resolve", s.handleTeamMcpReviewResolve)
 		r.Get("/api/teams/{team}/skills", s.handleTeamSkillsList)
+		r.Get("/api/teams/{team}/events", s.handleTeamEvents)
 		r.Get("/api/teams/{team}/tree/archive", s.handleTeamTreeDownloadZip)
 		r.Get("/api/teams/{team}/tree/snapshot", s.handleTeamTreeSnapshot)
 		r.Get("/api/teams/{team}/tree/*", s.handleTeamTreeRead)
@@ -455,6 +464,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/api/local/mcp/clients", s.handleLocalMCPClientsList)
 		r.Post("/api/local/mcp/clients/register", s.handleLocalMCPClientsRegister)
 		r.Post("/api/local/mcp/clients/unregister", s.handleLocalMCPClientsUnregister)
+		r.Get("/api/local/mcp/health", s.handleLocalMcpHealth)
 
 		// GPT Setup
 		r.Get("/api/gpt/setup", s.handleGPTSetup)

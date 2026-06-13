@@ -7,7 +7,7 @@ import { dataFileEditorRoute, fileNamespaceLabel, formatDateTime, isTextLikeFile
 import '@uiw/react-markdown-preview/markdown.css'
 
 const WorkbenchCodeEditor = lazy(() => import('./WorkbenchCodeEditor'))
-const MarkdownPreview = lazy(() => import('@uiw/react-markdown-preview'))
+const MarkdownPreview = lazy(() => import('@uiw/react-markdown-preview/nohighlight'))
 
 type ViewMode = 'write' | 'split' | 'preview'
 type MobileSplitPane = 'editor' | 'preview'

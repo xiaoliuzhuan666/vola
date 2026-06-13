@@ -1,0 +1,317 @@
+package api
+
+import (
+	"bufio"
+	"context"
+	"encoding/json"
+	"fmt"
+	"net/http"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/agi-bar/vola/internal/platforms"
+	"github.com/agi-bar/vola/internal/runtimecfg"
+	"github.com/go-chi/chi/v5"
+)
+
+type EventBroker struct {
+	mu        sync.RWMutex
+	listeners map[string][]chan string // teamID -> channels
+}
+
+var GlobalBroker = &EventBroker{
+	listeners: make(map[string][]chan string),
+}
+
+func (b *EventBroker) Subscribe(teamID string) chan string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	ch := make(chan string, 32)
+	b.listeners[teamID] = append(b.listeners[teamID], ch)
+	return ch
+}
+
+func (b *EventBroker) Unsubscribe(teamID string, ch chan string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	list := b.listeners[teamID]
+	for i, c := range list {
+		if c == ch {
+			b.listeners[teamID] = append(list[:i], list[i+1:]...)
+			close(ch)
+			break
+		}
+	}
+}
+
+func (b *EventBroker) Publish(teamID string, eventType string, data string) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+	payload := fmt.Sprintf("event: %s\ndata: %s\n\n", eventType, data)
+	for _, ch := range b.listeners[teamID] {
+		select {
+		case ch <- payload:
+		default:
+			// Non-blocking
+		}
+	}
+}
+
+// handleTeamEvents serves the SSE stream for a team.
+func (s *Server) handleTeamEvents(w http.ResponseWriter, r *http.Request) {
+	teamID := chi.URLParam(r, "team")
+	if teamID == "" {
+		http.Error(w, "missing team id", http.StatusBadRequest)
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("Access-Control-Allow-Origin", "*")
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming unsupported", http.StatusInternalServerError)
+		return
+	}
+
+	ch := GlobalBroker.Subscribe(teamID)
+	defer GlobalBroker.Unsubscribe(teamID, ch)
+
+	// Send an initial handshake comment to establish connection
+	_, _ = fmt.Fprint(w, ": ok\n\n")
+	flusher.Flush()
+
+	ticker := time.NewTicker(15 * time.Second)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-r.Context().Done():
+			return
+		case msg, ok := <-ch:
+			if !ok {
+				return
+			}
+			_, _ = fmt.Fprint(w, msg)
+			flusher.Flush()
+		case <-ticker.C:
+			// Heartbeat comment
+			_, _ = fmt.Fprint(w, ": ping\n\n")
+			flusher.Flush()
+		}
+	}
+}
+
+var (
+	activeListeners   = make(map[string]context.CancelFunc)
+	activeListenersMu sync.Mutex
+	sseIdleTimeout    = 45 * time.Second
+)
+
+func StartTeamEventsListener(ctx context.Context) {
+	go func() {
+		ticker := time.NewTicker(30 * time.Second)
+		defer ticker.Stop()
+
+		// Run once immediately on start
+		syncTeamListeners(ctx)
+
+		for {
+			select {
+			case <-ctx.Done():
+				activeListenersMu.Lock()
+				for _, cancel := range activeListeners {
+					cancel()
+				}
+				activeListeners = make(map[string]context.CancelFunc)
+				activeListenersMu.Unlock()
+				return
+			case <-ticker.C:
+				syncTeamListeners(ctx)
+			}
+		}
+	}()
+}
+
+func syncTeamListeners(ctx context.Context) {
+	_, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
+	if err != nil {
+		return
+	}
+	profile := cfg.Profiles[cfg.CurrentProfile]
+	if profile.APIBase == "" || profile.Token == "" {
+		return
+	}
+
+	client := &http.Client{Timeout: 10 * time.Second}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(profile.APIBase, "/")+"/api/teams", nil)
+	if err != nil {
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+profile.Token)
+	resp, err := client.Do(req)
+	if err != nil {
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	var teamsResp struct {
+		Teams []struct {
+			ID   string `json:"id"`
+			Slug string `json:"slug"`
+		} `json:"teams"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&teamsResp); err != nil {
+		return
+	}
+
+	activeListenersMu.Lock()
+	defer activeListenersMu.Unlock()
+
+	currentTeams := make(map[string]bool)
+	for _, team := range teamsResp.Teams {
+		currentTeams[team.ID] = true
+		if _, ok := activeListeners[team.ID]; !ok {
+			teamCtx, cancel := context.WithCancel(ctx)
+			activeListeners[team.ID] = cancel
+			go runTeamSseLoop(teamCtx, profile.APIBase, profile.Token, team.ID)
+		}
+	}
+
+	// Clean up loops for teams we are no longer part of
+	for teamID, cancel := range activeListeners {
+		if !currentTeams[teamID] {
+			cancel()
+			delete(activeListeners, teamID)
+		}
+	}
+}
+
+func runTeamSseLoop(ctx context.Context, apiBase, token, teamID string) {
+	backoff := 1 * time.Second
+	maxBackoff := 60 * time.Second
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			err := subscribeTeamSse(ctx, apiBase, token, teamID)
+			if err != nil {
+				// Log or handle error if needed
+			}
+
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(backoff):
+				backoff *= 2
+				if backoff > maxBackoff {
+					backoff = maxBackoff
+				}
+			}
+		}
+	}
+}
+
+func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string) error {
+	client := &http.Client{Timeout: 0}
+	url := fmt.Sprintf("%s/api/teams/%s/events", strings.TrimRight(apiBase, "/"), teamID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "text/event-stream")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected SSE status code: %v", resp.StatusCode)
+	}
+
+	// Watchdog to detect half-open TCP connections (idle timeout)
+	var mu sync.Mutex
+	lastSeen := time.Now()
+
+	watchdogCtx, watchdogCancel := context.WithCancel(ctx)
+	defer watchdogCancel()
+
+	go func() {
+		tickerInterval := sseIdleTimeout / 3
+		if tickerInterval < 5*time.Millisecond {
+			tickerInterval = 5 * time.Millisecond
+		}
+		ticker := time.NewTicker(tickerInterval)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-watchdogCtx.Done():
+				return
+			case <-ticker.C:
+				mu.Lock()
+				idleTime := time.Since(lastSeen)
+				mu.Unlock()
+				if idleTime > sseIdleTimeout {
+					// silence -> connection dead. Force close to trigger reconnect.
+					_ = resp.Body.Close()
+					return
+				}
+			}
+		}
+	}()
+
+	reader := bufio.NewReader(resp.Body)
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return err
+		}
+
+		mu.Lock()
+		lastSeen = time.Now()
+		mu.Unlock()
+
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "event:") {
+			eventType := strings.TrimSpace(strings.TrimPrefix(line, "event:"))
+			dataLine, err := reader.ReadString('\n')
+			if err != nil {
+				return err
+			}
+
+			mu.Lock()
+			lastSeen = time.Now()
+			mu.Unlock()
+
+			dataLine = strings.TrimSpace(dataLine)
+			if strings.HasPrefix(dataLine, "data:") {
+				handleSseEvent(ctx, eventType)
+			}
+		}
+	}
+}
+
+func handleSseEvent(ctx context.Context, eventType string) {
+	if eventType == "mcp_update" {
+		_, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
+		if err != nil {
+			return
+		}
+		for id, conn := range cfg.Local.Connections {
+			adapter, err := platforms.Resolve(id)
+			if err == nil {
+				_, _ = adapter.Connect(ctx, cfg, id, conn.LastPlatformURL, conn)
+			}
+		}
+	}
+}

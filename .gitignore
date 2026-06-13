@@ -24,6 +24,7 @@ web/test-results/
 
 # Local release verification artifacts
 .playwright-mcp/
+.playwright-cli/
 console-stage4*.txt
 vola-local-home.png
 stage3-*.png
