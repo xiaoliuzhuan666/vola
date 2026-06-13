@@ -199,6 +199,18 @@ func (s *Server) handleSkillSubscriptionsRollback(w http.ResponseWriter, r *http
 		if file.FileInfo().IsDir() {
 			continue
 		}
+		
+		// Prevent Zip Slip vulnerability
+		cleanedName := pathpkg.Clean(file.Name)
+		if strings.HasPrefix(cleanedName, "..") || pathpkg.IsAbs(cleanedName) || strings.Contains(cleanedName, "../") {
+			continue
+		}
+		targetFilePath := pathpkg.Join(targetPath, cleanedName)
+		expectedPrefix := strings.TrimSuffix(targetPath, "/") + "/"
+		if !strings.HasPrefix(targetFilePath, expectedPrefix) {
+			continue
+		}
+
 		rc, err := file.Open()
 		if err != nil {
 			continue
@@ -209,8 +221,7 @@ func (s *Server) handleSkillSubscriptionsRollback(w http.ResponseWriter, r *http
 			continue
 		}
 
-		targetFilePath := pathpkg.Join(targetPath, file.Name)
-		contentType := skillsarchive.DetectContentType(file.Name, data)
+		contentType := skillsarchive.DetectContentType(cleanedName, data)
 
 		metadata := map[string]interface{}{
 			"source":      "team-rollback",
@@ -218,7 +229,7 @@ func (s *Server) handleSkillSubscriptionsRollback(w http.ResponseWriter, r *http
 			"backup_path": backupPath,
 		}
 
-		if skillsarchive.LooksBinary(file.Name, data) {
+		if skillsarchive.LooksBinary(cleanedName, data) {
 			_, err = s.FileTreeService.WriteBinaryEntry(writeCtx, userID, targetFilePath, data, contentType, models.FileTreeWriteOptions{
 				Kind:          "skill_asset",
 				Metadata:      metadata,
@@ -235,7 +246,7 @@ func (s *Server) handleSkillSubscriptionsRollback(w http.ResponseWriter, r *http
 		if err == nil {
 			restoredCount++
 			restoredFiles = append(restoredFiles, localSkillFile{
-				RelPath: file.Name,
+				RelPath: cleanedName,
 				Data:    data,
 			})
 		}

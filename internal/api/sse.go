@@ -212,7 +212,24 @@ func syncTeamListeners(ctx context.Context) {
 	if err != nil {
 		return
 	}
+
+	if resp.StatusCode == http.StatusUnauthorized && profile.RefreshToken != "" {
+		newToken, refreshErr := silentRefreshToken(ctx, profile.APIBase, profile.RefreshToken)
+		if refreshErr == nil {
+			resp.Body.Close()
+			client2 := &http.Client{Timeout: 10 * time.Second}
+			req2, _ := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(profile.APIBase, "/")+"/api/teams", nil)
+			req2.Header.Set("Authorization", "Bearer "+newToken)
+			resp2, err2 := client2.Do(req2)
+			if err2 == nil {
+				resp = resp2
+			} else {
+				return
+			}
+		}
+	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return
 	}
@@ -301,7 +318,34 @@ func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string, lastSe
 	if err != nil {
 		return err
 	}
+
+	if resp.StatusCode == http.StatusUnauthorized {
+		_, cfg, loadErr := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
+		if loadErr == nil {
+			profile := cfg.Profiles[cfg.CurrentProfile]
+			if profile.RefreshToken != "" {
+				newToken, refreshErr := silentRefreshToken(ctx, apiBase, profile.RefreshToken)
+				if refreshErr == nil {
+					resp.Body.Close()
+					url2 := fmt.Sprintf("%s/api/teams/%s/events", strings.TrimRight(apiBase, "/"), teamID)
+					if lastSeenMs > 0 {
+						url2 = fmt.Sprintf("%s?last_seen_ms=%d", url2, lastSeenMs)
+					}
+					req2, _ := http.NewRequestWithContext(ctx, http.MethodGet, url2, nil)
+					req2.Header.Set("Authorization", "Bearer "+newToken)
+					req2.Header.Set("Accept", "text/event-stream")
+					resp2, err2 := client.Do(req2)
+					if err2 == nil {
+						resp = resp2
+					} else {
+						return err2
+					}
+				}
+			}
+		}
+	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected SSE status code: %v", resp.StatusCode)
 	}
@@ -390,3 +434,52 @@ func handleSseEvent(ctx context.Context, eventType string) {
 		}
 	}
 }
+
+func silentRefreshToken(ctx context.Context, apiBase string, refreshToken string) (string, error) {
+	if refreshToken == "" {
+		return "", fmt.Errorf("no refresh token")
+	}
+	client := &http.Client{Timeout: 10 * time.Second}
+	url := fmt.Sprintf("%s/api/auth/refresh", strings.TrimRight(apiBase, "/"))
+	
+	reqBody, _ := json.Marshal(map[string]string{
+		"refresh_token": refreshToken,
+	})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(reqBody)))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("refresh failed: status %v", resp.StatusCode)
+	}
+
+	var refreshResp struct {
+		AccessToken  string `json:"access_token"`
+		RefreshToken string `json:"refresh_token"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&refreshResp); err != nil {
+		return "", err
+	}
+
+	// Update local config.json file
+	configPath, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
+	if err == nil {
+		profile := cfg.Profiles[cfg.CurrentProfile]
+		profile.Token = refreshResp.AccessToken
+		if refreshResp.RefreshToken != "" {
+			profile.RefreshToken = refreshResp.RefreshToken
+		}
+		profile.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+		cfg.Profiles[cfg.CurrentProfile] = profile
+		_ = runtimecfg.SaveConfig(configPath, cfg)
+	}
+
+	return refreshResp.AccessToken, nil
+}
+

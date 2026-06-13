@@ -65,6 +65,20 @@
 3. **路径规范化防穿越 (Path Traversal 防御) [NEW]**：
    * 在加载 `.volarc` 时，通过 `filepath.EvalSymlinks` 展开真实路径，强力拦截并阻断命中系统核心敏感前缀（如 `/etc/`，`/var/`，`/private/` 等）的路径加载，确保沙箱安全性。
 
+### 1.7 账号登录无感静默续期与自愈 (Silent Token Rotation) [NEW]
+1. **401 拦截与静默刷新**：
+   * 在 SSE 监听或 Daemon 客户端的长连接与数据同步流程中，自动拦截 401 Unauthorized 状态响应。
+   * 自动使用本地 `config.json` 的 `RefreshToken` 向中心服务的 `/api/auth/refresh` 接口发起静默 Token 换新请求。
+2. **磁盘自动持久化与重试自愈**：
+   * 成功获得新 Token 后，自动持久化覆盖回写至 `config.json` 磁盘，并无感知地以新 Token 重新发起 API 请求与 SSE 连接重试，实现长连接瞬间自愈。
+
+### 1.8 团队 Skill 解压沙箱防穿越 (Zip Slip 防御) [NEW]
+1. **Zip 解压路径安全审查**：
+   * 在团队共享的 Skill 回滚、导入及解压还原过程中，阻断任何因恶意打包（如 `../` 或绝对路径）引起的 Zip Slip 目录穿越高危漏洞。
+   * 强制使用规范化路径（`path.Clean`），并使用严格的前缀隔离条件校验：所有解压文件的目标绝对路径前缀必须与技能的目标物理路径完全匹配。
+2. **穿越文件过滤与合法数据写入**：
+   * 对非法路径的文件一律进行拦截跳过，对合规文件进行正常写入，保护系统底层不受越权写入侵扰。
+
 ---
 
 ## 2. 自动化测试与系统验证
@@ -83,3 +97,7 @@
    * `TestSSEEventReplayOnReconnect`：模拟客户端在断开期间云端产生变更，重连时发送时间戳立刻定向补发这期间错失的事件。
 6. **项目装配路径沙箱防穿越测试 [NEW]**：[platforms_lock_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/platforms/platforms_lock_test.go)
    * `TestVolarcPathSandboxing`：向 `.volarc` 植入系统敏感路径软链接，测试 `loadLocalVolarc` 成功阻断加载。
+7. **账号登录静默续期自愈测试 [NEW]**：[sse_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/api/sse_test.go)
+   * `TestClientTokenSilentRotation`：模拟 SSE 与同步接口 401，验证静默刷新、配置磁盘写入和连接自动重试。
+8. **团队技能回滚 Zip Slip 防御测试 [NEW]**：[skill_diff_rollback_test.go](file:///Users/zhongmoshu/Desktop/work/Vola/internal/api/skill_diff_rollback_test.go)
+   * `TestTeamSkillRollbackZipSlipPrevention`：构建恶意 path traversal 的 zip 压缩包，验证非法穿越文件均被拦截跳过，而合规文件被成功恢复。

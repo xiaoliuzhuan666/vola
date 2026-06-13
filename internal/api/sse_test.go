@@ -256,3 +256,104 @@ func TestSSEEventReplayOnReconnect(t *testing.T) {
 	}
 }
 
+func TestClientTokenSilentRotation(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+	
+	configFilePath := filepath.Join(tempDir, "config.json")
+	t.Setenv("VOLA_CONFIG", configFilePath)
+
+	// Setup config.json
+	cliConf := &runtimecfg.CLIConfig{
+		Version:        1,
+		CurrentProfile: "test",
+		Profiles: map[string]runtimecfg.SyncProfile{
+			"test": {
+				APIBase:      "", // Will fill after starting test server
+				Token:        "old-expired-token",
+				RefreshToken: "valid-refresh-token",
+			},
+		},
+	}
+
+	callCountTeams := 0
+	callCountRefresh := 0
+
+	// 1. Create mock server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/auth/refresh" {
+			callCountRefresh++
+			var body struct {
+				RefreshToken string `json:"refresh_token"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if body.RefreshToken != "valid-refresh-token" {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"access_token": "new-fresh-token",
+				"refresh_token": "new-refresh-token"
+			}`))
+			return
+		}
+
+		if r.URL.Path == "/api/teams" {
+			callCountTeams++
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "Bearer new-fresh-token" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"teams": [
+					{"id": "team-foo", "slug": "team-foo-slug"}
+				]
+			}`))
+			return
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Update config.json with actual test server URL
+	cliConf.Profiles["test"] = runtimecfg.SyncProfile{
+		APIBase:      ts.URL,
+		Token:        "old-expired-token",
+		RefreshToken: "valid-refresh-token",
+	}
+	cliConfBytes, _ := json.Marshal(cliConf)
+	_ = os.MkdirAll(filepath.Dir(configFilePath), 0755)
+	_ = os.WriteFile(configFilePath, cliConfBytes, 0644)
+
+	// Run syncTeamListeners
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	syncTeamListeners(ctx)
+
+	// Verify the side effects
+	if callCountRefresh != 1 {
+		t.Errorf("expected /api/auth/refresh to be called exactly 1 time, got %d", callCountRefresh)
+	}
+	if callCountTeams != 2 {
+		t.Errorf("expected /api/teams to be called 2 times (first 401, second retry 200), got %d", callCountTeams)
+	}
+
+	// Verify that config.json was updated with new tokens
+	_, updatedCfg, err := runtimecfg.LoadConfig(configFilePath)
+	if err != nil {
+		t.Fatalf("failed to load updated config: %v", err)
+	}
+	updatedProfile := updatedCfg.Profiles["test"]
+	if updatedProfile.Token != "new-fresh-token" {
+		t.Errorf("expected Token to be 'new-fresh-token', got %s", updatedProfile.Token)
+	}
+	if updatedProfile.RefreshToken != "new-refresh-token" {
+		t.Errorf("expected RefreshToken to be 'new-refresh-token', got %s", updatedProfile.RefreshToken)
+	}
+}
+

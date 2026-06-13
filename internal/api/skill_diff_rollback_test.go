@@ -192,3 +192,124 @@ func TestSkillSubscriptionsDiffAndRollback(t *testing.T) {
 		t.Errorf("fingerprint was not updated: %+v", subUpdated)
 	}
 }
+
+func TestTeamSkillRollbackZipSlipPrevention(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+
+	// Create a token with write:skills scope
+	skillsToken, err := store.CreateToken(ctx, user.ID, "skills-test", []string{models.ScopeWriteSkills}, models.TrustLevelWork, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateToken skills-test: %v", err)
+	}
+
+	// Create a team
+	status, teamResp := doJSON(t, http.MethodPost, ts.URL+"/api/teams", adminToken, []byte(`{
+		"slug": "test-team-zip-slip",
+		"name": "Test Team Zip Slip"
+	}`))
+	if status != http.StatusCreated || !teamResp.OK {
+		t.Fatalf("create team failed: status=%d body=%+v", status, teamResp)
+	}
+	var teamPayload struct {
+		Team models.Team `json:"team"`
+	}
+	if err := json.Unmarshal(teamResp.Data, &teamPayload); err != nil {
+		t.Fatalf("decode team: %v", err)
+	}
+	teamID := teamPayload.Team.ID.String()
+
+	personalSkillDir := "/skills/prevent-zip-slip"
+
+	// Prepare subscriptions file
+	subDoc := teamSkillSubscriptionsDocument{
+		Version: "vola.team-skill-subscriptions/v1",
+		Subscriptions: []teamSkillSubscription{
+			{
+				TeamID:     teamID,
+				SourcePath: "/skills/team-source",
+				TargetPath: personalSkillDir,
+			},
+		},
+	}
+	subDocData, _ := json.Marshal(subDoc)
+	_, err = store.WriteEntry(ctx, user.ID, "/settings/team-skill-subscriptions.json", string(subDocData), "application/json", models.FileTreeWriteOptions{})
+	if err != nil {
+		t.Fatalf("write subscription document: %v", err)
+	}
+
+	// Create a malicious zip file containing path traversal
+	var zipBuf bytes.Buffer
+	zw := zip.NewWriter(&zipBuf)
+	
+	// Valid file
+	w, _ := zw.Create("SKILL.md")
+	_, _ = w.Write([]byte("valid skill file"))
+	
+	// Malicious file 1: relative traversal
+	w, _ = zw.Create("../malicious.txt")
+	_, _ = w.Write([]byte("malicious content"))
+
+	// Malicious file 2: absolute path traversal
+	w, _ = zw.Create("/skills/malicious_abs.txt")
+	_, _ = w.Write([]byte("malicious absolute content"))
+
+	// Malicious file 3: nested relative traversal
+	w, _ = zw.Create("nested/../../malicious_nested.txt")
+	_, _ = w.Write([]byte("malicious nested content"))
+
+	_ = zw.Close()
+
+	backupFilePath := "/settings/team-skill-backups/prevent-zip-slip/20260613T120000Z-backup.zip"
+	_, err = store.WriteBinaryEntry(ctx, user.ID, backupFilePath, zipBuf.Bytes(), "application/zip", models.FileTreeWriteOptions{})
+	if err != nil {
+		t.Fatalf("write backup ZIP: %v", err)
+	}
+
+	// Call rollback API
+	rollbackReq := skillRollbackRequest{
+		TargetPath:     personalSkillDir,
+		BackupFilePath: backupFilePath,
+	}
+	rollbackReqData, _ := json.Marshal(rollbackReq)
+	status, rollbackResp := doJSON(t, http.MethodPost, ts.URL+"/api/skills/team-subscriptions/rollback", skillsToken.Token, rollbackReqData)
+	if status != http.StatusOK || !rollbackResp.OK {
+		t.Fatalf("rollback API failed: status=%d body=%+v", status, rollbackResp)
+	}
+
+	var rollbackResult skillRollbackResponse
+	if err := json.Unmarshal(rollbackResp.Data, &rollbackResult); err != nil {
+		t.Fatalf("unmarshal rollback data: %v", err)
+	}
+
+	// The restored count should only be 1 (the valid SKILL.md file), the other 3 should be blocked/skipped.
+	if rollbackResult.Restored != 1 {
+		t.Errorf("expected only 1 file restored (Zip Slip blocked), but got %d", rollbackResult.Restored)
+	}
+
+	// Verify that the valid file exists
+	skillMD, err := store.Read(ctx, user.ID, personalSkillDir+"/SKILL.md", models.TrustLevelWork)
+	if err != nil || skillMD.Content != "valid skill file" {
+		t.Errorf("SKILL.md was not restored correctly: content=%q, err=%v", skillMD.Content, err)
+	}
+
+	// Verify that traversal files were NOT created
+	_, err = store.Read(ctx, user.ID, "/skills/malicious.txt", models.TrustLevelWork)
+	if err == nil {
+		t.Error("Zip Slip vulnerability: /skills/malicious.txt was created")
+	}
+
+	_, err = store.Read(ctx, user.ID, "/skills/malicious_abs.txt", models.TrustLevelWork)
+	if err == nil {
+		t.Error("Zip Slip vulnerability: /skills/malicious_abs.txt was created")
+	}
+
+	_, err = store.Read(ctx, user.ID, "/skills/malicious_nested.txt", models.TrustLevelWork)
+	if err == nil {
+		t.Error("Zip Slip vulnerability: /skills/malicious_nested.txt was created")
+	}
+}
