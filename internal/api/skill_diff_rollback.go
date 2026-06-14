@@ -18,6 +18,11 @@ import (
 	"github.com/google/uuid"
 )
 
+var (
+	MaxRollbackSingleFileSize = int64(20 * 1024 * 1024)       // 20MB
+	MaxRollbackTotalSize      = int64(100 * 1024 * 1024)     // 100MB
+)
+
 type skillDiffRequest struct {
 	TeamID     string `json:"team_id"`
 	SourcePath string `json:"source_path"`
@@ -184,6 +189,40 @@ func (s *Server) handleSkillSubscriptionsRollback(w http.ResponseWriter, r *http
 	if err != nil {
 		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "invalid zip format")
 		return
+	}
+
+	// Pre-scan Zip File for security (Zip Slip & Zip Bomb) before deleting any existing files
+	var totalUncompressedSize int64
+
+	for _, file := range zr.File {
+		if file.FileInfo().IsDir() {
+			continue
+		}
+
+		// Zip Slip Validation
+		cleanedName := pathpkg.Clean(file.Name)
+		if strings.HasPrefix(cleanedName, "..") || pathpkg.IsAbs(cleanedName) || strings.Contains(cleanedName, "../") {
+			respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "invalid path in backup zip")
+			return
+		}
+		targetFilePath := pathpkg.Join(targetPath, cleanedName)
+		expectedPrefix := strings.TrimSuffix(targetPath, "/") + "/"
+		if !strings.HasPrefix(targetFilePath, expectedPrefix) {
+			respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "path escaping target directory in backup zip")
+			return
+		}
+
+		// Zip Bomb Validation
+		uncompressedSize := file.UncompressedSize64
+		if uncompressedSize > uint64(MaxRollbackSingleFileSize) {
+			respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "file in backup zip exceeds single file size limit")
+			return
+		}
+		totalUncompressedSize += int64(uncompressedSize)
+		if totalUncompressedSize > MaxRollbackTotalSize {
+			respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "backup zip total uncompressed size exceeds limit")
+			return
+		}
 	}
 
 	currentFiles, _ := s.collectLocalSkillFiles(r.Context(), userID, targetPath)

@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -354,6 +355,147 @@ func TestClientTokenSilentRotation(t *testing.T) {
 	}
 	if updatedProfile.RefreshToken != "new-refresh-token" {
 		t.Errorf("expected RefreshToken to be 'new-refresh-token', got %s", updatedProfile.RefreshToken)
+	}
+}
+
+func TestClientTokenSilentRotationConcurrency(t *testing.T) {
+	tempDir := t.TempDir()
+	t.Setenv("HOME", tempDir)
+	
+	configFilePath := filepath.Join(tempDir, "config.json")
+	t.Setenv("VOLA_CONFIG", configFilePath)
+
+	// Setup config.json
+	cliConf := &runtimecfg.CLIConfig{
+		Version:        1,
+		CurrentProfile: "test",
+		Profiles: map[string]runtimecfg.SyncProfile{
+			"test": {
+				APIBase:      "",
+				Token:        "old-expired-token",
+				RefreshToken: "valid-refresh-token",
+			},
+		},
+	}
+
+	var callCountRefresh int32
+
+	// 1. Create mock server
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/auth/refresh" {
+			// Add latency to make concurrent requests overlap
+			time.Sleep(50 * time.Millisecond)
+			
+			// Thread-safe increment
+			importCount := &callCountRefresh
+			importCount2 := int32(1)
+			
+			// Standard atomic increment
+			_ = importCount
+			_ = importCount2
+			// Let's use mutex or atomic inside mock server to count accurately
+			w.Header().Set("Content-Type", "application/json")
+			
+			// We can use a simple map lookup or standard write
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{
+				"access_token": "concurrency-fresh-token",
+				"refresh_token": "concurrency-refresh-token"
+			}`))
+			
+			// Use global atomic package by copying its value or just inline increment
+			// Since we want to check callCountRefresh, let's keep track using standard sync/atomic
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer ts.Close()
+
+	// Update config.json with actual test server URL
+	cliConf.Profiles["test"] = runtimecfg.SyncProfile{
+		APIBase:      ts.URL,
+		Token:        "old-expired-token",
+		RefreshToken: "valid-refresh-token",
+	}
+	cliConfBytes, _ := json.Marshal(cliConf)
+	_ = os.MkdirAll(filepath.Dir(configFilePath), 0755)
+	_ = os.WriteFile(configFilePath, cliConfBytes, 0644)
+
+	// Mock server with local count
+	var mu sync.Mutex
+	callCount := 0
+	
+	// Re-assign mock handlers for clean thread-safe counting
+	ts.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/auth/refresh" {
+			time.Sleep(30 * time.Millisecond)
+			mu.Lock()
+			callCount++
+			mu.Unlock()
+			
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{
+				"access_token": "concurrency-fresh-token",
+				"refresh_token": "concurrency-refresh-token"
+			}`))
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	})
+
+	ctx := context.Background()
+	concurrency := 5
+	results := make(chan string, concurrency)
+	errs := make(chan error, concurrency)
+
+	var wg sync.WaitGroup
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			token, err := silentRefreshToken(ctx, ts.URL, "old-expired-token")
+			if err != nil {
+				errs <- err
+			} else {
+				results <- token
+			}
+		}()
+	}
+	wg.Wait()
+	close(results)
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrency silent refresh failed: %v", err)
+	}
+
+	resultTokens := make(map[string]int)
+	for token := range results {
+		resultTokens[token]++
+	}
+
+	// We expect all concurrent refresh calls to succeed and return the new token
+	if resultTokens["concurrency-fresh-token"] != concurrency {
+		t.Errorf("expected all %d threads to get 'concurrency-fresh-token', got: %+v", concurrency, resultTokens)
+	}
+
+	// Only 1 actual refresh request should hit the mock server
+	mu.Lock()
+	actualCalls := callCount
+	mu.Unlock()
+	
+	if actualCalls != 1 {
+		t.Errorf("expected only 1 network refresh call due to singleflight lock, but got %d", actualCalls)
+	}
+
+	// Verify final saved config
+	_, finalCfg, err := runtimecfg.LoadConfig(configFilePath)
+	if err != nil {
+		t.Fatalf("failed to load final config: %v", err)
+	}
+	finalProfile := finalCfg.Profiles["test"]
+	if finalProfile.Token != "concurrency-fresh-token" {
+		t.Errorf("expected Token to be 'concurrency-fresh-token', got %s", finalProfile.Token)
 	}
 }
 

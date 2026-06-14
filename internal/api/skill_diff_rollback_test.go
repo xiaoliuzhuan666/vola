@@ -277,24 +277,14 @@ func TestTeamSkillRollbackZipSlipPrevention(t *testing.T) {
 	}
 	rollbackReqData, _ := json.Marshal(rollbackReq)
 	status, rollbackResp := doJSON(t, http.MethodPost, ts.URL+"/api/skills/team-subscriptions/rollback", skillsToken.Token, rollbackReqData)
-	if status != http.StatusOK || !rollbackResp.OK {
-		t.Fatalf("rollback API failed: status=%d body=%+v", status, rollbackResp)
+	if status != http.StatusBadRequest || rollbackResp.OK {
+		t.Fatalf("expected rollback to fail with 400 Bad Request on Zip Slip pre-scan, got status=%d body=%+v", status, rollbackResp)
 	}
 
-	var rollbackResult skillRollbackResponse
-	if err := json.Unmarshal(rollbackResp.Data, &rollbackResult); err != nil {
-		t.Fatalf("unmarshal rollback data: %v", err)
-	}
-
-	// The restored count should only be 1 (the valid SKILL.md file), the other 3 should be blocked/skipped.
-	if rollbackResult.Restored != 1 {
-		t.Errorf("expected only 1 file restored (Zip Slip blocked), but got %d", rollbackResult.Restored)
-	}
-
-	// Verify that the valid file exists
-	skillMD, err := store.Read(ctx, user.ID, personalSkillDir+"/SKILL.md", models.TrustLevelWork)
-	if err != nil || skillMD.Content != "valid skill file" {
-		t.Errorf("SKILL.md was not restored correctly: content=%q, err=%v", skillMD.Content, err)
+	// Verify that SKILL.md was NOT created/restored
+	_, err = store.Read(ctx, user.ID, personalSkillDir+"/SKILL.md", models.TrustLevelWork)
+	if err == nil {
+		t.Error("expected SKILL.md not to be created due to abort")
 	}
 
 	// Verify that traversal files were NOT created
@@ -311,5 +301,124 @@ func TestTeamSkillRollbackZipSlipPrevention(t *testing.T) {
 	_, err = store.Read(ctx, user.ID, "/skills/malicious_nested.txt", models.TrustLevelWork)
 	if err == nil {
 		t.Error("Zip Slip vulnerability: /skills/malicious_nested.txt was created")
+	}
+}
+
+func TestTeamSkillRollbackPreScanAndZipBombDefense(t *testing.T) {
+	// Save original limits and restore them after test
+	oldMaxSingle := MaxRollbackSingleFileSize
+	oldMaxTotal := MaxRollbackTotalSize
+	defer func() {
+		MaxRollbackSingleFileSize = oldMaxSingle
+		MaxRollbackTotalSize = oldMaxTotal
+	}()
+
+	// Limit to extremely small sizes for easy testing
+	MaxRollbackSingleFileSize = 100 // 100 bytes
+	MaxRollbackTotalSize = 200      // 200 bytes
+
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+
+	skillsToken, err := store.CreateToken(ctx, user.ID, "skills-test", []string{models.ScopeWriteSkills}, models.TrustLevelWork, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateToken: %v", err)
+	}
+
+	// 1. Prepare original skill files
+	personalSkillDir := "/skills/pre-scan-skill"
+	_, _ = store.WriteEntry(ctx, user.ID, personalSkillDir+"/SKILL.md", "# Original SKILL\n", "text/markdown", models.FileTreeWriteOptions{})
+	_, _ = store.WriteEntry(ctx, user.ID, personalSkillDir+"/original.py", "print('original')\n", "text/x-python", models.FileTreeWriteOptions{})
+
+	// Create a team
+	status, teamResp := doJSON(t, http.MethodPost, ts.URL+"/api/teams", adminToken, []byte(`{
+		"slug": "test-team-pre-scan",
+		"name": "Test Team Pre-Scan"
+	}`))
+	if status != http.StatusCreated || !teamResp.OK {
+		t.Fatalf("create team failed")
+	}
+	var teamPayload struct {
+		Team models.Team `json:"team"`
+	}
+	_ = json.Unmarshal(teamResp.Data, &teamPayload)
+	teamID := teamPayload.Team.ID.String()
+
+	// Prepare subscriptions file
+	subDoc := teamSkillSubscriptionsDocument{
+		Version: "vola.team-skill-subscriptions/v1",
+		Subscriptions: []teamSkillSubscription{
+			{
+				TeamID:     teamID,
+				SourcePath: "/skills/team-source",
+				TargetPath: personalSkillDir,
+			},
+		},
+	}
+	subDocData, _ := json.Marshal(subDoc)
+	_, _ = store.WriteEntry(ctx, user.ID, "/settings/team-skill-subscriptions.json", string(subDocData), "application/json", models.FileTreeWriteOptions{})
+
+	// 2. Test Case A: Zip Bomb exceeding single file limit (101 bytes)
+	var zipBufA bytes.Buffer
+	zwA := zip.NewWriter(&zipBufA)
+	wA, _ := zwA.Create("huge_file.txt")
+	_, _ = wA.Write(make([]byte, 101)) // Write 101 bytes (exceeds 100 limit)
+	_ = zwA.Close()
+
+	backupPathA := "/settings/team-skill-backups/pre-scan-skill/20260613T120000Z-bomb-backup.zip"
+	_, _ = store.WriteBinaryEntry(ctx, user.ID, backupPathA, zipBufA.Bytes(), "application/zip", models.FileTreeWriteOptions{})
+
+	rollbackReqA := skillRollbackRequest{
+		TargetPath:     personalSkillDir,
+		BackupFilePath: backupPathA,
+	}
+	rollbackReqDataA, _ := json.Marshal(rollbackReqA)
+	status, rollbackRespA := doJSON(t, http.MethodPost, ts.URL+"/api/skills/team-subscriptions/rollback", skillsToken.Token, rollbackReqDataA)
+
+	// Verify rollback failed and returned BadRequest
+	if status != http.StatusBadRequest || rollbackRespA.OK {
+		t.Errorf("expected rollback to fail with 400 Bad Request, got status %d, OK=%t", status, rollbackRespA.OK)
+	}
+
+	// Verify that original files were NOT deleted
+	skillMDA, err := store.Read(ctx, user.ID, personalSkillDir+"/SKILL.md", models.TrustLevelWork)
+	if err != nil || skillMDA.Content != "# Original SKILL\n" {
+		t.Errorf("original SKILL.md was deleted or modified: err=%v", err)
+	}
+	originalPyA, err := store.Read(ctx, user.ID, personalSkillDir+"/original.py", models.TrustLevelWork)
+	if err != nil || originalPyA.Content != "print('original')\n" {
+		t.Errorf("original original.py was deleted or modified: err=%v", err)
+	}
+
+	// 3. Test Case B: Zip Slip detected during Pre-Scan
+	var zipBufB bytes.Buffer
+	zwB := zip.NewWriter(&zipBufB)
+	wB, _ := zwB.Create("../escaped_pre_scan.txt")
+	_, _ = wB.Write([]byte("escaped"))
+	_ = zwB.Close()
+
+	backupPathB := "/settings/team-skill-backups/pre-scan-skill/20260613T120000Z-slip-backup.zip"
+	_, _ = store.WriteBinaryEntry(ctx, user.ID, backupPathB, zipBufB.Bytes(), "application/zip", models.FileTreeWriteOptions{})
+
+	rollbackReqB := skillRollbackRequest{
+		TargetPath:     personalSkillDir,
+		BackupFilePath: backupPathB,
+	}
+	rollbackReqDataB, _ := json.Marshal(rollbackReqB)
+	status, rollbackRespB := doJSON(t, http.MethodPost, ts.URL+"/api/skills/team-subscriptions/rollback", skillsToken.Token, rollbackReqDataB)
+
+	// Verify rollback failed and returned BadRequest
+	if status != http.StatusBadRequest || rollbackRespB.OK {
+		t.Errorf("expected Zip Slip rollback to fail with 400, got status %d", status)
+	}
+
+	// Verify that original files were still NOT deleted
+	skillMDB, err := store.Read(ctx, user.ID, personalSkillDir+"/SKILL.md", models.TrustLevelWork)
+	if err != nil || skillMDB.Content != "# Original SKILL\n" {
+		t.Errorf("original SKILL.md was deleted under Zip Slip case: err=%v", err)
 	}
 }

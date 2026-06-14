@@ -214,7 +214,7 @@ func syncTeamListeners(ctx context.Context) {
 	}
 
 	if resp.StatusCode == http.StatusUnauthorized && profile.RefreshToken != "" {
-		newToken, refreshErr := silentRefreshToken(ctx, profile.APIBase, profile.RefreshToken)
+		newToken, refreshErr := silentRefreshToken(ctx, profile.APIBase, profile.Token)
 		if refreshErr == nil {
 			resp.Body.Close()
 			client2 := &http.Client{Timeout: 10 * time.Second}
@@ -324,7 +324,7 @@ func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string, lastSe
 		if loadErr == nil {
 			profile := cfg.Profiles[cfg.CurrentProfile]
 			if profile.RefreshToken != "" {
-				newToken, refreshErr := silentRefreshToken(ctx, apiBase, profile.RefreshToken)
+				newToken, refreshErr := silentRefreshToken(ctx, apiBase, token)
 				if refreshErr == nil {
 					resp.Body.Close()
 					url2 := fmt.Sprintf("%s/api/teams/%s/events", strings.TrimRight(apiBase, "/"), teamID)
@@ -435,15 +435,34 @@ func handleSseEvent(ctx context.Context, eventType string) {
 	}
 }
 
-func silentRefreshToken(ctx context.Context, apiBase string, refreshToken string) (string, error) {
-	if refreshToken == "" {
+var refreshMu sync.Mutex
+
+func silentRefreshToken(ctx context.Context, apiBase string, currentToken string) (string, error) {
+	refreshMu.Lock()
+	defer refreshMu.Unlock()
+
+	// Load the latest config from disk inside the critical section
+	configPath, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
+	if err != nil {
+		return "", err
+	}
+	profile := cfg.Profiles[cfg.CurrentProfile]
+
+	// If the token in config.json is already different from the expired token we hold,
+	// it means another goroutine has refreshed it. We can just reuse it.
+	if profile.Token != currentToken && profile.Token != "" {
+		return profile.Token, nil
+	}
+
+	if profile.RefreshToken == "" {
 		return "", fmt.Errorf("no refresh token")
 	}
+
 	client := &http.Client{Timeout: 10 * time.Second}
 	url := fmt.Sprintf("%s/api/auth/refresh", strings.TrimRight(apiBase, "/"))
 	
 	reqBody, _ := json.Marshal(map[string]string{
-		"refresh_token": refreshToken,
+		"refresh_token": profile.RefreshToken,
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, strings.NewReader(string(reqBody)))
 	if err != nil {
@@ -468,17 +487,13 @@ func silentRefreshToken(ctx context.Context, apiBase string, refreshToken string
 	}
 
 	// Update local config.json file
-	configPath, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
-	if err == nil {
-		profile := cfg.Profiles[cfg.CurrentProfile]
-		profile.Token = refreshResp.AccessToken
-		if refreshResp.RefreshToken != "" {
-			profile.RefreshToken = refreshResp.RefreshToken
-		}
-		profile.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
-		cfg.Profiles[cfg.CurrentProfile] = profile
-		_ = runtimecfg.SaveConfig(configPath, cfg)
+	profile.Token = refreshResp.AccessToken
+	if refreshResp.RefreshToken != "" {
+		profile.RefreshToken = refreshResp.RefreshToken
 	}
+	profile.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	cfg.Profiles[cfg.CurrentProfile] = profile
+	_ = runtimecfg.SaveConfig(configPath, cfg)
 
 	return refreshResp.AccessToken, nil
 }
