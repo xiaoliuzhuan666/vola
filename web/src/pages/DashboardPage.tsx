@@ -344,6 +344,61 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
 
   const offlineMcps = Object.entries(mcpHealth).filter(([_, info]) => info.status === 'offline')
   const offlineCount = offlineMcps.length
+  const connectedMethods = connectionMethods.filter((method) => hasConnectedPlatform(connections, grants, method.aliases))
+  const connectedCount = connectedMethods.length
+  const dataItemCount = Math.max(0, stats.files + stats.memory + stats.skills + stats.projects + stats.conversations)
+  const hasImportedData = dataItemCount > 0 || treeEntries.length > 0
+  const featuredConnectionIDs = localMode
+    ? ['codex', 'claude-code', 'claude', 'chatgpt']
+    : ['claude', 'chatgpt', 'cursor', 'api']
+  const featuredConnectionMethods = featuredConnectionIDs
+    .map((id) => connectionMethods.find((method) => method.id === id))
+    .filter(Boolean) as typeof connectionMethods
+  const workspaceModeLabel = localMode ? tx('本地单机', 'Local-only') : tx('云端账号', 'Cloud')
+  const statusItems = [
+    {
+      label: tx('AI 工具', 'AI tools'),
+      value: connectedCount > 0 ? tx(`已连接 ${connectedCount} 个`, `${connectedCount} connected`) : tx('还未连接', 'Not connected'),
+      tone: connectedCount > 0 ? 'good' : 'warn',
+    },
+    {
+      label: tx('资料量', 'Data'),
+      value: hasImportedData ? tx(`${dataItemCount || treeEntries.length} 项`, `${dataItemCount || treeEntries.length} items`) : tx('还没有资料', 'No data yet'),
+      tone: hasImportedData ? 'good' : 'warn',
+    },
+    {
+      label: tx('工作模式', 'Workspace'),
+      value: workspaceModeLabel,
+      tone: localMode ? 'neutral' : 'good',
+    },
+  ]
+  const nextActions = [
+    {
+      title: connectedCount > 0 ? tx('管理已连接的 AI 工具', 'Manage connected AI tools') : tx('连接第一个 AI 工具', 'Connect your first AI tool'),
+      body: connectedCount > 0
+        ? tx('查看授权状态，或继续接入 Codex、Claude Code、ChatGPT 等工具。', 'Review access and add Codex, Claude Code, ChatGPT, or another tool.')
+        : tx('先把常用 AI 工具接到 Vola，让它能读取你授权的资料。', 'Start by connecting an AI tool so it can read the data you authorize.'),
+      to: '/setup/mcp',
+      cta: connectedCount > 0 ? tx('管理连接', 'Manage') : tx('开始连接', 'Connect'),
+      tone: 'primary',
+    },
+    {
+      title: hasImportedData ? tx('整理已导入资料', 'Review imported data') : tx('导入本机资料', 'Import local data'),
+      body: hasImportedData
+        ? tx('检查记忆、技能和项目资料，把有价值的内容整理成可复用资产。', 'Review memory, skills, and project data, then keep what is useful.')
+        : tx('从本机 App Data 或导出文件开始，让 Vola 先拥有可用资料。', 'Bring in local app data or exported files so Vola has useful material.'),
+      to: localMode ? '/imports/local-apps' : '/imports/claude-export',
+      cta: hasImportedData ? tx('查看资料', 'Review') : tx('导入资料', 'Import'),
+      tone: 'secondary',
+    },
+    {
+      title: tx('设置备份与同步', 'Set backup and sync'),
+      body: tx('用 GitHub Backup 保留可恢复版本，也可以再配置 WebDAV 或 COS 备份包。', 'Keep recoverable versions with GitHub Backup, then add WebDAV or S3-compatible archive backups if needed.'),
+      to: '/sync-backup',
+      cta: tx('打开备份', 'Open backup'),
+      tone: 'secondary',
+    },
+  ]
 
   return (
     <div className="page home-page dashboard-redesign-page">
@@ -443,16 +498,42 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
         </div>
       )}
 
-      <section className="dashboard-platform-panel" aria-label={tx('连接方式', 'Connection methods')}>
+      <section className="dashboard-focus-panel" aria-label={tx('今日重点', 'Today focus')}>
+        <div className="dashboard-focus-copy">
+          <span>{tx('今日概览', 'Today')}</span>
+          <h2>{tx('先把 AI、资料和备份三件事理顺。', 'Start with AI access, data, and backup.')}</h2>
+          <p>{tx('Vola 是给 AI 工具使用的个人数据 Hub。先完成下面三步，再进入文件和高级配置。', 'Vola is a personal data hub for AI tools. Finish these three steps before going deeper into files and advanced settings.')}</p>
+        </div>
+        <div className="dashboard-status-grid" aria-label={tx('当前状态', 'Current status')}>
+          {statusItems.map((item) => (
+            <div key={item.label} className={`dashboard-status-item is-${item.tone}`}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="dashboard-next-actions" aria-label={tx('下一步', 'Next actions')}>
+        {nextActions.map((action) => (
+          <Link key={action.title} to={action.to} className={`dashboard-action-card is-${action.tone}`}>
+            <span>{action.title}</span>
+            <p>{action.body}</p>
+            <strong>{action.cta}</strong>
+          </Link>
+        ))}
+      </section>
+
+      <section className="dashboard-platform-panel dashboard-platform-panel-compact" aria-label={tx('常用连接', 'Common connections')}>
         <div className="dashboard-section-head">
           <div>
-            <h3>{tx('连接 Agent 到个人数据 Hub', 'Connect agents to your data hub')}</h3>
-            <p>{tx('连接后，Agent 可以读取被授权的 profile、memory、projects、skills 和 vault 资料。绿色表示当前账户已有这种连接。', 'After connection, agents can read authorized profile, memory, projects, skills, and vault material. Green means this account already has that connection type.')}</p>
+            <h3>{tx('常用连接', 'Common connections')}</h3>
+            <p>{tx('先显示最常用的入口；其他客户端可以在新手接入指南里继续选择。', 'Showing the most common entry points first. More clients are available in the setup guide.')}</p>
           </div>
           <Link to="/connections" className="dashboard-card-link">{tx('管理连接', 'Manage connections')}</Link>
         </div>
-        <div className="dashboard-platform-grid">
-          {connectionMethods.map((method) => {
+        <div className="dashboard-featured-connection-grid">
+          {featuredConnectionMethods.map((method) => {
             const connected = hasConnectedPlatform(connections, grants, method.aliases)
             return (
               <Link key={method.id} to={method.to} state={method.state} className={connected ? 'dashboard-platform-card is-connected' : 'dashboard-platform-card'}>

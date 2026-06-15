@@ -343,6 +343,35 @@ export default function GitMirrorPage() {
       ? formatDateTime(opsStatus.git_mirror.last_synced_at, locale)
       : tx('还没有 Git 同步记录', 'No Git sync record yet')
   const latestFailedBackupRun = backupRuns.find((run) => run.status === 'failed')
+  const githubBackupReady = !!remoteRepoURL && selectedAuthCanSync && !mirror?.remote_conflict
+  const backupFocusTone = mirror?.remote_conflict
+    ? 'warn'
+    : githubBackupReady
+      ? 'good'
+      : 'warn'
+  const backupFocusTitle = mirror?.remote_conflict
+    ? tx('远端仓库需要确认', 'Remote repository needs review')
+    : githubBackupReady
+      ? tx('GitHub 备份已经可用', 'GitHub Backup is ready')
+      : tx('先完成 GitHub 备份', 'Set up GitHub Backup first')
+  const backupFocusCopy = mirror?.remote_conflict
+    ? tx('远端仓库出现 Vola 之外的新提交。请在下方 GitHub 备份目标里确认处理方式。', 'The remote repository has commits outside Vola. Review the GitHub backup destination below before syncing.')
+    : githubBackupReady
+      ? tx('你可以立即同步当前资料；需要离开服务器的 zip 备份包时，再添加 WebDAV 或 COS/S3 目标。', 'You can sync now. Add WebDAV or S3-compatible archive backup targets when you need off-server zip archives.')
+      : authMode === 'github_app_user'
+        ? tx('推荐使用 GitHub App：连接 GitHub，创建私有备份仓库，然后立即同步。', 'Recommended path: connect GitHub, create a private backup repository, then sync.')
+        : tx('填写备份仓库和认证信息后，Vola 会把资料写入 GitHub 版本历史。', 'After repository and credentials are saved, Vola writes your data into GitHub version history.')
+  const githubStepValue = remoteRepoURL
+    ? tx('仓库已配置', 'Repository set')
+    : authMode === 'github_app_user' && mirror?.github_app_user_connected
+      ? tx('GitHub 已连接', 'GitHub connected')
+      : tx('等待配置', 'Waiting for setup')
+  const archiveStepValue = backupTargets.length > 0
+    ? tx(`${backupTargets.length} 个目标`, `${backupTargets.length} target${backupTargets.length === 1 ? '' : 's'}`)
+    : tx('可选', 'Optional')
+  const recoveryStepValue = restorePreview
+    ? tx('已有预览结果', 'Preview ready')
+    : tx('从 zip 备份包恢复', 'Restore from zip archive')
 
   const setInlineMessage = (nextMessage: string) => {
     setMessage(nextMessage)
@@ -875,12 +904,76 @@ export default function GitMirrorPage() {
     return null
   }
 
-  const renderSyncActions = () => syncAvailable && (
-    <div className="data-sync-actions data-sync-actions-compact" style={{ marginTop: 16 }}>
-      <button className="btn btn-primary" type="button" disabled={syncDisabled} onClick={() => void handleSync(false)}>
-        {working ? tx('处理中...', 'Working...') : retrySeconds > 0 ? tx(`请稍候 ${retrySeconds}s`, `Wait ${retrySeconds}s`) : tx('立即同步', 'Sync now')}
-      </button>
-    </div>
+  const renderPrimaryFocusAction = () => {
+    if (mirror?.remote_conflict) {
+      return (
+        <a className="btn btn-primary" href="#github-backup">
+          {tx('查看 GitHub 备份目标', 'Review GitHub destination')}
+        </a>
+      )
+    }
+    if (githubBackupReady) {
+      return (
+        <button className="btn btn-primary" type="button" disabled={syncDisabled} onClick={() => void handleSync(false)}>
+          {working ? tx('处理中...', 'Working...') : retrySeconds > 0 ? tx(`请稍候 ${retrySeconds}s`, `Wait ${retrySeconds}s`) : tx('立即同步', 'Sync now')}
+        </button>
+      )
+    }
+    if (authMode === 'github_app_user' && !mirror?.github_app_user_connected) {
+      return (
+        <button className="btn btn-primary" type="button" disabled={working} onClick={handleConnectGitHubApp}>
+          {working ? tx('连接中...', 'Connecting...') : tx('连接 GitHub', 'Connect GitHub')}
+        </button>
+      )
+    }
+    if (authMode === 'github_app_user' && mirror?.github_app_user_connected && !remoteRepoURL) {
+      return (
+        <button className="btn btn-primary" type="button" disabled={working} onClick={handleCreateDefaultBackupRepo}>
+          {working ? tx('创建中...', 'Creating...') : tx('创建私有备份仓库', 'Create private backup repo')}
+        </button>
+      )
+    }
+    return (
+      <a className="btn btn-primary" href="#github-backup">
+        {tx('填写备份仓库', 'Enter backup repository')}
+      </a>
+    )
+  }
+
+  const renderBackupFocus = () => (
+    <section className={`git-backup-focus-panel is-${backupFocusTone}`} aria-label={tx('备份重点', 'Backup focus')}>
+      <div className="git-backup-focus-copy">
+        <span>{tx('备份状态', 'Backup status')}</span>
+        <h2>{backupFocusTitle}</h2>
+        <p>{backupFocusCopy}</p>
+        <div className="git-backup-focus-actions">
+          {renderPrimaryFocusAction()}
+          <a className="btn" href="#external-backup">
+            {backupTargets.length > 0 ? tx('查看外部备份包', 'View archive backups') : tx('配置外部备份包', 'Set archive backup')}
+          </a>
+          <a className="btn" href="#restore-preview">
+            {tx('恢复预览', 'Restore preview')}
+          </a>
+        </div>
+      </div>
+      <div className="git-backup-focus-status">
+        <div className="git-backup-status-item">
+          <span>GitHub</span>
+          <strong>{githubStepValue}</strong>
+          <small>{remoteRepoURL ? latestBackupLabel : tx('推荐先完成', 'Recommended first')}</small>
+        </div>
+        <div className="git-backup-status-item">
+          <span>{tx('外部备份包', 'Archive backups')}</span>
+          <strong>{archiveStepValue}</strong>
+          <small>{latestOpsBackupLabel}</small>
+        </div>
+        <div className="git-backup-status-item">
+          <span>{tx('恢复', 'Recovery')}</span>
+          <strong>{recoveryStepValue}</strong>
+          <small>{tx('不会自动覆盖，先预览再应用', 'Preview before applying changes')}</small>
+        </div>
+      </div>
+    </section>
   )
 
   const renderRemoteConflict = () => mirror?.remote_conflict && (
@@ -1141,7 +1234,7 @@ export default function GitMirrorPage() {
   )
 
   const renderExternalBackupTargets = () => (
-    <div className="materials-panel data-sync-card">
+    <div id="external-backup" className="materials-panel data-sync-card">
       <div className="card-header">
         <h3 className="card-title">{tx('外部备份目标', 'External backup targets')}</h3>
       </div>
@@ -1431,7 +1524,7 @@ export default function GitMirrorPage() {
         </div>
       )}
 
-      <div className="data-sync-token-box" style={{ marginTop: 16 }}>
+      <div id="restore-preview" className="data-sync-token-box" style={{ marginTop: 16 }}>
         <div className="data-record-title">{tx('恢复预览', 'Restore preview')}</div>
         <div className="data-sync-settings-grid" style={{ marginTop: 12 }}>
           <div className="form-group data-sync-settings-span-wide">
@@ -1552,9 +1645,9 @@ export default function GitMirrorPage() {
 
   return (
     <div className="page materials-page">
-      {renderStorageOverview()}
+      {renderBackupFocus()}
 
-      <div className="materials-panel data-sync-card">
+      <div id="github-backup" className="materials-panel data-sync-card">
         <div className="card-header">
           <h3 className="card-title">{tx('GitHub 备份目标', 'GitHub backup destination')}</h3>
         </div>
@@ -1566,7 +1659,6 @@ export default function GitMirrorPage() {
         {renderRemoteConflict()}
 
         {renderLocalAuthControls()}
-        {renderSyncActions()}
 
         {authMode === 'github_app_user' && mirror?.github_app_user_connected && (
           <div className="data-sync-actions data-sync-actions-compact" style={{ marginTop: 16 }}>
@@ -1577,6 +1669,7 @@ export default function GitMirrorPage() {
         )}
       </div>
 
+      {renderStorageOverview()}
       {renderExternalBackupTargets()}
     </div>
   )
