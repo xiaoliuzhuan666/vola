@@ -3,10 +3,21 @@ package config
 import (
 	"fmt"
 	"math"
+	"net"
 	"net/url"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/google/uuid"
+)
+
+const (
+	defaultDatabaseURL        = "postgres://localhost:5432/vola?sslmode=disable"
+	developmentJWTSecret      = "dev-jwt-secret-change-in-production"
+	localSQLiteJWTSecret      = "vola-local-sqlite-jwt-secret"
+	developmentVaultMasterKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	developmentPostgresPass   = "vola_dev"
 )
 
 type Config struct {
@@ -49,8 +60,10 @@ type Config struct {
 	LogFormat                             string
 	EnableSystemSettings                  bool
 	EnableBilling                         bool
+	EnablePublicRegistration              bool
 	CaptureOAuth                          bool
 	CaptureDir                            string
+	InstanceAdminUserIDs                  []uuid.UUID
 }
 
 func Load() (*Config, error) {
@@ -87,13 +100,21 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 	if err != nil {
 		return nil, err
 	}
+	enablePublicRegistration, err := parseBoolConfig("VOLA_ENABLE_PUBLIC_REGISTRATION", envOrOverride("VOLA_ENABLE_PUBLIC_REGISTRATION", ""), !isPublicBaseURL(envOrOverride("PUBLIC_BASE_URL", "")))
+	if err != nil {
+		return nil, err
+	}
 	captureOAuth, err := parseBoolConfig("VOLA_CAPTURE_OAUTH", envOrOverride("VOLA_CAPTURE_OAUTH", ""), false)
+	if err != nil {
+		return nil, err
+	}
+	instanceAdminUserIDs, err := parseUUIDListConfig("INSTANCE_ADMIN_USER_IDS", envOrOverride("INSTANCE_ADMIN_USER_IDS", ""))
 	if err != nil {
 		return nil, err
 	}
 
 	cfg := &Config{
-		DatabaseURL:             envOrOverride("DATABASE_URL", "postgres://localhost:5432/vola?sslmode=disable"),
+		DatabaseURL:             envOrOverride("DATABASE_URL", defaultDatabaseURL),
 		Port:                    envOrOverride("PORT", "8080"),
 		JWTSecret:               envOrOverride("JWT_SECRET", ""),
 		ObjectStorageBackend:    strings.ToLower(strings.TrimSpace(envOrOverride("OBJECT_STORAGE_BACKEND", "db"))),
@@ -128,8 +149,10 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 		LogFormat:               envOrOverride("LOG_FORMAT", "text"),
 		EnableSystemSettings:    enableSystemSettings,
 		EnableBilling:           enableBilling,
+		EnablePublicRegistration: enablePublicRegistration,
 		CaptureOAuth:            captureOAuth,
 		CaptureDir:              envOrOverride("VOLA_CAPTURE_DIR", "tmp/oauth-captures"),
+		InstanceAdminUserIDs:    instanceAdminUserIDs,
 	}
 	corsOrigins, err := parseCORSOrigins(envOrOverride("CORS_ORIGINS", "http://localhost:3000"))
 	if err != nil {
@@ -177,6 +200,10 @@ func LoadWithOverrides(overrides map[string]string) (*Config, error) {
 
 	if cfg.VaultMasterKey == "" {
 		return nil, fmt.Errorf("VAULT_MASTER_KEY environment variable is required")
+	}
+
+	if err := validatePublicDeploymentSecrets(cfg); err != nil {
+		return nil, err
 	}
 
 	return cfg, nil
@@ -234,6 +261,33 @@ func parseBoolConfig(key, value string, fallback bool) (bool, error) {
 	}
 }
 
+func parseUUIDListConfig(key, value string) ([]uuid.UUID, error) {
+	parts := strings.FieldsFunc(value, func(r rune) bool {
+		return r == ',' || r == '\n' || r == '\t' || r == ' '
+	})
+	ids := make([]uuid.UUID, 0, len(parts))
+	seen := make(map[uuid.UUID]struct{}, len(parts))
+	for _, raw := range parts {
+		item := strings.TrimSpace(raw)
+		if item == "" {
+			continue
+		}
+		id, err := uuid.Parse(item)
+		if err != nil {
+			return nil, fmt.Errorf("invalid %s: %q is not a UUID", key, item)
+		}
+		if id == uuid.Nil {
+			return nil, fmt.Errorf("invalid %s: nil UUID is not allowed", key)
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		ids = append(ids, id)
+	}
+	return ids, nil
+}
+
 func splitScopes(value string) []string {
 	parts := strings.Fields(strings.TrimSpace(value))
 	if len(parts) == 0 {
@@ -284,6 +338,48 @@ func normalizeCORSOrigin(origin string) (string, error) {
 	default:
 		return "", fmt.Errorf("invalid CORS_ORIGINS origin %q: unsupported scheme %q", origin, parsed.Scheme)
 	}
+}
+
+func validatePublicDeploymentSecrets(cfg *Config) error {
+	if !isPublicBaseURL(cfg.PublicBaseURL) {
+		return nil
+	}
+	switch cfg.JWTSecret {
+	case developmentJWTSecret, localSQLiteJWTSecret:
+		return fmt.Errorf("PUBLIC_BASE_URL points to a non-local host; JWT_SECRET must not use a development default")
+	}
+	if cfg.VaultMasterKey == developmentVaultMasterKey {
+		return fmt.Errorf("PUBLIC_BASE_URL points to a non-local host; VAULT_MASTER_KEY must not use the development default")
+	}
+	if strings.TrimSpace(cfg.DatabaseURL) == defaultDatabaseURL {
+		return fmt.Errorf("PUBLIC_BASE_URL points to a non-local host; DATABASE_URL must not use the development default")
+	}
+	parsed, err := url.Parse(cfg.DatabaseURL)
+	if err == nil && parsed.User != nil {
+		if password, ok := parsed.User.Password(); ok && password == developmentPostgresPass {
+			return fmt.Errorf("PUBLIC_BASE_URL points to a non-local host; DATABASE_URL must not use the development Postgres password")
+		}
+	}
+	return nil
+}
+
+func isPublicBaseURL(value string) bool {
+	baseURL := strings.TrimSpace(value)
+	if baseURL == "" {
+		return false
+	}
+	parsed, err := url.Parse(baseURL)
+	if err != nil || parsed.Hostname() == "" {
+		return false
+	}
+	host := strings.ToLower(parsed.Hostname())
+	if host == "localhost" {
+		return false
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return !ip.IsLoopback()
+	}
+	return true
 }
 
 func parseByteSize(value string) (int64, error) {

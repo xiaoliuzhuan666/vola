@@ -1,10 +1,10 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from 'react'
 import { Link, Navigate, useLocation, useParams } from 'react-router-dom'
-import { api, type AuthProvider } from '../api'
+import { api, type AuthProvider, type PublicConfig } from '../api'
 import LanguageToggle from '../components/LanguageToggle'
 import { useI18n } from '../i18n'
 
-const HUB_URL = typeof window !== 'undefined' ? window.location.origin : 'https://vola.cn'
+const HUB_URL = typeof window !== 'undefined' ? window.location.origin : 'https://www.vola.ai'
 const MCP_URL = `${HUB_URL}/mcp`
 const DEFAULT_SEO_DESCRIPTION = 'Vola is a personal data hub for AI agents, connecting profile, memory, projects, conversations, skills, and vault access.'
 
@@ -552,6 +552,34 @@ function tr(tx: (zh: string, en: string) => string, text: LocalizedText) {
   return tx(text.zh, text.en)
 }
 
+function usePublicRegistrationEnabled(defaultValue = true) {
+  const [enabled, setEnabled] = useState(defaultValue)
+
+  useEffect(() => {
+    let active = true
+    api.getPublicConfig()
+      .then((cfg: PublicConfig) => {
+        if (active) setEnabled(cfg?.public_registration_enabled !== false)
+      })
+      .catch(() => {
+        if (active) setEnabled(defaultValue)
+      })
+    return () => {
+      active = false
+    }
+  }, [defaultValue])
+
+  return enabled
+}
+
+function SignupLink({ to = '/signup', className, children, enabled }: { to?: string; className?: string; children: ReactNode; enabled: boolean }) {
+  return (
+    <Link to={enabled ? to : '/login'} className={className}>
+      {children}
+    </Link>
+  )
+}
+
 function setMeta(selector: string, attr: string, value: string) {
   const element = document.querySelector(selector)
   if (element) element.setAttribute(attr, value)
@@ -715,6 +743,7 @@ export function MarketingHomePage() {
     tx('Agent 个人数据 Hub — Vola', 'Personal data hub for AI agents — Vola'),
     tx('Vola 统一管理 Agent 可使用的 profile、memory、projects、conversations、skills 和 vault 权限。', DEFAULT_SEO_DESCRIPTION),
   )
+  const publicRegistrationEnabled = usePublicRegistrationEnabled()
   const [activeKey, setActiveKey] = useState('claude')
 
   // 交互式 Demo 演示状态
@@ -812,7 +841,7 @@ export function MarketingHomePage() {
     <PublicShell>
       <div className="public-quickstart-banner">
         💡 {tx('只需 3 分钟，即可将您的 Claude/ChatGPT 接入记忆 Hub。', 'Connect your Claude/ChatGPT to your memory Hub in just 3 minutes.')}
-        <Link to="/signup">{tx('立即开始新手接入指南 →', 'Get Started with Setup Guide →')}</Link>
+        <SignupLink enabled={publicRegistrationEnabled}>{tx('立即开始新手接入指南 ->', 'Get Started with Setup Guide ->')}</SignupLink>
       </div>
       <main>
         <section className="public-hero">
@@ -835,7 +864,7 @@ export function MarketingHomePage() {
               )}
             </p>
             <div className="public-hero-actions">
-              <Link to="/signup" className="btn btn-primary">{tx('3 分钟连接第一个 AI 工具', 'Connect your first agent in 3 min')}</Link>
+              <SignupLink enabled={publicRegistrationEnabled} className="btn btn-primary">{tx('3 分钟连接第一个 AI 工具', 'Connect your first agent in 3 min')}</SignupLink>
               <a href="#team-library" className="btn btn-outline">{tx('查看团队共享', 'View team sharing')}</a>
             </div>
             <div className="public-hero-proof" aria-label={tx('产品能力', 'Product capabilities')}>
@@ -979,7 +1008,7 @@ export function MarketingHomePage() {
             <h2>{tx('把团队的 AI 工作方法沉淀成共享资料库。', 'Turn team AI practices into a shared library.')}</h2>
             <p>{tx('Vola 的团队空间适合保存团队通用 Skill、MCP 配置说明、提示词、Playbook 和项目协作资料。个人资料和团队资料保持分开，成员按角色访问。', 'Vola team spaces are for shared skills, MCP setup notes, prompts, playbooks, and collaboration material. Personal and team data stay separate, with role-based access for members.')}</p>
             <div className="team-library-actions">
-              <Link to="/signup" className="btn btn-primary">{tx('创建团队资料库', 'Create a team library')}</Link>
+              <SignupLink enabled={publicRegistrationEnabled} className="btn btn-primary">{tx('创建团队资料库', 'Create a team library')}</SignupLink>
               <a href="#how-it-works" className="btn btn-outline">{tx('查看 AI 接入', 'View agent setup')}</a>
             </div>
           </div>
@@ -1076,7 +1105,7 @@ export function MarketingHomePage() {
               </div>
               <div className="workflow-actions">
                 <Link to={`/guides/${activeIntegration.key}`} className="btn btn-outline">{tx('查看完整指南', 'Open full guide')}</Link>
-                <Link to={`/signup?platform=${activeIntegration.key}`} className="btn btn-primary">{tx('创建账号并接入', 'Create account to connect')}</Link>
+                <SignupLink enabled={publicRegistrationEnabled} to={`/signup?platform=${activeIntegration.key}`} className="btn btn-primary">{tx('创建账号并接入', 'Create account to connect')}</SignupLink>
               </div>
             </div>
           </div>
@@ -1119,7 +1148,7 @@ export function MarketingHomePage() {
                       </div>
                       <div className="workflow-actions">
                         <Link to={`/guides/${item.key}`} className="btn btn-outline">{tx('查看完整指南', 'Open full guide')}</Link>
-                        <Link to={`/signup?platform=${item.key}`} className="btn btn-primary">{tx('创建账号并接入', 'Create account to connect')}</Link>
+                        <SignupLink enabled={publicRegistrationEnabled} to={`/signup?platform=${item.key}`} className="btn btn-primary">{tx('创建账号并接入', 'Create account to connect')}</SignupLink>
                       </div>
                     </div>
                   )}
@@ -1237,6 +1266,7 @@ export function IntegrationDetailPage() {
   const { platform } = useParams()
   const { tx } = useI18n()
   const item = getIntegration(platform)
+  const publicRegistrationEnabled = usePublicRegistrationEnabled()
   useDocumentTitle(
     item
       ? tx(`${item.shortName} 集成 — Vola`, `${item.shortName} Integration — Vola`)
@@ -1258,7 +1288,7 @@ export function IntegrationDetailPage() {
             <p>{tr(tx, item.detailSummary || item.demo)}</p>
             <div className="public-hero-actions">
               <Link to={`/guides/${item.key}`} className="btn btn-primary">{tx('打开接入指南', 'Open setup guide')}</Link>
-              <Link to={`/signup?platform=${item.key}`} className="btn btn-outline">{tx('创建账号并接入', 'Create account to connect')}</Link>
+              <SignupLink enabled={publicRegistrationEnabled} to={`/signup?platform=${item.key}`} className="btn btn-outline">{tx('创建账号并接入', 'Create account to connect')}</SignupLink>
             </div>
           </div>
           <div className="integration-preview-panel">
@@ -1328,6 +1358,7 @@ export function GuidePage() {
   const { platform } = useParams()
   const { tx } = useI18n()
   const guide = getIntegration(platform)
+  const publicRegistrationEnabled = usePublicRegistrationEnabled()
   useDocumentTitle(
     guide
       ? tx(`${guide.shortName} 接入指南 — Vola`, `${guide.shortName} Setup Guide — Vola`)
@@ -1347,7 +1378,7 @@ export function GuidePage() {
             <p>{tr(tx, guide.audience)}</p>
             <p>{tr(tx, guide.demo)}</p>
             <div className="public-hero-actions">
-              <Link to={`/signup?platform=${guide.key}`} className="btn btn-primary">{tx('创建账号开始接入', 'Create account for this setup')}</Link>
+              <SignupLink enabled={publicRegistrationEnabled} to={`/signup?platform=${guide.key}`} className="btn btn-primary">{tx('创建账号开始接入', 'Create account for this setup')}</SignupLink>
               <Link to="/integrations" className="btn btn-outline">{tx('查看全部集成', 'View integrations')}</Link>
             </div>
           </div>
@@ -1556,7 +1587,7 @@ export function LegalPage({ kind }: { kind: 'privacy' | 'terms' }) {
   )
 }
 
-export function SignupPage() {
+export function SignupPage({ publicRegistrationEnabled = true }: { publicRegistrationEnabled?: boolean }) {
   const { tx } = useI18n()
   useDocumentTitle(tx('注册 — Vola', 'Sign up — Vola'), DEFAULT_SEO_DESCRIPTION, 'noindex, nofollow')
   const [providers, setProviders] = useState<AuthProvider[]>([])
@@ -1577,6 +1608,27 @@ export function SignupPage() {
   const pocketEnabled = !!pocketProvider?.enabled
   const busy = loadingAction !== ''
   const hasProvider = githubEnabled || pocketEnabled
+
+  if (!publicRegistrationEnabled) {
+    return (
+      <PublicShell>
+        <main className="auth-split">
+          <section className="auth-copy">
+            <p className="public-kicker">{tx('注册已关闭', 'Signup closed')}</p>
+            <h1>{tx('这个部署没有开放公开注册。', 'This deployment does not allow public signup.')}</h1>
+            <p>{tx('请联系实例管理员创建账号，或者直接登录已有账号。', 'Contact an instance administrator for access, or log in with an existing account.')}</p>
+          </section>
+          <section className="auth-card">
+            <h1 className="login-title">{tx('联系管理员', 'Contact administrator')}</h1>
+            <p className="login-desc">{tx('公开注册未开启。管理员可以直接创建账号，再由你登录使用。', 'Public signup is off. An administrator can create the account, then you can sign in.')}</p>
+            <div className="login-actions">
+              <Link to="/login" className="btn btn-primary btn-block">{tx('去登录', 'Go to login')}</Link>
+            </div>
+          </section>
+        </main>
+      </PublicShell>
+    )
+  }
 
   const handleEmailSignup = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault()

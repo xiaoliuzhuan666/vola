@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type FileNode, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse, type TeamMcpAsset } from '../api'
+import { api, type FileNode, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse, type TeamMcpAsset, type TeamSkillPublication, type TeamSkillSubscriptionStatus } from '../api'
 import CustomSelect from '../components/CustomSelect'
 import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsTile from '../components/MaterialsTile'
@@ -184,6 +184,8 @@ export default function TeamLibraryPage() {
   const [skillUpdateNotifications, setSkillUpdateNotifications] = useState<TeamSkillUpdateNotification[]>([])
   const [skillUpdateNotificationInfo, setSkillUpdateNotificationInfo] = useState<Pick<TeamSkillUpdateNotificationsResponse, 'storage_path' | 'updated_at' | 'last_checked_at'> | null>(null)
   const [skillReviewHistory, setSkillReviewHistory] = useState<TeamSkillReviewEvent[]>([])
+  const [skillPublications, setSkillPublications] = useState<TeamSkillPublication[]>([])
+  const [subscriptions, setSubscriptions] = useState<TeamSkillSubscriptionStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
   const [agentWorking, setAgentWorking] = useState(false)
@@ -245,9 +247,23 @@ export default function TeamLibraryPage() {
       setSkillUpdateNotifications([])
       setSkillUpdateNotificationInfo(null)
       setSkillReviewHistory([])
+      setSkillPublications([])
+      setSubscriptions([])
       return
     }
-    const [teamResult, skillsResult, snapshotResult, membersResult, agentsResult, mcpsResult, reviewHistoryResult, subscriptionReportResult, notificationsResult] = await Promise.allSettled([
+    const [
+      teamResult,
+      skillsResult,
+      snapshotResult,
+      membersResult,
+      agentsResult,
+      mcpsResult,
+      reviewHistoryResult,
+      subscriptionReportResult,
+      notificationsResult,
+      publicationsResult,
+      subscriptionsResult,
+    ] = await Promise.allSettled([
       api.getTeamTree(team.id, TEAM_ROOT),
       api.getTeamTree(team.id, '/skills'),
       api.getTeamTreeSnapshot(team.id, '/'),
@@ -257,6 +273,8 @@ export default function TeamLibraryPage() {
       api.getTeamSkillReviewHistory(team.id),
       team.can_manage_members ? api.getTeamSkillSubscriptionReport(team.id) : Promise.resolve(null),
       team.can_manage_members ? api.getTeamSkillUpdateNotifications(team.id) : Promise.resolve(null),
+      api.getTeamSkillPublications(team.id),
+      api.getTeamSkillSubscriptions(team.id),
     ])
     const entries = snapshotResult.status === 'fulfilled' ? snapshotResult.value.entries || [] : []
     const existingPaths = new Set(entries.map((entry) => normalizeTemplatePath(entry.path)))
@@ -280,6 +298,8 @@ export default function TeamLibraryPage() {
       updated_at: notificationsResponse.updated_at,
       last_checked_at: notificationsResponse.last_checked_at,
     } : null)
+    setSkillPublications(publicationsResult.status === 'fulfilled' ? publicationsResult.value.publications || [] : [])
+    setSubscriptions(subscriptionsResult.status === 'fulfilled' ? subscriptionsResult.value.subscriptions || [] : [])
   }, [])
 
   const load = useCallback(async () => {
@@ -1032,6 +1052,232 @@ export default function TeamLibraryPage() {
         <section className="materials-section">
           <div className="materials-section-head">
             <div>
+              <h3 className="materials-section-title">{tx('团队 Skills 共享', 'Team Skills Sharing')}</h3>
+              <p className="materials-section-copy">
+                {tx('团队内共享的 AI 技能 (Skills) 列表。管理员可设置全员共享与审核推荐，成员可一键快速装配到本地。', 'Shared AI skills in the team. Admins can share to all and review recommendations, and members can install with one click.')}
+              </p>
+            </div>
+          </div>
+
+          <div className="materials-grid materials-grid-wide">
+            {skillPublications.map((pub) => {
+              const sub = subscriptions.find(s => s.source_path === pub.skill_path)
+              const isInstalled = !!sub
+              const hasUpdate = sub?.update_available
+
+              return (
+                <MaterialsTile
+                  key={pub.skill_path}
+                  iconClassName="icon-stack"
+                  title={pub.skill_path.replace(/^\/skills\//, '')}
+                  subtitle={pub.skill_path}
+                  description={pub.note || tx('团队共享技能', 'Shared team skill')}
+                  footerStart={
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                      {pub.visibility === 'team' && (
+                        <span className="badge badge-success" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
+                          {tx('团队默认', 'Team Default')}
+                        </span>
+                      )}
+                      {isInstalled ? (
+                        <span style={{ color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                          ✓ {tx('已装配', 'Installed')}
+                        </span>
+                      ) : (
+                        <span style={{ color: '#94a3b8' }}>
+                          {tx('未装配', 'Not Installed')}
+                        </span>
+                      )}
+                    </div>
+                  }
+                  footerEnd={
+                    selectedTeam.can_manage_members ? (
+                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: '#94a3b8' }}>
+                        <input
+                          type="checkbox"
+                          checked={pub.visibility === 'team'}
+                          disabled={sharingWorking}
+                          onChange={async (e) => {
+                            setSharingWorking(true)
+                            try {
+                              await api.saveTeamSkillPublication(selectedTeam.id, {
+                                skill_path: pub.skill_path,
+                                status: pub.status,
+                                visibility: e.target.checked ? 'team' : 'private',
+                                note: pub.note
+                              })
+                              setMessage(tx('共享设置已更新', 'Sharing settings updated'))
+                              const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
+                              setSkillPublications(updatedPubs.publications || [])
+                            } catch (err: any) {
+                              setError(err?.message || tx('更新共享状态失败', 'Failed to update sharing status'))
+                            } finally {
+                              setSharingWorking(false)
+                            }
+                          }}
+                        />
+                        {tx('全员共享', 'Share with all')}
+                      </label>
+                    ) : (
+                      pub.visibility === 'team' ? (
+                        <span style={{ fontSize: '12px', color: '#10b981' }}>{tx('全员可见', 'Visible to all')}</span>
+                      ) : pub.review_status === 'requested' ? (
+                        <span style={{ fontSize: '12px', color: '#64748b' }}>{tx('待审查', 'Review requested')}</span>
+                      ) : (
+                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>{tx('推荐中', 'Recommended')}</span>
+                      )
+                    )
+                  }
+                  actions={
+                    <>
+                      {!isInstalled ? (
+                        <button
+                          className="btn btn-sm btn-primary"
+                          type="button"
+                          disabled={sharingWorking}
+                          onClick={async () => {
+                            setSharingWorking(true)
+                            try {
+                              await api.copyTeamSkillToPersonal(selectedTeam.id, pub.skill_path)
+                              setMessage(tx('技能装配成功！', 'Skill installed successfully!'))
+                              const res = await api.getTeamSkillSubscriptions(selectedTeam.id)
+                              setSubscriptions(res.subscriptions || [])
+                            } catch (err: any) {
+                              setError(err?.message || tx('装配技能失败', 'Failed to install skill'))
+                            } finally {
+                              setSharingWorking(false)
+                            }
+                          }}
+                        >
+                          + {tx('快速装配', 'Install')}
+                        </button>
+                      ) : hasUpdate ? (
+                        <button
+                          className="btn btn-sm btn-primary"
+                          type="button"
+                          disabled={sharingWorking}
+                          onClick={async () => {
+                            setSharingWorking(true)
+                            try {
+                              await api.copyTeamSkillToPersonal(selectedTeam.id, pub.skill_path, undefined, true)
+                              setMessage(tx('技能已同步到最新版！', 'Skill updated successfully!'))
+                              const res = await api.getTeamSkillSubscriptions(selectedTeam.id)
+                              setSubscriptions(res.subscriptions || [])
+                            } catch (err: any) {
+                              setError(err?.message || tx('更新同步失败', 'Failed to update skill'))
+                            } finally {
+                              setSharingWorking(false)
+                            }
+                          }}
+                        >
+                          {tx('一键同步', 'Sync Update')}
+                        </button>
+                      ) : null}
+
+                      {(!selectedTeam.can_manage_members && pub.review_status !== 'requested' && pub.visibility !== 'team') && (
+                        <button
+                          className="btn btn-sm"
+                          type="button"
+                          disabled={sharingWorking}
+                          onClick={async () => {
+                            setSharingWorking(true)
+                            try {
+                              await api.requestTeamSkillReview(selectedTeam.id, {
+                                asset_type: 'skill',
+                                skill_path: pub.skill_path,
+                                note: 'Recommended by team member.'
+                              })
+                              setMessage(tx('推荐成功，已提交管理员审核！', 'Recommended successfully, submitted to admin for review.'))
+                              const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
+                              setSkillPublications(updatedPubs.publications || [])
+                            } catch (err: any) {
+                              setError(err?.message || tx('提交推荐失败', 'Failed to recommend'))
+                            } finally {
+                              setSharingWorking(false)
+                            }
+                          }}
+                        >
+                          {tx('推荐', 'Recommend')}
+                        </button>
+                      )}
+
+                      {selectedTeam.can_manage_members && pub.review_status === 'requested' ? (
+                        <>
+                          <button
+                            className="btn btn-sm btn-primary"
+                            type="button"
+                            disabled={sharingWorking}
+                            onClick={async () => {
+                              setSharingWorking(true)
+                              try {
+                                await api.resolveTeamSkillReview(selectedTeam.id, {
+                                  asset_type: 'skill',
+                                  skill_path: pub.skill_path,
+                                  decision: 'approved',
+                                  note: 'Approved by admin.'
+                                })
+                                await api.saveTeamSkillPublication(selectedTeam.id, {
+                                  skill_path: pub.skill_path,
+                                  status: 'published',
+                                  visibility: 'team'
+                                })
+                                setMessage(tx('已通过审查并全员共享！', 'Approved and shared with all!'))
+                                const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
+                                setSkillPublications(updatedPubs.publications || [])
+                              } catch (err: any) {
+                                setError(err?.message || tx('审核操作失败', 'Failed to resolve review'))
+                              } finally {
+                                setSharingWorking(false)
+                              }
+                            }}
+                          >
+                            {tx('通过审查', 'Approve')}
+                          </button>
+                          <button
+                            className="btn btn-sm"
+                            type="button"
+                            disabled={sharingWorking}
+                            onClick={async () => {
+                              setSharingWorking(true)
+                              try {
+                                await api.resolveTeamSkillReview(selectedTeam.id, {
+                                  asset_type: 'skill',
+                                  skill_path: pub.skill_path,
+                                  decision: 'changes_requested',
+                                  note: 'Changes requested by admin.'
+                                })
+                                setMessage(tx('已要求修改。', 'Changes requested.'))
+                                const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
+                                setSkillPublications(updatedPubs.publications || [])
+                              } catch (err: any) {
+                                setError(err?.message || tx('审核操作失败', 'Failed to resolve review'))
+                              } finally {
+                                setSharingWorking(false)
+                              }
+                            }}
+                          >
+                            {tx('要求修改', 'Request Changes')}
+                          </button>
+                        </>
+                      ) : null}
+                    </>
+                  }
+                />
+              )
+            })}
+            {skillPublications.length === 0 && (
+              <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '24px', color: '#64748b' }}>
+                {tx('暂无团队共享的 Skills。', 'No shared team skills yet.')}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {selectedTeam && (
+        <section className="materials-section">
+          <div className="materials-section-head">
+            <div>
               <h3 className="materials-section-title">{tx('团队 Agent 配方', 'Team Agent Recipes')}</h3>
               <p className="materials-section-copy">
                 {tx('这里保存可共享的 Agent 配置：默认 Skill、模型、权限和审批动作。Vola 保存配方，不直接运行 Agent。', 'Shared agent recipes store default skills, models, permissions, and approval notes. Vola stores the recipe and does not run the agent.')}
@@ -1048,23 +1294,78 @@ export default function TeamLibraryPage() {
                 subtitle={`/${agent.slug}`}
                 description={agent.description || agent.instructions || tx('团队 Agent 配方', 'Team agent recipe')}
                 footerStart={agentStatusLabel(agent.status, agent.visibility, locale)}
-                footerEnd={agent.review_status === 'requested'
-                  ? tx('待审查', 'Review requested')
-                  : agent.review_status === 'changes_requested'
-                    ? tx('需修改', 'Changes requested')
-                    : (agent.default_skill_paths || []).length
-                      ? tx(`${agent.default_skill_paths?.length || 0} 个默认 Skill`, `${agent.default_skill_paths?.length || 0} default skills`)
-                      : tx('可安装到个人', 'Installable')}
+                footerEnd={
+                  selectedTeam.can_manage_members ? (
+                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: '#94a3b8' }}>
+                      <input
+                        type="checkbox"
+                        checked={agent.visibility === 'team'}
+                        disabled={agentWorking}
+                        onChange={async (e) => {
+                          setAgentWorking(true)
+                          try {
+                            await api.saveTeamAgent(selectedTeam.id, {
+                              slug: agent.slug,
+                              name: agent.name,
+                              description: agent.description,
+                              instructions: agent.instructions,
+                              default_skill_paths: agent.default_skill_paths || [],
+                              target_agents: agent.target_agents || [],
+                              model: agent.model,
+                              permissions: agent.permissions || [],
+                              approval_required: agent.approval_required || [],
+                              maintainer: agent.maintainer,
+                              status: agent.status,
+                              visibility: e.target.checked ? 'team' : 'private',
+                            })
+                            setMessage(tx('Agent 共享设置已更新', 'Agent sharing settings updated'))
+                            const res = await api.getTeamAgents(selectedTeam.id)
+                            setTeamAgents(res.agents || [])
+                          } catch (err: any) {
+                            setError(err?.message || tx('更新 Agent 共享状态失败', 'Failed to update agent sharing status'))
+                          } finally {
+                            setAgentWorking(false)
+                          }
+                        }}
+                      />
+                      {tx('全员共享', 'Share with all')}
+                    </label>
+                  ) : (
+                    agent.visibility === 'team' ? (
+                      <span style={{ fontSize: '12px', color: '#10b981' }}>{tx('全员可见', 'Visible to all')}</span>
+                    ) : agent.review_status === 'requested' ? (
+                      <span style={{ fontSize: '12px', color: '#64748b' }}>{tx('待审查', 'Review requested')}</span>
+                    ) : (
+                      <span style={{ fontSize: '12px', color: '#94a3b8' }}>{tx('推荐中', 'Recommended')}</span>
+                    )
+                  )
+                }
                 actions={(
                   <>
                     {agent.status === 'published' && agent.visibility === 'team' ? (
                       <button className="btn btn-sm" type="button" disabled={installingAgentSlug === agent.slug} onClick={() => { void handleInstallAgent(agent) }}>
-                        {installingAgentSlug === agent.slug ? tx('安装中...', 'Installing...') : tx('安装到个人', 'Install')}
+                        {installingAgentSlug === agent.slug ? tx('安装中...', 'Installing...') : `+ ${tx('快速装配', 'Install')}`}
                       </button>
                     ) : null}
-                    {selectedTeam.can_write && !selectedTeam.can_manage_members ? (
-                      <button className="btn btn-sm" type="button" disabled={agentWorking || agent.review_status === 'requested'} onClick={() => { void handleRequestAgentReview(agent) }}>
-                        {agent.review_status === 'requested' ? tx('待审查', 'Review requested') : tx('提交审查', 'Request review')}
+                    {selectedTeam.can_write && !selectedTeam.can_manage_members && agent.review_status !== 'requested' && agent.visibility !== 'team' ? (
+                      <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={async () => {
+                        setAgentWorking(true)
+                        try {
+                          await api.requestTeamSkillReview(selectedTeam.id, {
+                            asset_type: 'agent',
+                            agent_slug: agent.slug,
+                            note: 'Recommended by team member.'
+                          })
+                          setMessage(tx('推荐成功，已提交管理员审核！', 'Recommended successfully, submitted to admin for review.'))
+                          const res = await api.getTeamAgents(selectedTeam.id)
+                          setTeamAgents(res.agents || [])
+                        } catch (err: any) {
+                          setError(err?.message || tx('提交推荐失败', 'Failed to recommend agent'))
+                        } finally {
+                          setAgentWorking(false)
+                        }
+                      }}>
+                        {tx('推荐', 'Recommend')}
                       </button>
                     ) : null}
                     {selectedTeam.can_manage_members && agent.review_status === 'requested' ? (

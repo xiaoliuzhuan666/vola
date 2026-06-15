@@ -414,6 +414,8 @@ vola/
 | `GITHUB_CLIENT_ID` | GitHub OAuth | - |
 | `GITHUB_CLIENT_SECRET` | GitHub OAuth | - |
 | `CORS_ORIGINS` | 允许的前端域名 | `http://localhost:3000` |
+| `INSTANCE_ADMIN_USER_IDS` | 允许访问整站级管理接口的用户 UUID，逗号分隔；影响 `/api/admin/users` 和 `/api/ops/instance-status` | - |
+| `VOLA_ENABLE_PUBLIC_REGISTRATION` | 是否开放公开注册；为空时本地地址默认开放，公开域名默认关闭。设为 `1`/`true` 可显式开放，设为 `0`/`false` 会关闭邮箱注册和第三方 signup 入口 | 自动判断 |
 | `RATE_LIMIT` | 每分钟请求数 | `100` |
 | `MAX_BODY_SIZE` | 请求体大小限制 | `10485760` (10MB) |
 | `LOG_LEVEL` | 日志级别 | `info` |

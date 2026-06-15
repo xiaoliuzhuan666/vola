@@ -21,7 +21,9 @@
 3. Postgres 数据卷有持久化配置。
 4. hosted Git mirror 设置了 `GIT_MIRROR_HOSTED_ROOT=/data/git-mirrors`，并挂载 PVC。
 5. GitHub Backup 或 WebDAV / S3-compatible 外部目标至少配置一个。
-6. 已记录一份恢复演练时间、备份对象名和负责人。
+6. `INSTANCE_ADMIN_USER_IDS` 包含负责运维的用户 UUID，整站用户管理和实例级运维状态只允许这些用户访问。
+7. 公开域名默认关闭公开注册。需要开放注册时，显式设置 `VOLA_ENABLE_PUBLIC_REGISTRATION=1`，并准备好滥用防护、容量策略和账号审核。
+8. 已记录一份恢复演练时间、备份对象名和负责人。
 
 ## K8s 持久化
 
@@ -115,6 +117,15 @@ curl -fsS "$PUBLIC_BASE_URL/api/ops/status" \
   -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
+`/api/ops/status` 按当前 token 所属用户返回状态。管理员需要看整台实例时，使用：
+
+```bash
+curl -fsS "$PUBLIC_BASE_URL/api/ops/instance-status" \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
+```
+
+实例状态会遍历用户账号，汇总多少用户已有 GitHub Backup、WebDAV / S3-compatible 上传和远端备份对象，并在 `subjects` 里列出每个用户自己的备份状态。它不会返回 secret 原文。
+
 返回内容包括：
 
 - 主存储类型和本地/hosted 模式。
@@ -125,14 +136,14 @@ curl -fsS "$PUBLIC_BASE_URL/api/ops/status" \
 - 当前检查结果：`ok`、`warning`、`critical`。
 - 相关文档路径。
 
-`/api/health` 仍只用于服务存活检查，不能证明备份有效。备份是否有效看 `/api/ops/status` 和真实恢复演练。
+`/api/health` 仍只用于服务存活检查，不能证明备份有效。备份是否有效看 `/api/ops/status`、`/api/ops/instance-status` 和真实恢复演练。
 
 ## 告警建议
 
 至少监控这些条件：
 
 - `/api/health` 非 2xx。
-- `/api/ops/status` 的 `status` 为 `critical`。
+- `/api/ops/status` 或 `/api/ops/instance-status` 的 `status` 为 `critical`。
 - `backup.last_error` 非空。
 - `backup.last_run_status = failed`。
 - `git_mirror.last_error` 或 `git_mirror.last_push_error` 非空。
@@ -149,8 +160,35 @@ curl -fsS "$PUBLIC_BASE_URL/api/ops/status" \
 4. 使用原 `VAULT_MASTER_KEY` 和 `JWT_SECRET` 启动服务。
 5. 如果需要恢复可见文件树，从 GitHub Backup clone，或在 `GitHub 备份` 页面上传导出 zip，先预览，再选择跳过或覆盖策略应用恢复。
 6. 登录后台检查 Skills、Memory、Projects、Vault scope 列表和 GitHub Backup 页面。
-7. 调用 `/api/ops/status`，记录返回状态、最近备份对象名、最近运行状态和检查时间。
+7. 调用 `/api/ops/status` 和 `/api/ops/instance-status`，记录返回状态、最近备份对象名、最近运行状态和检查时间。
 8. 删除临时环境中的敏感数据。
+
+本仓库提供了一个本地演练脚本，默认只启动临时容器和 `127.0.0.1` 本地服务，不写生产：
+
+```bash
+tools/restore-drill.sh --object vola/neudrive-export-YYYYMMDD-HHMMSSZ.zip
+```
+
+它会从本地 COS 凭据文件下载 S3-compatible 对象，启动临时 Postgres，启动临时 Vola，创建临时 owner token，执行 restore preview 和 restore apply，然后清理临时 token、服务和容器。默认读取 `/Users/zhongmoshu/Desktop/vola-cos-backup-credentials.md`，脚本不会打印 secret。
+
+如果要验证生产数据库 dump 和原 `VAULT_MASTER_KEY`，优先把 key 放在权限为 `600` 的本地文件里，再传文件路径：
+
+```bash
+tools/restore-drill.sh \
+  --dump /path/to/vola-prod.dump \
+  --zip /path/to/cos-export.zip \
+  --vault-master-key-file /path/to/vault-master-key.txt
+```
+
+脚本会先验证 restore preview/apply，再从临时库里的 `vault_entries` 选择 `octet_length(nonce)=12` 且有密文的真实加密记录做 DB 层解密探针。输出只包含脱敏后的 scope 和明文字节数，不输出 secret 原文。没有提供原 `VAULT_MASTER_KEY` 时，脚本会跳过旧 secret 解密验证，不把这项写成通过。
+
+在 Apple Silicon 上如果默认 Postgres 镜像拉取慢或平台不匹配，可以指定本机已有镜像：
+
+```bash
+tools/restore-drill.sh \
+  --object vola/neudrive-export-YYYYMMDD-HHMMSSZ.zip \
+  --postgres-image pgvector/pgvector:pg16
+```
 
 ## 不能替代的事项
 

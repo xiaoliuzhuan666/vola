@@ -19,27 +19,29 @@ import {
   type CodexConsoleSkillCandidateSaveResponse,
   type CodexConsoleThread,
   type LocalSkillSyncAgentPlan,
+  type SkillAgentTarget,
 } from "../api";
 import { useI18n } from "../i18n";
 
 type ConsoleView = "brief" | "threads" | "runs" | "automations" | "artifacts" | "hooks" | "memory" | "handovers" | "skill_candidates";
 type SkillCandidateAgentID = "claude-code" | "codex" | "cursor" | "gemini-cli";
-
-const SKILL_CANDIDATE_AGENT_OPTIONS: {
+type SkillCandidateAgentOption = {
   id: SkillCandidateAgentID;
   name: string;
   modeZh: string;
   modeEn: string;
   noteZh: string;
   noteEn: string;
-}[] = [
+};
+
+const SKILL_CANDIDATE_AGENT_OPTIONS: SkillCandidateAgentOption[] = [
   {
     id: "codex",
     name: "Codex",
     modeZh: "本地同步预览",
     modeEn: "Local sync preview",
-    noteZh: "面向 ~/.codex/skills，当前不会写入本地。",
-    noteEn: "Targets ~/.codex/skills; nothing is written locally here.",
+    noteZh: "面向 ~/.agents/skills，当前不会写入本地。",
+    noteEn: "Targets ~/.agents/skills; nothing is written locally here.",
   },
   {
     id: "claude-code",
@@ -66,6 +68,43 @@ const SKILL_CANDIDATE_AGENT_OPTIONS: {
     noteEn: "Keeps the assignment for manual use from GEMINI.md-style guidance.",
   },
 ];
+
+function getAgentOptionsFromTarget(target: SkillAgentTarget, tx: (zh: string, en: string) => string): SkillCandidateAgentOption {
+  let modeZh = "导出预览";
+  let modeEn = "Export preview";
+  if (target.supports_apply) {
+    modeZh = "本地同步预览";
+    modeEn = "Local sync preview";
+  }
+
+  let noteZh = "";
+  let noteEn = "";
+  if (target.supports_apply) {
+    const pathHint = target.install_path_hint || "";
+    noteZh = `面向 ${pathHint}，当前不会写入本地。`;
+    noteEn = `Targets ${pathHint}; nothing is written locally here.`;
+  } else {
+    if (target.id === "cursor") {
+      noteZh = "保留分配关系，生成规则素材导出预览。";
+      noteEn = "Keeps the assignment and previews an export package.";
+    } else if (target.id === "gemini-cli") {
+      noteZh = "保留分配关系，供 GEMINI.md 等说明文件引用。";
+      noteEn = "Keeps the assignment for manual use from GEMINI.md-style guidance.";
+    } else {
+      noteZh = target.auto_apply_reason || "保留分配关系。";
+      noteEn = target.auto_apply_reason || "Keeps the assignment.";
+    }
+  }
+
+  return {
+    id: target.id as SkillCandidateAgentID,
+    name: target.name,
+    modeZh,
+    modeEn,
+    noteZh,
+    noteEn,
+  };
+}
 
 function formatDateTime(value: string | undefined, locale: "zh-CN" | "en") {
   if (!value) return "—";
@@ -304,6 +343,16 @@ export default function CodexConsolePage() {
   const [skillAssignPreview, setSkillAssignPreview] = useState<CodexConsoleSkillCandidateAssignPreviewResponse | null>(null);
   const [skillAssignAgentIDs, setSkillAssignAgentIDs] = useState<SkillCandidateAgentID[]>(["codex"]);
   const [showArchivedSkillCandidates, setShowArchivedSkillCandidates] = useState(false);
+  const [availableAgents, setAvailableAgents] = useState<SkillAgentTarget[]>([
+    { id: "codex", name: "Codex", platform: "codex", install_path_hint: "~/.agents/skills", supports_apply: true, export_supported: true },
+    { id: "claude-code", name: "Claude Code", platform: "claude-code", install_path_hint: "~/.claude/skills", supports_apply: true, export_supported: true },
+    { id: "cursor", name: "Cursor", platform: "cursor", install_path_hint: ".cursor/rules", supports_apply: false, export_supported: true },
+    { id: "gemini-cli", name: "Gemini CLI", platform: "gemini-cli", install_path_hint: "Export package; manual GEMINI.md integration", supports_apply: false, export_supported: true },
+  ]);
+
+  const agentOptions = useMemo(() => {
+    return availableAgents.map((agent) => getAgentOptionsFromTarget(agent, tx));
+  }, [availableAgents, locale]);
 
   const load = async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -312,6 +361,14 @@ export default function CodexConsolePage() {
     try {
       const next = await api.getCodexConsole();
       setData(next);
+      try {
+        const assignmentsData = await api.getSkillAssignments();
+        if (assignmentsData && assignmentsData.agents) {
+          setAvailableAgents(assignmentsData.agents);
+        }
+      } catch (e) {
+        console.warn("Failed to load skill assignments in CodexConsole", e);
+      }
       setSelectedThreadID((current) => current || next.threads[0]?.id || "");
       setSelectedRunID((current) => current || next.runs[0]?.id || "");
       setSelectedAutomationID((current) => current || next.automations[0]?.id || "");
@@ -819,6 +876,7 @@ export default function CodexConsolePage() {
                     draftContent={skillDraftContent}
                     assigning={skillAssigning === selectedSkillCandidate.id}
                     assignPreview={skillAssignPreview?.id === selectedSkillCandidate.id ? skillAssignPreview : null}
+                    agentOptions={agentOptions}
                     selectedAgentIDs={skillAssignAgentIDs}
                     onDraftChange={setSkillDraftContent}
                     onDraftReset={() => setSkillDraftContent(cleanSkillDraftText(selectedSkillCandidate.draft))}
@@ -2235,6 +2293,7 @@ function SkillCandidateDetail({
   draftContent,
   assigning,
   assignPreview,
+  agentOptions,
   selectedAgentIDs,
   onDraftChange,
   onDraftReset,
@@ -2254,6 +2313,7 @@ function SkillCandidateDetail({
   draftContent: string;
   assigning: boolean;
   assignPreview: CodexConsoleSkillCandidateAssignPreviewResponse | null;
+  agentOptions: SkillCandidateAgentOption[];
   selectedAgentIDs: SkillCandidateAgentID[];
   onDraftChange: (value: string) => void;
   onDraftReset: () => void;
@@ -2331,7 +2391,7 @@ function SkillCandidateDetail({
         </div>
         <p>{tx("Vola 会把这份 Skill 作为同一份资产分配给所选 Agent。Codex 和 Claude Code 生成本地同步预览，Cursor 和 Gemini CLI 生成导出预览；这里不会写入本机目录。", "Vola assigns this Skill asset to the selected Agents. Codex and Claude Code get local sync previews; Cursor and Gemini CLI get export previews. Nothing is written locally here.")}</p>
         <div className="codex-console-agent-options" role="group" aria-label={tx("选择 Agent 目标", "Select Agent targets")}>
-          {SKILL_CANDIDATE_AGENT_OPTIONS.map((agent) => {
+          {agentOptions.map((agent) => {
             const checked = selectedAgentIDs.includes(agent.id);
             const disableLastChecked = checked && selectedAgentIDs.length <= 1;
             return (

@@ -1768,7 +1768,7 @@ export default function DataSkillsPage() {
           <div className="materials-section-head">
             <div>
               <h3 className="materials-section-title">{tx('Agent 分配', 'Agent assignments')}</h3>
-              <p className="materials-section-copy">{tx('按 Agent 选择可用 Skill。Claude Code 写入 ~/.claude/skills，Codex 写入 ~/.codex/skills；Cursor 和 Gemini CLI 只保存分配并生成导出包。', 'Choose skills per agent. Claude Code writes to ~/.claude/skills, Codex writes to ~/.codex/skills, while Cursor and Gemini CLI keep assignments and export packages only.')}</p>
+              <p className="materials-section-copy">{tx('按 Agent 选择可用 Skill。Claude Code 写入 ~/.claude/skills，Codex 写入 ~/.agents/skills；Cursor 和 Gemini CLI 只保存分配并生成导出包。', 'Choose skills per agent. Claude Code writes to ~/.claude/skills, Codex writes to ~/.agents/skills, while Cursor and Gemini CLI keep assignments and export packages only.')}</p>
             </div>
             <div className="materials-actions">
               <button className="btn btn-sm" disabled={!assignmentChanged || assignmentSaving} onClick={resetSkillAssignments}>

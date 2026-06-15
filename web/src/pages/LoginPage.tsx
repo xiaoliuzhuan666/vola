@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type AuthProvider } from '../api'
+import { api, type AuthProvider, type PublicConfig } from '../api'
 import { useI18n } from '../i18n'
 import { PublicShell } from './PublicPages'
 
@@ -13,6 +13,7 @@ export default function LoginPage() {
   const [loadingAction, setLoadingAction] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [publicRegistrationEnabled, setPublicRegistrationEnabled] = useState(true)
 
   useEffect(() => {
     document.title = tx(`登录 — ${PRODUCT_NAME}`, `Log in — ${PRODUCT_NAME}`)
@@ -22,6 +23,9 @@ export default function LoginPage() {
     const params = new URLSearchParams(window.location.search)
     setError(params.get('error') || '')
     api.getAuthProviders().then((items) => setProviders(items || [])).catch(() => setProviders([]))
+    api.getPublicConfig()
+      .then((cfg: PublicConfig) => setPublicRegistrationEnabled(cfg?.public_registration_enabled !== false))
+      .catch(() => setPublicRegistrationEnabled(true))
   }, [])
 
   const githubProvider = providers.find((provider) => provider.id === 'github')
@@ -133,9 +137,15 @@ export default function LoginPage() {
             </>
           )}
 
-          <p className="login-note">
-            {tx('还没有账户？', 'No account yet?')} <Link to="/signup">{tx('免费创建账号', 'Create free account')}</Link>
-          </p>
+          {publicRegistrationEnabled ? (
+            <p className="login-note">
+              {tx('还没有账户？', 'No account yet?')} <Link to="/signup">{tx('免费创建账号', 'Create free account')}</Link>
+            </p>
+          ) : (
+            <p className="login-note">
+              {tx('此部署已关闭公开注册，请联系管理员创建账号。', 'Public signup is disabled for this deployment. Contact an administrator for access.')}
+            </p>
+          )}
         </section>
       </main>
     </PublicShell>

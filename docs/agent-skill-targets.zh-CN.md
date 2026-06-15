@@ -7,7 +7,7 @@
 | Agent | 当前状态 | 本地写入 | 导出包 |
 | --- | --- | --- | --- |
 | Claude Code | 可自动同步 | `~/.claude/skills` | 支持 |
-| Codex | 可自动同步 | `~/.codex/skills` | 支持 |
+| Codex | 可自动同步 | `~/.agents/skills` | 支持 |
 | Cursor | 可分配、可导出、暂不自动写入 | 不自动写入 | 支持 |
 | Gemini CLI | 可分配、可导出、暂不自动写入 | 不自动写入 | 支持 |
 
@@ -21,7 +21,7 @@
 
 ## Codex
 
-- 默认目标目录是 `~/.codex/skills`。
+- 默认目标目录是 `~/.agents/skills`。
 - 行为与 Claude Code 一致：只写分配 Skill，只更新带 `.vola-managed.json` 的目录。
 - 从 Claude Code 转换到 Codex 的简单 Skill，可以进入 `/skills/<name>-codex`，再通过本地同步写入 Codex Skill 目录。
 

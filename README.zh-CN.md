@@ -36,7 +36,7 @@ Vola 给每个人一个 Agent 数据 Hub。Claude、ChatGPT、Codex、Cursor、C
 
 - GitHub Backup 备份的是用户可见文件树，不包含 secret 明文，也不能替代 Postgres 备份。
 - WebDAV / S3-compatible 备份上传的是 Vola 导出 zip，适合离开当前服务器保存恢复包；账号、连接、billing、session 等仍以数据库备份为准。
-- Skill 自动写入当前只对 Claude Code 和 Codex 开放：Claude Code 写 `~/.claude/skills`，Codex 写 `~/.codex/skills`，且只更新带 `.vola-managed.json` 的目录；Cursor、Gemini CLI 可分配、可预览、可导出，但 Vola 不自动修改它们的本地配置。详细边界见 [多 Agent Skill 目标规则](docs/agent-skill-targets.zh-CN.md)。
+- Skill 自动写入当前只对 Claude Code 和 Codex 开放：Claude Code 写 `~/.claude/skills`，Codex 写 `~/.agents/skills`，且只更新带 `.vola-managed.json` 的目录；Cursor、Gemini CLI 可分配、可预览、可导出，但 Vola 不自动修改它们的本地配置。详细边界见 [多 Agent Skill 目标规则](docs/agent-skill-targets.zh-CN.md)。
 - Claude / Codex Skill 转换会保留脚本、依赖、assets、二进制资源和外部引用文件；MCP、plugin、hook 只生成报告，需要用户手动配置。
 - Hosted OAuth、ChatGPT Apps、Claude Connectors 等能力受对应平台账号计划、灰度和平台规则影响。
 - Team Library 当前按小团队共享资料库设计，不等同于企业级组织管理、审计报表、SSO 或审批流。

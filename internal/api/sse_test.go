@@ -153,7 +153,8 @@ func TestSSEReadWatchdogTimeoutAndReconnect(t *testing.T) {
 	defer cancel()
 
 	// subscribeTeamSse should connect, handshake, then block and get closed by the watchdog
-	err := subscribeTeamSse(ctx, ts.URL, generateTestJWT(), teamID, nil)
+	s := &Server{}
+	err := s.subscribeTeamSse(ctx, ts.URL, generateTestJWT(), teamID, nil)
 
 	if err == nil {
 		t.Fatal("expected subscribeTeamSse to return error on watchdog timeout, got nil")
@@ -204,7 +205,8 @@ func TestSSEEventReplayOnReconnect(t *testing.T) {
 		cancel() // disconnect
 	}()
 
-	_ = subscribeTeamSse(ctx, ts.URL, generateTestJWT(), teamID, &lastSeenTime)
+	s := &Server{}
+	_ = s.subscribeTeamSse(ctx, ts.URL, generateTestJWT(), teamID, &lastSeenTime)
 
 	if lastSeenTime.IsZero() {
 		t.Fatal("expected lastSeenTime to be recorded after first connection")
@@ -334,7 +336,8 @@ func TestClientTokenSilentRotation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	syncTeamListeners(ctx)
+	s := &Server{}
+	s.syncTeamListeners(ctx)
 
 	// Verify the side effects
 	if callCountRefresh != 1 {

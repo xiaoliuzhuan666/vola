@@ -7,6 +7,10 @@ func (s *Server) handleAuthRegister(w http.ResponseWriter, r *http.Request) {
 		respondNotConfigured(w, "auth service")
 		return
 	}
+	if !s.publicRegistrationEnabled() {
+		respondForbidden(w, "public registration is disabled; ask an instance administrator to create the account")
+		return
+	}
 	s.AuthHandler.HandleRegister(w, r)
 }
 

@@ -61,6 +61,9 @@ func (v *Vault) Encrypt(plaintext []byte) (ciphertext []byte, nonce []byte, err 
 
 // Decrypt decrypts ciphertext using the given nonce
 func (v *Vault) Decrypt(ciphertext, nonce []byte) ([]byte, error) {
+	if v == nil || v.gcm == nil || len(nonce) != v.gcm.NonceSize() {
+		return nil, ErrDecryptFailed
+	}
 	plaintext, err := v.gcm.Open(nil, nonce, ciphertext, nil)
 	if err != nil {
 		return nil, ErrDecryptFailed

@@ -280,6 +280,7 @@ export interface PublicConfig {
   github_app_enabled?: boolean;
   github_app_slug?: string;
   billing_enabled?: boolean;
+  public_registration_enabled?: boolean;
   storage?: string;
   local_mode?: boolean;
   system_settings_enabled?: boolean;
@@ -1273,6 +1274,38 @@ export interface OpsStatus {
   public_url?: string;
   git_mirror: OpsGitMirrorStatus;
   backup: OpsBackupStatus;
+  checks: OpsCheck[];
+  docs: Array<{ title: string; path: string }>;
+}
+
+export interface OpsInstanceUserState {
+  user_id: string;
+  user_slug: string;
+  display_name?: string;
+  status: OpsStatusLevel;
+  git_mirror: OpsGitMirrorStatus;
+  backup: OpsBackupStatus;
+  checks: OpsCheck[];
+  has_git_backup: boolean;
+  has_external_backup: boolean;
+  has_remote_artifact: boolean;
+}
+
+export interface OpsInstanceStatus {
+  status: OpsStatusLevel;
+  generated_at: string;
+  storage?: string;
+  local_mode: boolean;
+  public_url?: string;
+  users_total: number;
+  users_with_git_backup: number;
+  users_with_external_backup: number;
+  users_with_remote_backup_artifact: number;
+  users_with_critical_backup_status: number;
+  latest_git_push_at?: string;
+  latest_external_backup_at?: string;
+  latest_external_backup_object?: string;
+  subjects: OpsInstanceUserState[];
   checks: OpsCheck[];
   docs: Array<{ title: string; path: string }>;
 }
@@ -2411,6 +2444,12 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  updateLocalActiveWorkspace: (req: { active_team_id: string }): Promise<void> =>
+    request<void>("/local/workspace/active", {
+      method: "PUT",
+      body: JSON.stringify(req),
+    }),
+
   getLocalGitMirror: (): Promise<GitMirrorSettings> =>
     request<GitMirrorSettings>("/local/git-mirror"),
 
@@ -2533,6 +2572,9 @@ export const api = {
 
   getOpsStatus: (): Promise<OpsStatus> =>
     request<OpsStatus>("/ops/status"),
+
+  getOpsInstanceStatus: (): Promise<OpsInstanceStatus> =>
+    request<OpsInstanceStatus>("/ops/instance-status"),
 
   testGitMirrorGitHubTokenGeneric: (
     req: GitMirrorGitHubTestRequest,

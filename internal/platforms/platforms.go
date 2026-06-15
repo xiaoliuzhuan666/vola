@@ -1033,7 +1033,7 @@ func fetchTeamMcps(ctx context.Context, apiBase, token string) ([]teamMcpConfig,
 	return allMcps, nil
 }
 
-func safeUpdateMcpConfig(configPath string, modifyFunc func(current map[string]any) error) error {
+func SafeUpdateMcpConfig(configPath string, modifyFunc func(current map[string]any) error) error {
 	lockPath := filepath.Join(filepath.Dir(configPath), "."+filepath.Base(configPath)+".lock")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err
@@ -1104,7 +1104,7 @@ func safeUpdateMcpConfig(configPath string, modifyFunc func(current map[string]a
 }
 
 func connectMcpPlatform(ctx context.Context, daemonURL string, connection runtimecfg.LocalConnection, configPath string) error {
-	return safeUpdateMcpConfig(configPath, func(current map[string]any) error {
+	return SafeUpdateMcpConfig(configPath, func(current map[string]any) error {
 		servers, _ := current["mcpServers"].(map[string]any)
 		if servers == nil {
 			servers = map[string]any{}
@@ -1149,7 +1149,7 @@ func connectMcpPlatform(ctx context.Context, daemonURL string, connection runtim
 }
 
 func disconnectMcpPlatform(configPath string) error {
-	return safeUpdateMcpConfig(configPath, func(current map[string]any) error {
+	return SafeUpdateMcpConfig(configPath, func(current map[string]any) error {
 		servers, _ := current["mcpServers"].(map[string]any)
 		if servers == nil {
 			return nil

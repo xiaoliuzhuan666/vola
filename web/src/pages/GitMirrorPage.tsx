@@ -9,6 +9,7 @@ import {
   type BackupTargetKind,
   type GitMirrorGitHubTestResult,
   type GitMirrorSettings,
+  type OpsInstanceStatus,
   type OpsStatus,
   type PublicConfig,
   type SaveBackupTargetRequest,
@@ -157,6 +158,7 @@ export default function GitMirrorPage() {
   const [restoreApplying, setRestoreApplying] = useState(false)
   const [restoreError, setRestoreError] = useState('')
   const [opsStatus, setOpsStatus] = useState<OpsStatus | null>(null)
+  const [opsInstanceStatus, setOpsInstanceStatus] = useState<OpsInstanceStatus | null>(null)
   const [syncRetryUntil, setSyncRetryUntil] = useState(0)
   const [nowTick, setNowTick] = useState(Date.now())
   const [isDragging, setIsDragging] = useState(false)
@@ -165,12 +167,13 @@ export default function GitMirrorPage() {
     setBusy(true)
     setError('')
     try {
-      const [settings, config, targets, runs, ops] = await Promise.all([
+      const [settings, config, targets, runs, ops, instanceOps] = await Promise.all([
         api.getGitMirror(),
         api.getPublicConfig().catch(() => ({} as PublicConfig)),
         api.listBackupTargets().catch(() => [] as BackupTarget[]),
         api.listBackupRuns(20).catch(() => [] as BackupRun[]),
         api.getOpsStatus().catch(() => null as OpsStatus | null),
+        api.getOpsInstanceStatus().catch(() => null as OpsInstanceStatus | null),
       ])
       const nextExecutionMode = settings.execution_mode || config.git_mirror_execution_mode || 'hosted'
       setMirror(settings)
@@ -187,6 +190,7 @@ export default function GitMirrorPage() {
       setBackupTargets(targets)
       setBackupRuns(runs)
       setOpsStatus(ops)
+      setOpsInstanceStatus(instanceOps)
     } catch (err: any) {
       setError(err.message || tx('加载 GitHub Backup 失败', 'Failed to load GitHub Backup'))
     } finally {
@@ -321,10 +325,19 @@ export default function GitMirrorPage() {
     : opsStatus?.status === 'critical'
       ? tx('有同步或备份错误', 'Sync or backup error')
       : tx('备份还需要配置或执行', 'Backup needs setup or a first run')
-  const latestOpsBackupLabel = opsStatus?.backup.last_successful_backup_at
-    ? formatDateTime(opsStatus.backup.last_successful_backup_at, locale)
+  const opsInstanceStatusLabel = opsInstanceStatus?.status === 'ok'
+    ? tx('实例备份状态正常', 'Instance backup status OK')
+    : opsInstanceStatus?.status === 'critical'
+      ? tx('实例里有同步或备份错误', 'Instance has a sync or backup error')
+      : tx('实例备份还需要配置或执行', 'Instance backup needs setup or a first run')
+  const latestOpsBackupLabel = opsInstanceStatus?.latest_external_backup_at
+    ? formatDateTime(opsInstanceStatus.latest_external_backup_at, locale)
+    : opsStatus?.backup.last_successful_backup_at
+      ? formatDateTime(opsStatus.backup.last_successful_backup_at, locale)
     : tx('还没有外部上传记录', 'No external upload record yet')
-  const latestGitOpsLabel = opsStatus?.git_mirror.last_push_at
+  const latestGitOpsLabel = opsInstanceStatus?.latest_git_push_at
+    ? formatDateTime(opsInstanceStatus.latest_git_push_at, locale)
+    : opsStatus?.git_mirror.last_push_at
     ? formatDateTime(opsStatus.git_mirror.last_push_at, locale)
     : opsStatus?.git_mirror.last_synced_at
       ? formatDateTime(opsStatus.git_mirror.last_synced_at, locale)
@@ -343,8 +356,12 @@ export default function GitMirrorPage() {
   }
 
   const refreshOpsStatus = async () => {
-    const next = await api.getOpsStatus().catch(() => null as OpsStatus | null)
+    const [next, instanceNext] = await Promise.all([
+      api.getOpsStatus().catch(() => null as OpsStatus | null),
+      api.getOpsInstanceStatus().catch(() => null as OpsInstanceStatus | null),
+    ])
     setOpsStatus(next)
+    setOpsInstanceStatus(instanceNext)
   }
 
   const refreshBackupRuns = async () => {
@@ -795,16 +812,37 @@ export default function GitMirrorPage() {
               : <>{tx('外部目标最近上传：', 'External target uploads: ')}{externalTargetsWithBackup > 0 ? tx(`${externalTargetsWithBackup} 个已有记录`, `${externalTargetsWithBackup} recorded`) : tx('还没有上传记录', 'No upload record yet')}</>}
           </div>
         </div>
-        {opsStatus && (
+        {(opsInstanceStatus || opsStatus) && (
           <div className="data-sync-status-card">
             <div className="data-record-title">{tx('生产状态', 'Production status')}</div>
-            <div className="data-record-secondary">{opsStatusLabel}</div>
+            <div className="data-record-secondary">{opsInstanceStatus ? opsInstanceStatusLabel : opsStatusLabel}</div>
+            {opsInstanceStatus && (
+              <div className="data-record-secondary">
+                {tx(
+                  `实例用户：${opsInstanceStatus.users_with_remote_backup_artifact}/${opsInstanceStatus.users_total} 个已有远端备份记录`,
+                  `Instance users: ${opsInstanceStatus.users_with_remote_backup_artifact}/${opsInstanceStatus.users_total} have remote backup records`,
+                )}
+              </div>
+            )}
             <div className="data-record-secondary">
               {tx('Git 最近记录：', 'Latest Git record: ')}{latestGitOpsLabel}
             </div>
             <div className="data-record-secondary">
-              {tx('外部目标：', 'External targets: ')}{opsStatus.backup.enabled_targets}/{opsStatus.backup.targets_configured} · {latestOpsBackupLabel}
+              {opsInstanceStatus
+                ? tx(
+                    `外部备份用户：${opsInstanceStatus.users_with_external_backup}/${opsInstanceStatus.users_total} · ${latestOpsBackupLabel}`,
+                    `External backup users: ${opsInstanceStatus.users_with_external_backup}/${opsInstanceStatus.users_total} · ${latestOpsBackupLabel}`,
+                  )
+                : <>{tx('外部目标：', 'External targets: ')}{opsStatus?.backup.enabled_targets}/{opsStatus?.backup.targets_configured} · {latestOpsBackupLabel}</>}
             </div>
+            {opsInstanceStatus && opsStatus && opsStatus.status !== opsInstanceStatus.status && (
+              <div className="data-record-secondary">
+                {tx(
+                  `当前用户状态：${opsStatus.status}`,
+                  `Current user status: ${opsStatus.status}`,
+                )}
+              </div>
+            )}
           </div>
         )}
         <div className="data-sync-status-card">

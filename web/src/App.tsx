@@ -1,4 +1,4 @@
-import { Component, Suspense, lazy, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
+import { Component, Suspense, lazy, useCallback, useEffect, useState, useMemo, type ErrorInfo, type ReactNode } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, isTauri, type PublicConfig } from './api'
 import LanguageToggle from './components/LanguageToggle'
@@ -247,14 +247,75 @@ function App() {
   const [publicConfig, setPublicConfig] = useState<PublicConfig>({})
   const [loading, setLoading] = useState(true)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [localConfig, setLocalConfig] = useState<any>(null)
+  const [teams, setTeams] = useState<any[]>([])
+  const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false)
+  const [selectedTeamID, setSelectedTeamID] = useState<string>('')
   const { tx } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const systemSettingsEnabled = !!publicConfig?.system_settings_enabled
   const localMode = !!publicConfig?.local_mode
+  const publicRegistrationEnabled = publicConfig?.public_registration_enabled !== false
   const currentUser = user || null
   const currentUserName = userDisplayName(currentUser, localMode, tx)
-  const currentUserHint = userDisplayHint(currentUser, localMode, tx)
+
+  const fetchWorkspaceInfo = useCallback(async () => {
+    if (!localMode || !currentUser) return
+    try {
+      const cfg = await api.getLocalConfig()
+      setLocalConfig(cfg)
+      const list = await api.getTeams()
+      setTeams(list)
+    } catch (err) {
+      console.error('Failed to load workspace info:', err)
+    }
+  }, [localMode, currentUser])
+
+  useEffect(() => {
+    void fetchWorkspaceInfo()
+  }, [fetchWorkspaceInfo])
+
+  const currentActiveTeam = useMemo(() => {
+    if (!localConfig) return null
+    try {
+      const parsed = JSON.parse(localConfig.raw)
+      const activeTeamID = parsed.profiles?.[parsed.current_profile || 'default']?.active_team_id || ''
+      if (!activeTeamID) return null
+      return teams.find((t: any) => t.id === activeTeamID) || null
+    } catch {
+      return null
+    }
+  }, [localConfig, teams])
+
+  const currentUserHint = useMemo(() => {
+    if (localMode && currentActiveTeam) {
+      const roleStr = currentActiveTeam.role === 'owner' ? tx('所有者', 'Owner') :
+                      currentActiveTeam.role === 'admin' ? tx('管理员', 'Admin') :
+                      currentActiveTeam.role === 'member' ? tx('成员', 'Member') :
+                      tx('观察员', 'Viewer')
+      return `${tx('团队：', 'Team: ')}${currentActiveTeam.name} (${roleStr})`
+    }
+    return userDisplayHint(currentUser, localMode, tx)
+  }, [currentUser, localMode, currentActiveTeam, tx])
+
+  useEffect(() => {
+    if (workspaceModalOpen) {
+      const currentActiveTeamID = currentActiveTeam?.id || ''
+      setSelectedTeamID(currentActiveTeamID)
+    }
+  }, [workspaceModalOpen, currentActiveTeam])
+
+  const handleConfirmWorkspaceSwitch = async () => {
+    try {
+      await api.updateLocalActiveWorkspace({ active_team_id: selectedTeamID })
+      setWorkspaceModalOpen(false)
+      window.location.reload()
+    } catch (err) {
+      console.error('Failed to switch workspace:', err)
+    }
+  }
+
   const currentUserInitial = currentUserName.slice(0, 1).toUpperCase()
   const importsHomePath = localMode ? '/imports/local-apps' : '/imports/claude-export'
 
@@ -534,6 +595,7 @@ function App() {
   if (!user && !localMode) {
     const protectedSignupRedirect = `/signup?redirect=${encodeURIComponent(location.pathname + location.search)}`
     const protectedLoginRedirect = `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
+    const signupTarget = publicRegistrationEnabled ? protectedSignupRedirect : protectedLoginRedirect
     return (
       <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}>
       <Suspense fallback={routeFallback}>
@@ -547,9 +609,9 @@ function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/onboarding/*" element={<Navigate to={protectedSignupRedirect} replace />} />
-          <Route path="/plan" element={<Navigate to={protectedSignupRedirect} replace />} />
+          <Route path="/signup" element={<SignupPage publicRegistrationEnabled={publicRegistrationEnabled} />} />
+          <Route path="/onboarding/*" element={<Navigate to={signupTarget} replace />} />
+          <Route path="/plan" element={<Navigate to={signupTarget} replace />} />
           <Route path="*" element={<Navigate to={protectedLoginRedirect} replace />} />
         </Routes>
       </Suspense>
@@ -696,6 +758,11 @@ function App() {
                 <NavLink to="/settings/profile" role="menuitem" onClick={() => setUserMenuOpen(false)}>
                   {tx('个人资料', 'Profile')}
                 </NavLink>
+                {localMode && (
+                  <button type="button" role="menuitem" onClick={() => { setWorkspaceModalOpen(true); setUserMenuOpen(false); }}>
+                    {tx('切换空间', 'Switch Workspace')}
+                  </button>
+                )}
                 <button type="button" role="menuitem" onClick={() => { void handleLogout() }}>
                   {tx('退出', 'Sign out')}
                 </button>
@@ -788,6 +855,80 @@ function App() {
         </Suspense>
         </RouteErrorBoundary>
       </main>
+      {workspaceModalOpen && (
+        <div className="modal-backdrop" onClick={() => setWorkspaceModalOpen(false)}>
+          <div className="modal-container workspace-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{tx('切换工作空间', 'Switch Workspace')}</h3>
+              <button className="modal-close-btn" onClick={() => setWorkspaceModalOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="modal-desc">{tx('选择要在本地激活的团队或个人工作空间：', 'Select the team or personal workspace to activate locally:')}</p>
+              <div className="workspace-list">
+                {/* 个人空间 */}
+                <div
+                  className={`workspace-item ${!selectedTeamID ? 'active' : ''}`}
+                  onClick={() => setSelectedTeamID('')}
+                >
+                  <div className="workspace-icon personal-icon">👤</div>
+                  <div className="workspace-info">
+                    <div className="workspace-name">{tx('个人空间', 'Personal Workspace')}</div>
+                    <div className="workspace-role">{tx('默认空间', 'Default')}</div>
+                  </div>
+                  <div className="workspace-radio">
+                    <input
+                      type="radio"
+                      checked={!selectedTeamID}
+                      onChange={() => setSelectedTeamID('')}
+                    />
+                  </div>
+                </div>
+
+                {/* 团队空间列表 */}
+                {teams.map((t: any) => (
+                  <div
+                    key={t.id}
+                    className={`workspace-item ${selectedTeamID === t.id ? 'active' : ''}`}
+                    onClick={() => setSelectedTeamID(t.id)}
+                  >
+                    <div className="workspace-icon team-icon">👥</div>
+                    <div className="workspace-info">
+                      <div className="workspace-name">{t.name}</div>
+                      <div className="workspace-role">
+                        {t.role === 'owner' ? tx('所有者', 'Owner') :
+                         t.role === 'admin' ? tx('管理员', 'Admin') :
+                         t.role === 'member' ? tx('成员', 'Member') :
+                         tx('观察员', 'Viewer')}
+                      </div>
+                    </div>
+                    <div className="workspace-radio">
+                      <input
+                        type="radio"
+                        checked={selectedTeamID === t.id}
+                        onChange={() => setSelectedTeamID(t.id)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setWorkspaceModalOpen(false)}
+              >
+                {tx('取消', 'Cancel')}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleConfirmWorkspaceSwitch}
+              >
+                {tx('确认切换', 'Switch')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

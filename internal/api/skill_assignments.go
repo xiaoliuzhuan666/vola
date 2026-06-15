@@ -71,11 +71,11 @@ var skillAgentTargets = []skillAgentTarget{
 		},
 	},
 	{
-		ID: "codex", Name: "Codex", Platform: "codex", InstallPathHint: "~/.codex/skills",
+		ID: "codex", Name: "Codex", Platform: "codex", InstallPathHint: "~/.agents/skills",
 		SupportsApply: true, SupportStatus: "managed_apply", ApplyMode: "managed-directory", ExportSupported: true,
 		DocsPath: "docs/agent-skill-targets.zh-CN.md",
 		DirectoryRules: []string{
-			"Vola writes assigned skills into ~/.codex/skills by default.",
+			"Vola writes assigned skills into ~/.agents/skills by default.",
 			"Only directories with .vola-managed.json are updated or cleaned.",
 		},
 	},

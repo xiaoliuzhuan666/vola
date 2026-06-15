@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/agi-bar/vola/internal/platforms"
 	"github.com/agi-bar/vola/internal/runtimecfg"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 type sseEventRecord struct {
@@ -167,13 +169,13 @@ var (
 	sseIdleTimeout    = 45 * time.Second
 )
 
-func StartTeamEventsListener(ctx context.Context) {
+func (s *Server) StartTeamEventsListener(ctx context.Context) {
 	go func() {
 		ticker := time.NewTicker(30 * time.Second)
 		defer ticker.Stop()
 
 		// Run once immediately on start
-		syncTeamListeners(ctx)
+		s.syncTeamListeners(ctx)
 
 		for {
 			select {
@@ -186,13 +188,13 @@ func StartTeamEventsListener(ctx context.Context) {
 				activeListenersMu.Unlock()
 				return
 			case <-ticker.C:
-				syncTeamListeners(ctx)
+				s.syncTeamListeners(ctx)
 			}
 		}
 	}()
 }
 
-func syncTeamListeners(ctx context.Context) {
+func (s *Server) syncTeamListeners(ctx context.Context) {
 	_, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
 	if err != nil {
 		return
@@ -253,7 +255,7 @@ func syncTeamListeners(ctx context.Context) {
 		if _, ok := activeListeners[team.ID]; !ok {
 			teamCtx, cancel := context.WithCancel(ctx)
 			activeListeners[team.ID] = cancel
-			go runTeamSseLoop(teamCtx, profile.APIBase, profile.Token, team.ID)
+			go s.runTeamSseLoop(teamCtx, profile.APIBase, profile.Token, team.ID)
 		}
 	}
 
@@ -266,7 +268,7 @@ func syncTeamListeners(ctx context.Context) {
 	}
 }
 
-func runTeamSseLoop(ctx context.Context, apiBase, token, teamID string) {
+func (s *Server) runTeamSseLoop(ctx context.Context, apiBase, token, teamID string) {
 	backoff := 1 * time.Second
 	maxBackoff := 60 * time.Second
 	var lastSeenTime time.Time
@@ -276,7 +278,7 @@ func runTeamSseLoop(ctx context.Context, apiBase, token, teamID string) {
 		case <-ctx.Done():
 			return
 		default:
-			err := subscribeTeamSse(ctx, apiBase, token, teamID, &lastSeenTime)
+			err := s.subscribeTeamSse(ctx, apiBase, token, teamID, &lastSeenTime)
 			if err != nil {
 				// Log or handle error if needed
 			}
@@ -294,7 +296,7 @@ func runTeamSseLoop(ctx context.Context, apiBase, token, teamID string) {
 	}
 }
 
-func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string, lastSeenTime *time.Time) error {
+func (s *Server) subscribeTeamSse(ctx context.Context, apiBase, token, teamID string, lastSeenTime *time.Time) error {
 	client := &http.Client{Timeout: 0}
 
 	var lastSeenMs int64 = 0
@@ -414,13 +416,13 @@ func subscribeTeamSse(ctx context.Context, apiBase, token, teamID string, lastSe
 
 			dataLine = strings.TrimSpace(dataLine)
 			if strings.HasPrefix(dataLine, "data:") {
-				handleSseEvent(ctx, eventType)
+				s.handleSseEvent(ctx, teamID, eventType)
 			}
 		}
 	}
 }
 
-func handleSseEvent(ctx context.Context, eventType string) {
+func (s *Server) handleSseEvent(ctx context.Context, teamID string, eventType string) {
 	if eventType == "mcp_update" {
 		_, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
 		if err != nil {
@@ -432,6 +434,57 @@ func handleSseEvent(ctx context.Context, eventType string) {
 				_, _ = adapter.Connect(ctx, cfg, id, conn.LastPlatformURL, conn)
 			}
 		}
+	} else if eventType == "skill_update" || eventType == "skill_publish" {
+		if !s.isLocalMode() {
+			return
+		}
+		if s.TeamService == nil || s.FileTreeService == nil {
+			return
+		}
+
+		teamUUID, err := uuid.Parse(teamID)
+		if err != nil {
+			return
+		}
+
+		go func() {
+			time.Sleep(1 * time.Second)
+
+			syncCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+			defer cancel()
+
+			team, err := s.TeamService.GetForUser(syncCtx, s.LocalOwnerID, teamUUID)
+			if err != nil {
+				return
+			}
+
+			target := scopedHubTarget{
+				Scope:  "team",
+				UserID: team.HubUserID,
+				Team:   team,
+			}
+
+			req := localSkillSyncRequest{
+				TeamID:           teamID,
+				AckQualityReview: true,
+			}
+			if _, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath()); err == nil {
+				for id := range cfg.Local.Connections {
+					req.AgentIDs = append(req.AgentIDs, id)
+				}
+			}
+
+			resp, err := s.buildLocalSkillSyncResponse(syncCtx, target, req, true, false)
+			if err != nil {
+				slog.Error("SSE auto sync failed", "err", err)
+			} else {
+				if resp.Blocked {
+					slog.Warn("SSE auto sync blocked by quality gates")
+				} else {
+					slog.Info("SSE auto sync succeeded", "agents", len(resp.Agents))
+				}
+			}
+		}()
 	}
 }
 
