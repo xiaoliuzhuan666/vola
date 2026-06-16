@@ -24,6 +24,12 @@ interface MCPServersConfig {
   servers: ConfigMCPServer[]
 }
 
+function localPlatformLabel(platform: string) {
+  if (platform === 'claude-code' || platform === 'claude') return 'Claude Code'
+  if (platform === 'codex') return 'Codex'
+  return platform
+}
+
 export default function McpHubPage() {
   const { tx } = useI18n()
 
@@ -48,10 +54,27 @@ export default function McpHubPage() {
 
   // Messages
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
+  const [platformRefreshBusy, setPlatformRefreshBusy] = useState('')
 
   const showMessage = (text: string, type: 'success' | 'error' = 'success') => {
     setMessage({ text, type })
     window.setTimeout(() => setMessage(null), 4000)
+  }
+
+  const handleRefreshLocalPlatform = async (platform: 'codex' | 'claude-code') => {
+    if (platformRefreshBusy) return
+    setPlatformRefreshBusy(platform)
+    try {
+      const result = await api.refreshLocalPlatformConnection(platform)
+      showMessage(tx(
+        `${result.name || localPlatformLabel(result.platform)} 已刷新，本地配置会包含已发布的团队 MCP。`,
+        `${result.name || localPlatformLabel(result.platform)} refreshed; the local config includes published team MCPs.`,
+      ))
+    } catch (e: any) {
+      showMessage(tx('刷新失败：', 'Refresh failed: ') + (e.message || e), 'error')
+    } finally {
+      setPlatformRefreshBusy('')
+    }
   }
 
   // Load Claude clients status
@@ -309,6 +332,28 @@ export default function McpHubPage() {
           </div>
         </div>
       )}
+
+      <section className="materials-panel">
+        <div className="materials-panel-head">
+          <div>
+            <h3 className="card-title">{tx('本机同步入口', 'Local Sync Entry')}</h3>
+            <p className="materials-section-copy">
+              {tx(
+                'Codex 和 Claude Code 可以直接刷新本机连接；Cursor 和 Gemini CLI 继续只导出，不会在这里改本机配置。',
+                'Codex and Claude Code can refresh local connections directly; Cursor and Gemini CLI stay export-only and do not change local config here.',
+              )}
+            </p>
+          </div>
+          <div className="mcp-actions-wrap">
+            <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'codex'} onClick={() => { void handleRefreshLocalPlatform('codex') }}>
+              {platformRefreshBusy === 'codex' ? tx('刷新中...', 'Refreshing...') : tx('刷新 Codex', 'Refresh Codex')}
+            </button>
+            <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'claude-code'} onClick={() => { void handleRefreshLocalPlatform('claude-code') }}>
+              {platformRefreshBusy === 'claude-code' ? tx('刷新中...', 'Refreshing...') : tx('刷新 Claude Code', 'Refresh Claude Code')}
+            </button>
+          </div>
+        </div>
+      </section>
 
       {/* Part 1: Local Client Integration */}
       <section className="materials-panel">

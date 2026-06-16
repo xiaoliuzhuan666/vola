@@ -828,6 +828,22 @@ export interface LocalSkillSyncResponse {
   blocked?: boolean;
 }
 
+export interface LocalPlatformConnectionRefreshResponse {
+  platform: string;
+  name: string;
+  refreshed: boolean;
+  connection: {
+    transport?: string;
+    config_path?: string;
+    entrypoint_type?: string;
+    entrypoint_path?: string;
+    managed_paths?: string[];
+    chat_usage?: string[];
+    connected_at?: string;
+    last_platform_url?: string;
+  };
+}
+
 export interface SkillConversionRequest {
   source_path: string;
   source_platform?: "claude-code" | "codex";
@@ -1770,6 +1786,11 @@ export const api = {
     request("/local/mcp/clients/unregister", {
       method: "POST",
       body: JSON.stringify({ client_id: clientId }),
+    }),
+  refreshLocalPlatformConnection: (platform: string): Promise<LocalPlatformConnectionRefreshResponse> =>
+    request("/local/platform/connection/refresh", {
+      method: "POST",
+      body: JSON.stringify({ platform }),
     }),
 
   // Connections

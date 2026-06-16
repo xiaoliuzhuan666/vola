@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type FileNode, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse, type TeamMcpAsset, type TeamSkillPublication, type TeamSkillSubscriptionStatus } from '../api'
+import { api, type FileNode, type LocalSkillSyncResponse, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse, type TeamMcpAsset, type TeamSkillPublication, type TeamSkillSubscriptionStatus } from '../api'
 import CustomSelect from '../components/CustomSelect'
 import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsTile from '../components/MaterialsTile'
@@ -155,6 +155,21 @@ function reviewActionLabel(action: string, locale: string) {
   return '更新草稿'
 }
 
+function syncResponseTotal(response: LocalSkillSyncResponse | null) {
+  if (!response) return { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, blocked: 0, manual: 0 }
+  return response.agents.reduce((acc, agent) => {
+    acc.add += agent.summary.add
+    acc.update += agent.summary.update
+    acc.conflict += agent.summary.conflict
+    acc.removable += agent.summary.removable
+    acc.export += agent.summary.export
+    acc.written += agent.summary.written
+    acc.blocked += agent.summary.blocked || 0
+    acc.manual += agent.summary.manual_required || 0
+    return acc
+  }, { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, blocked: 0, manual: 0 })
+}
+
 function formatDateTime(value: string | undefined, locale: string) {
   if (!value) return locale === 'zh-CN' ? '暂无' : 'None'
   const date = new Date(value)
@@ -217,6 +232,10 @@ export default function TeamLibraryPage() {
   const [newMcpTags, setNewMcpTags] = useState('')
   const [mcpWorking, setMcpWorking] = useState(false)
   const [mcpHealth, setMcpHealth] = useState<Record<string, { status: 'online' | 'offline'; latency_ms: number }>>({})
+  const [teamSkillSyncPreview, setTeamSkillSyncPreview] = useState<LocalSkillSyncResponse | null>(null)
+  const [teamSkillSyncBusy, setTeamSkillSyncBusy] = useState<'preview' | 'apply' | ''>('')
+  const [teamSkillExportBusy, setTeamSkillExportBusy] = useState('')
+  const [platformRefreshBusy, setPlatformRefreshBusy] = useState('')
 
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === selectedTeamID) || teams[0] || null,
@@ -249,6 +268,10 @@ export default function TeamLibraryPage() {
       setSkillReviewHistory([])
       setSkillPublications([])
       setSubscriptions([])
+      setTeamSkillSyncPreview(null)
+      setTeamSkillSyncBusy('')
+      setTeamSkillExportBusy('')
+      setPlatformRefreshBusy('')
       return
     }
     const [
@@ -366,6 +389,15 @@ export default function TeamLibraryPage() {
     skillReviewHistory.filter((event) => event.action === 'request_review').length
   ), [skillReviewHistory])
 
+  const teamLocalSyncTotal = useMemo(() => syncResponseTotal(teamSkillSyncPreview), [teamSkillSyncPreview])
+  const teamSkillSyncSummary = useMemo(() => {
+    if (!teamSkillSyncPreview) return tx('尚未生成预览。', 'No preview yet.')
+    return tx(
+      `新增 ${teamLocalSyncTotal.add}，更新 ${teamLocalSyncTotal.update}，冲突 ${teamLocalSyncTotal.conflict}，可导出 ${teamLocalSyncTotal.export}。`,
+      `add ${teamLocalSyncTotal.add}, update ${teamLocalSyncTotal.update}, conflicts ${teamLocalSyncTotal.conflict}, export ${teamLocalSyncTotal.export}.`,
+    )
+  }, [teamLocalSyncTotal, teamSkillSyncPreview, tx])
+
   const handleCheckTeamSkillSubscriptions = async () => {
     if (!selectedTeam || sharingWorking) return
     setSharingWorking(true)
@@ -387,6 +419,64 @@ export default function TeamLibraryPage() {
       setError(err?.message || tx('检查团队 Skill 更新失败', 'Failed to check team skill updates'))
     } finally {
       setSharingWorking(false)
+    }
+  }
+
+  const handleTeamSkillSync = async (mode: 'preview' | 'apply') => {
+    if (!selectedTeam || teamSkillSyncBusy) return
+    if (mode === 'apply' && teamLocalSyncTotal.blocked > 0) {
+      setError(tx('本地同步里还有阻断项，先看预览再应用。', 'Blocked local sync items need review before applying.'))
+      return
+    }
+    setTeamSkillSyncBusy(mode)
+    setError('')
+    setMessage('')
+    try {
+      const response = mode === 'preview'
+        ? await api.previewLocalSkillSync(selectedTeam.id)
+        : await api.applyLocalSkillSync(selectedTeam.id, teamLocalSyncTotal.manual > 0)
+      setTeamSkillSyncPreview(response)
+      const total = syncResponseTotal(response)
+      setMessage(mode === 'preview'
+        ? tx(`已生成本机预览：新增 ${total.add}，更新 ${total.update}，冲突 ${total.conflict}。`, `Local preview ready: ${total.add} add, ${total.update} update, ${total.conflict} conflicts.`)
+        : tx(`已应用到本机：写入 ${total.written} 个文件。`, `Applied locally: ${total.written} files written.`))
+    } catch (err: any) {
+      setError(err?.message || tx('团队 Skill 本机同步失败', 'Failed to sync team skills locally'))
+    } finally {
+      setTeamSkillSyncBusy('')
+    }
+  }
+
+  const handleTeamSkillExport = async (agentId: string) => {
+    if (!selectedTeam || teamSkillExportBusy) return
+    setTeamSkillExportBusy(agentId)
+    setError('')
+    setMessage('')
+    try {
+      await api.downloadLocalSkillSyncExport(agentId, selectedTeam.id)
+      setMessage(tx('导出包已生成。', 'Export package created.'))
+    } catch (err: any) {
+      setError(err?.message || tx('生成导出包失败', 'Failed to create export package'))
+    } finally {
+      setTeamSkillExportBusy('')
+    }
+  }
+
+  const handleRefreshLocalPlatform = async (platform: 'codex' | 'claude-code') => {
+    if (platformRefreshBusy || !selectedTeam) return
+    setPlatformRefreshBusy(platform)
+    setError('')
+    setMessage('')
+    try {
+      const result = await api.refreshLocalPlatformConnection(platform)
+      setMessage(tx(
+        `${result.name || result.platform} 已刷新本机连接，已发布的团队 MCP 会同步到本机配置。`,
+        `${result.name || result.platform} refreshed locally; published team MCPs were synced to the local config.`,
+      ))
+    } catch (err: any) {
+      setError(err?.message || tx('刷新本机连接失败', 'Failed to refresh local connection'))
+    } finally {
+      setPlatformRefreshBusy('')
     }
   }
 
@@ -1052,6 +1142,50 @@ export default function TeamLibraryPage() {
         <section className="materials-section">
           <div className="materials-section-head">
             <div>
+              <h3 className="materials-section-title">{tx('本机同步入口', 'Local Sync')}</h3>
+              <p className="materials-section-copy">
+                {tx('Codex 和 Claude Code 可直接刷新本机连接；团队 Skill 也可先预览再应用。Cursor 和 Gemini CLI 继续只导出。', 'Codex and Claude Code can refresh local connections directly; team skills can also be previewed before applying. Cursor and Gemini CLI remain export-only.')}
+              </p>
+            </div>
+            <div className="materials-actions">
+              <button className="btn btn-sm" type="button" disabled={Boolean(teamSkillSyncBusy)} onClick={() => { void handleTeamSkillSync('preview') }}>
+                {teamSkillSyncBusy === 'preview' ? tx('预览中...', 'Previewing...') : tx('预览 Skill', 'Preview skills')}
+              </button>
+              <button className="btn btn-sm btn-primary" type="button" disabled={Boolean(teamSkillSyncBusy)} onClick={() => { void handleTeamSkillSync('apply') }}>
+                {teamSkillSyncBusy === 'apply' ? tx('应用中...', 'Applying...') : tx('应用到本机', 'Apply locally')}
+              </button>
+              <button className="btn btn-sm" type="button" disabled={teamSkillExportBusy === 'cursor'} onClick={() => { void handleTeamSkillExport('cursor') }}>
+                {teamSkillExportBusy === 'cursor' ? tx('生成中...', 'Creating...') : tx('导出 Cursor', 'Export Cursor')}
+              </button>
+              <button className="btn btn-sm" type="button" disabled={teamSkillExportBusy === 'gemini-cli'} onClick={() => { void handleTeamSkillExport('gemini-cli') }}>
+                {teamSkillExportBusy === 'gemini-cli' ? tx('生成中...', 'Creating...') : tx('导出 Gemini', 'Export Gemini')}
+              </button>
+            </div>
+          </div>
+
+          {teamSkillSyncPreview && (
+            <div className="alert alert-success">{teamSkillSyncSummary}</div>
+          )}
+          {teamSkillSyncPreview && teamLocalSyncTotal.manual > 0 && (
+            <div className="alert alert-warn">
+              {tx(`有 ${teamLocalSyncTotal.manual} 个条目需要人工确认后再应用。`, `${teamLocalSyncTotal.manual} items need manual review before applying.`)}
+            </div>
+          )}
+          {teamSkillSyncPreview && teamLocalSyncTotal.conflict > 0 && (
+            <div className="alert alert-warn">
+              {tx('本机已有同名但未由 Vola 管理的目录，刷新不会覆盖它们。', 'Existing non-Vola-managed local folders will not be overwritten.')}
+            </div>
+          )}
+          <div className="materials-section-copy">
+            {tx('本机同步只会修改当前机器的 Vola 托管目录或客户端配置；如果当前会话没有本机管理权限，系统会拒绝写入。', 'Local sync only changes Vola-managed directories or client config on this machine; without local admin access, the API refuses the write.')}
+          </div>
+        </section>
+      )}
+
+      {selectedTeam && (
+        <section className="materials-section">
+          <div className="materials-section-head">
+            <div>
               <h3 className="materials-section-title">{tx('团队 Skills 共享', 'Team Skills Sharing')}</h3>
               <p className="materials-section-copy">
                 {tx('团队内共享的 AI 技能 (Skills) 列表。管理员可设置全员共享与审核推荐，成员可一键快速装配到本地。', 'Shared AI skills in the team. Admins can share to all and review recommendations, and members can install with one click.')}
@@ -1430,8 +1564,16 @@ export default function TeamLibraryPage() {
             <div>
               <h3 className="materials-section-title">{tx('团队共享 MCP 配置', 'Team MCP Configurations')}</h3>
               <p className="materials-section-copy">
-                {tx('将数据库、服务 API 或专用工具包装为团队共享 MCP，成员在本地 connect 时会自动同步拉起。', 'Share databases, service APIs, or custom tools as team MCPs. Wired automatically on local client connection.')}
+                {tx('将数据库、服务 API 或专用工具包装为团队共享 MCP。Codex 和 Claude Code 刷新本机连接后会同步拉起已发布条目，Cursor 和 Gemini CLI 仍按导出或手动方式处理。', 'Share databases, service APIs, or custom tools as team MCPs. Codex and Claude Code sync published items after a local connection refresh, while Cursor and Gemini CLI stay export-only or manual.')}
               </p>
+            </div>
+            <div className="materials-actions">
+              <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'codex'} onClick={() => { void handleRefreshLocalPlatform('codex') }}>
+                {platformRefreshBusy === 'codex' ? tx('刷新中...', 'Refreshing...') : tx('同步到 Codex', 'Sync to Codex')}
+              </button>
+              <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'claude-code'} onClick={() => { void handleRefreshLocalPlatform('claude-code') }}>
+                {platformRefreshBusy === 'claude-code' ? tx('刷新中...', 'Refreshing...') : tx('同步到 Claude Code', 'Sync to Claude Code')}
+              </button>
             </div>
           </div>
 

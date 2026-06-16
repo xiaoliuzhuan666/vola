@@ -467,6 +467,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/api/local/mcp/clients/register", s.handleLocalMCPClientsRegister)
 		r.Post("/api/local/mcp/clients/unregister", s.handleLocalMCPClientsUnregister)
 		r.Get("/api/local/mcp/health", s.handleLocalMcpHealth)
+		r.Post("/api/local/platform/connection/refresh", s.handleLocalPlatformConnectionRefresh)
 
 		// GPT Setup
 		r.Get("/api/gpt/setup", s.handleGPTSetup)

@@ -233,3 +233,31 @@ GitHub Release 资产：
 注意：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。
+
+## 2026-06-17 v0.1.7 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点是让团队 Skill / MCP 更容易同步到本机 Codex 和 Claude Code。
+
+本次更新：
+
+- Team Library 新增本机同步入口：团队 Skill 可预览后应用到本机，Cursor 和 Gemini CLI 继续导出。
+- Team Library 的团队 MCP 区域新增“同步到 Codex / Claude Code”入口。
+- MCP Hub 新增本机同步入口，可刷新 Codex 和 Claude Code 本机连接。
+- 后端新增 `POST /api/local/platform/connection/refresh`，复用现有连接、安全路径和配置锁机制，只允许 Codex 与 Claude Code 自动刷新。
+- 修复开发环境 `/mcp` 代理误匹配 `/mcp-hub` 的问题。
+
+本地发版前验证：
+
+- `GOCACHE=/private/tmp/vola-go-cache go test ./internal/api ./internal/platforms ./internal/mcp`：通过。
+- `npm --prefix web run build`：通过。
+- `git diff --check`：通过。
+- 本地浏览器验证 `/team` 和 `/mcp-hub`：通过，console error 为 0。
+
+发布完成后回填：
+
+- 提交：待回填
+- tag：`v0.1.7`
+- Release workflow run：待回填
+- Actions 页面：待回填
+- Release 页面：待回填
+- workflow 结果：待回填
