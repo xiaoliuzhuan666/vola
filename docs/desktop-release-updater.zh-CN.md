@@ -92,3 +92,44 @@ GitHub Release 资产：
 注意：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，未影响本次打包。后续可以把相关 action 或 runner 环境升级到 Node.js 24。
+
+## 2026-06-16 v0.1.4 GitHub 打包记录
+
+本次按 GitHub tag 发布流程重新打包桌面端，并把连接流程简化、能力核对文档和桌面端版本一并发布：
+
+- 提交：`2d20176248f3064cda323811110a769541007561`
+- tag：`v0.1.4`
+- Release workflow run：`27603282948`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27603282948`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.4`
+- workflow 结果：success
+
+本地发版前验证：
+
+- `npm --prefix web run build`：通过。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./...`：通过。
+- `docker compose config --services`：通过。
+- `bash -n deploy/prod/deploy.sh deploy/tencent/pull-and-deploy.sh`：通过。
+- `make build`：通过。
+- `git diff --check`：通过。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.4`。
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.4_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.4_x64.dmg`
+- `linux-x86_64-vola_0.1.4_amd64.AppImage`
+- `windows-x86_64-vola_0.1.4_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.4`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
+
+注意：
+
+- GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。后续可以把相关 action 或 runner 环境升级到 Node.js 24。
