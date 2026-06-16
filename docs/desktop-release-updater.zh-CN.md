@@ -53,3 +53,42 @@ https://github.com/xiaoliuzhuan666/vola/releases/latest/download/latest.json
 - `latest.json` 的 `version` 与桌面端版本一致。
 - `latest.json.platforms` 至少包含当前系统对应平台，并且对应资产 URL 和 signature 存在。
 - 已安装旧版桌面端点击“检查更新”后能下载、安装并在重启后切到新版本。
+
+## 2026-06-16 v0.1.3 GitHub 打包记录
+
+本次按 GitHub tag 发布流程重新打包桌面端：
+
+- 提交：`2f520532e07be957fd044f4844ec3ba30bf16fcf`
+- tag：`v0.1.3`
+- Release workflow run：`27597924824`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.3`
+- workflow 结果：success
+
+本地发版前验证：
+
+- `npm --prefix web run build`：通过。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./...`：通过。
+- `docker compose config --services`：通过。
+- `deploy/tencent/docker-compose.yml` 使用 dummy 必填环境变量做 `config --services`：通过。
+- `bash -n deploy/prod/deploy.sh deploy/tencent/pull-and-deploy.sh`：通过。
+- `git diff --check`：通过。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.3`。
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.3_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.3_x64.dmg`
+- `linux-x86_64-vola_0.1.3_amd64.AppImage`
+- `windows-x86_64-vola_0.1.3_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.3`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+
+注意：
+
+- GitHub Actions 出现 Node.js 20 deprecation 警告，未影响本次打包。后续可以把相关 action 或 runner 环境升级到 Node.js 24。
