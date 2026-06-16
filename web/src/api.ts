@@ -24,6 +24,16 @@ type AuthStorageKey = "token" | "refresh_token";
 let memoryAccessToken = "";
 let localOwnerTokenPromise: Promise<string | null> | null = null;
 
+export interface CliToolsInstallResult {
+  source_path: string;
+  install_dir: string;
+  commands: string[];
+  command_paths: string[];
+  path_updated: boolean;
+  rc_file?: string | null;
+  shell_reload_command?: string | null;
+}
+
 function sanitizeAuthValue(value?: string | null) {
   if (!value) return null;
   const trimmed = value.trim();
@@ -75,6 +85,15 @@ function getGlobalTauriInvoke(): TauriInvoke | null {
   if (typeof window === "undefined") return null;
   const tauri = (window as any).__TAURI__;
   return tauri?.core?.invoke || tauri?.invoke || null;
+}
+
+export async function installCliTools(): Promise<CliToolsInstallResult> {
+  if (!isTauri) {
+    throw new Error("CLI installer is only available in the Vola desktop app.");
+  }
+  const globalInvoke = getGlobalTauriInvoke();
+  const invoke = globalInvoke || (await import('@tauri-apps/api/core')).invoke;
+  return invoke<CliToolsInstallResult>("install_cli_tools");
 }
 
 async function resolveTauriApiBase() {

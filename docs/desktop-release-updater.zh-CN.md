@@ -133,3 +133,25 @@ GitHub Release 资产：
 注意：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。后续可以把相关 action 或 runner 环境升级到 Node.js 24。
+
+## 2026-06-16 v0.1.5 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点是让不会安装 CLI 的用户可以在桌面版里一键安装 `neu`，并把连接页调整为“先安装 neu，再连接 Codex / Claude Code”。
+
+本地发版前验证：
+
+- `cargo check --manifest-path src-tauri/Cargo.toml`：通过。
+- `npm --prefix web run typecheck`：通过。
+- `npm --prefix web run build`：通过。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./...`：通过。
+- `make build`：通过。
+- `git diff --check`：通过。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.5`。
+
+发布完成后回填：
+
+- 提交：待回填。
+- tag：`v0.1.5`
+- Release workflow run：待回填。
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.5`
+- workflow 结果：待回填。

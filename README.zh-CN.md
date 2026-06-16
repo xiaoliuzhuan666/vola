@@ -99,7 +99,8 @@ cd vola
 ```bash
 neu status         # 检查 daemon、本地存储和当前 target 是否就绪
 neu platform ls    # 查看已发现的平台 adapter 和连接状态
-neu connect claude # 安装 / 配置 Claude 集成
+neu connect codex  # 推荐：安装 / 配置 Codex 集成
+neu connect claude # 其次：安装 / 配置 Claude Code 集成
 neu browse         # 在浏览器里打开本地 Hub
 ```
 

@@ -7675,6 +7675,74 @@ textarea {
   margin: 0;
 }
 
+.cli-install-inline {
+  display: grid;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid rgba(22, 182, 204, 0.18);
+  border-radius: 14px;
+  background: rgba(240, 253, 250, 0.82);
+}
+
+.cli-install-inline-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.cli-install-inline-main strong {
+  display: block;
+  margin-bottom: 4px;
+  color: #27335f;
+  font-size: 15px;
+}
+
+.cli-install-inline-main p {
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+}
+
+.cli-install-inline-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cli-install-inline-result {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  font-size: 13px;
+}
+
+.cli-install-inline-result span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cli-install-inline-result code {
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.8);
+  color: #27335f;
+  font-family: var(--font-mono);
+}
+
+.cli-mini-step-label {
+  width: max-content;
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(39, 51, 95, 0.08);
+  color: #27335f;
+  font-size: 11px;
+  font-weight: 800;
+}
+
 .cli-primary-head {
   display: flex;
   align-items: flex-start;
@@ -8790,6 +8858,53 @@ details.cli-disclosure:not([open]) .cli-disclosure-body {
   grid-template-columns: repeat(2, minmax(360px, 1fr));
   gap: 18px;
   align-items: stretch;
+}
+
+.cli-install-panel {
+  display: grid;
+  gap: 16px;
+  margin: 0;
+  padding: 22px 26px;
+}
+
+.cli-install-copy {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.cli-install-copy > div:first-child {
+  min-width: 0;
+}
+
+.cli-install-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
+.cli-install-result {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+.cli-install-result span {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.cli-install-result code {
+  padding: 4px 7px;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.82);
+  color: #27335f;
+  font-family: var(--font-mono);
 }
 
 .cli-command-panel {

@@ -1,5 +1,6 @@
-import { useEffect, useMemo } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
+import { installCliTools, isTauri, type CliToolsInstallResult } from '../../api'
 import { useSetup, type CloudPlatformTab } from '../SetupPage'
 import { useI18n } from '../../i18n'
 
@@ -30,9 +31,15 @@ function commandClassName(content: string) {
   return content.trim().startsWith('{') ? 'mcp-copy-row config-row' : 'mcp-copy-row'
 }
 
+const sourceInstallCommand = `cd /path/to/Vola
+./tools/install-vola.sh`
+
 export default function SetupCloudPage() {
   const { tx } = useI18n()
   const location = useLocation()
+  const [installingCli, setInstallingCli] = useState(false)
+  const [cliInstallResult, setCliInstallResult] = useState<CliToolsInstallResult | null>(null)
+  const [cliInstallError, setCliInstallError] = useState('')
   const {
     baseUrl,
     isDesktopRuntime,
@@ -169,14 +176,26 @@ export default function SetupCloudPage() {
     ? tx('复制连接命令', 'Copy connect command')
     : activeGuide.remoteCopyLabel || tx('复制这段命令', 'Copy this command')
   const primaryIntro = useLocalCommand ? activeGuide.localHint : activeGuide.remoteIntro
+  const handleInstallCli = async () => {
+    setInstallingCli(true)
+    setCliInstallError('')
+    try {
+      const result = await installCliTools()
+      setCliInstallResult(result)
+    } catch (err: any) {
+      setCliInstallError(err?.message || tx('安装 neu 失败', 'Failed to install neu'))
+    } finally {
+      setInstallingCli(false)
+    }
+  }
 
   return (
     <section className="setup-wizard mcp-setup-wizard">
       {cloudModeNeedsPublicUrl && (
         <div className="alert alert-warn cli-simple-alert">
           {isDesktopRuntime
-            ? tx('桌面版当前使用本机地址，外部 CLI 不能直接读取 tauri 地址。推荐复制下面的本地连接命令。', 'The desktop app is using a local address, and external CLIs cannot read tauri URLs. Copy the local connect command below.')
-            : tx('这个页面现在不是公网 HTTPS 地址。推荐先用下面的本地连接命令；部署到 HTTPS 域名后，再回来复制远程 MCP 命令。', 'This page is not on a public HTTPS address. Use the local connect command below first. After deploying to an HTTPS domain, come back for the remote MCP command.')}
+              ? tx('桌面版会使用本机服务。终端里还没有 neu 时，先安装命令行工具，再执行连接命令。', 'The desktop app uses a local service. If Terminal does not have neu yet, install the command line tool before running the connect command.')
+            : tx('这个页面现在不是公网 HTTPS 地址。使用本地连接命令；部署到 HTTPS 域名后，再回来复制远程 MCP 命令。', 'This page is not on a public HTTPS address. Use the local connect command. After deploying to an HTTPS, come back for the remote MCP command.')}
         </div>
       )}
 
@@ -186,7 +205,7 @@ export default function SetupCloudPage() {
           <h3>{tx('推荐用 Codex 连接 Vola', 'Connect Vola with Codex first')}</h3>
           <p>
             {useLocalCommand
-              ? tx('复制下面这条命令。团队已经在用 Claude Code 时，选择第二个选项即可。', 'Copy the command below. Teams already using Claude Code can choose the second option.')
+              ? tx('先装好 neu，再复制连接命令。团队已经在用 Claude Code 时，选择第二个选项即可。', 'Install neu, then copy the connect command. Teams already using Claude Code can choose the second option.')
               : tx('Codex 会添加 MCP 并打开浏览器授权。Claude Code 是第二推荐。', 'Codex adds the MCP server and opens browser authorization. Claude Code is the second recommendation.')}
           </p>
         </div>
@@ -229,8 +248,53 @@ export default function SetupCloudPage() {
         </details>
 
         <div className="cli-primary-step" role="tabpanel">
+          {useLocalCommand && (
+            <div className="cli-install-inline">
+              <div className="cli-mini-step-label">{tx('步骤 1', 'Step 1')}</div>
+              <div className="cli-install-inline-main">
+                <div>
+                  <strong>{tx('安装 neu 命令', 'Install the neu command')}</strong>
+                  <p>
+                    {tx(
+                      '终端提示 command not found 时点这里。安装后当前终端可能还需要执行 source ~/.zshrc，页面会给出命令。',
+                      'Use this when Terminal says command not found. The current terminal may still need source ~/.zshrc after installation; this page will show the command.',
+                    )}
+                  </p>
+                </div>
+                <div className="cli-install-inline-actions">
+                  {isTauri ? (
+                    <button className="btn btn-primary" type="button" disabled={installingCli} onClick={handleInstallCli}>
+                      {installingCli ? tx('安装中...', 'Installing...') : tx('一键安装', 'Install')}
+                    </button>
+                  ) : (
+                    <button className="btn btn-primary" type="button" onClick={() => copyToClipboard(sourceInstallCommand, 'cli-source-install')}>
+                      {copied === 'cli-source-install' ? tx('已复制', 'Copied') : tx('复制安装命令', 'Copy install command')}
+                    </button>
+                  )}
+                  <Link className="btn btn-outline" to="/cli">{tx('命令行工具页', 'Command Line page')}</Link>
+                </div>
+              </div>
+              {cliInstallResult && (
+                <div className="alert alert-success cli-install-inline-result">
+                  <span>{tx(`已安装到 ${cliInstallResult.install_dir}`, `Installed into ${cliInstallResult.install_dir}`)}</span>
+                  {cliInstallResult.shell_reload_command && (
+                    <span>
+                      {tx('当前终端继续报错时执行：', 'If the current terminal still errors, run:')}
+                      <code>{cliInstallResult.shell_reload_command}</code>
+                      <button className="btn btn-sm" type="button" onClick={() => copyToClipboard(cliInstallResult.shell_reload_command || '', 'cli-source-reload')}>
+                        {copied === 'cli-source-reload' ? tx('已复制', 'Copied') : tx('复制', 'Copy')}
+                      </button>
+                    </span>
+                  )}
+                </div>
+              )}
+              {cliInstallError && <div className="alert alert-error">{cliInstallError}</div>}
+            </div>
+          )}
+
           <div className="cli-primary-head">
             <div>
+              {useLocalCommand && <div className="cli-mini-step-label">{tx('步骤 2', 'Step 2')}</div>}
               <div className="cli-primary-title-row">
                 <strong>{activeGuide.label}</strong>
                 {activeGuide.rankLabel && <span>{activeGuide.rankLabel}</span>}
@@ -265,7 +329,7 @@ export default function SetupCloudPage() {
           <ol className="cli-plain-steps">
             {(useLocalCommand
               ? [
-                tx('打开终端，粘贴命令并回车。', 'Open Terminal, paste the command, and press Enter.'),
+                tx('打开新的终端窗口，粘贴命令并回车。', 'Open a new Terminal window, paste the command, and press Enter.'),
                 tx('看到 Connected 后，重新打开对应 AI 工具。', 'When you see Connected, reopen the AI tool.'),
                 tx('在对话里输入 Vola 命令，例如让它读取 profile 或 memory。', 'In chat, use a Vola command, for example asking it to read profile or memory.'),
               ]
@@ -312,6 +376,7 @@ export default function SetupCloudPage() {
               {useLocalCommand && (
                 <>
                   <li>{tx('终端提示找不到 neu 时，先到“命令行工具”页安装 CLI。', 'If Terminal says neu is not found, install the CLI from the Command Line Tools page first.')}</li>
+                  <li>{tx('已经安装但当前终端还报错时，打开新的终端窗口，或执行命令行工具页显示的 source 命令。', 'If it is installed but the current Terminal still errors, open a new Terminal window or run the source command shown on the Command Line Tools page.')}</li>
                   <li>{tx('不想安装 CLI 时，可以去“本地模式”页手动复制配置。', 'If you do not want to install the CLI, use the Local Mode page and copy the config manually.')}</li>
                 </>
               )}

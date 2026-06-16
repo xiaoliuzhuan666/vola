@@ -1,11 +1,22 @@
-use std::sync::{Arc, Mutex};
 use std::path::PathBuf;
-use std::process::{Command, Child};
+use std::process::{Child, Command};
+use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
 // 保存 Go 守护进程句柄的全局 State 结构体
 struct BackendProcess {
     child: Arc<Mutex<Option<Child>>>,
+}
+
+#[derive(serde::Serialize)]
+struct CliToolsInstallResult {
+    source_path: String,
+    install_dir: String,
+    commands: Vec<String>,
+    command_paths: Vec<String>,
+    path_updated: bool,
+    rc_file: Option<String>,
+    shell_reload_command: Option<String>,
 }
 
 #[tauri::command]
@@ -37,6 +48,189 @@ fn get_api_base() -> String {
     "http://127.0.0.1:42690".to_string()
 }
 
+fn home_dir() -> Result<PathBuf, String> {
+    if let Ok(home) = std::env::var("HOME") {
+        if !home.trim().is_empty() {
+            return Ok(PathBuf::from(home));
+        }
+    }
+    if let Ok(profile) = std::env::var("USERPROFILE") {
+        if !profile.trim().is_empty() {
+            return Ok(PathBuf::from(profile));
+        }
+    }
+    Err("无法确定当前用户的 home 目录".to_string())
+}
+
+fn resolve_bundled_vola_binary(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    let executable_name = if cfg!(windows) { "vola.exe" } else { "vola" };
+    let mut candidates = Vec::new();
+
+    if let Ok(res_dir) = app.path().resource_dir() {
+        candidates.push(res_dir.join("bin").join(executable_name));
+        candidates.push(res_dir.join("bin/vola"));
+    }
+
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(parent) = exe_path.parent() {
+            candidates.push(parent.join(executable_name));
+            candidates.push(parent.join("vola"));
+            candidates.push(parent.join("bin").join(executable_name));
+            candidates.push(parent.join("bin/vola"));
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    {
+        candidates.push(PathBuf::from("./bin").join(executable_name));
+        candidates.push(PathBuf::from("./bin/vola"));
+    }
+
+    candidates
+        .into_iter()
+        .find(|path| path.is_file())
+        .ok_or_else(|| "未找到桌面版内置的 Vola 命令，请重新安装或更新 Vola。".to_string())
+}
+
+fn cli_install_dir() -> Result<PathBuf, String> {
+    if cfg!(windows) {
+        if let Ok(local_app_data) = std::env::var("LOCALAPPDATA") {
+            if !local_app_data.trim().is_empty() {
+                return Ok(PathBuf::from(local_app_data).join("Vola").join("bin"));
+            }
+        }
+    }
+    Ok(home_dir()?.join(".local").join("bin"))
+}
+
+fn command_names() -> Vec<String> {
+    let suffix = if cfg!(windows) { ".exe" } else { "" };
+    ["neu", "vola", "vol", "neudrive", "xlzdrive"]
+        .iter()
+        .map(|name| format!("{name}{suffix}"))
+        .collect()
+}
+
+fn path_contains_dir(dir: &std::path::Path) -> bool {
+    let Some(path_var) = std::env::var_os("PATH") else {
+        return false;
+    };
+    std::env::split_paths(&path_var).any(|entry| entry == dir)
+}
+
+fn preferred_shell_rc(home: &std::path::Path) -> Option<PathBuf> {
+    let shell = std::env::var("SHELL").unwrap_or_default();
+    let shell_name = PathBuf::from(shell)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("")
+        .to_string();
+    match shell_name.as_str() {
+        "zsh" => Some(home.join(".zshrc")),
+        "bash" => {
+            let bashrc = home.join(".bashrc");
+            if bashrc.exists() {
+                Some(bashrc)
+            } else {
+                Some(home.join(".bash_profile"))
+            }
+        }
+        "fish" => Some(home.join(".config").join("fish").join("config.fish")),
+        _ => None,
+    }
+}
+
+fn ensure_install_dir_on_shell_path(
+    install_dir: &std::path::Path,
+) -> Result<(bool, Option<PathBuf>, Option<String>), String> {
+    if cfg!(windows) || path_contains_dir(install_dir) {
+        return Ok((false, None, None));
+    }
+
+    let home = home_dir()?;
+    let Some(rc_file) = preferred_shell_rc(&home) else {
+        return Ok((false, None, None));
+    };
+    let shell_name = std::env::var("SHELL")
+        .ok()
+        .and_then(|shell| {
+            PathBuf::from(shell)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+        })
+        .unwrap_or_default();
+    let line = if shell_name == "fish" {
+        format!("fish_add_path -m {}", install_dir.display())
+    } else if install_dir == home.join(".local").join("bin") {
+        "export PATH=\"$HOME/.local/bin:$PATH\"".to_string()
+    } else {
+        format!("export PATH=\"{}:$PATH\"", install_dir.display())
+    };
+
+    if let Some(parent) = rc_file.parent() {
+        std::fs::create_dir_all(parent).map_err(|err| format!("创建 shell 配置目录失败: {err}"))?;
+    }
+    let current = std::fs::read_to_string(&rc_file).unwrap_or_default();
+    if !current.contains(&line) {
+        use std::io::Write;
+        let mut file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&rc_file)
+            .map_err(|err| format!("打开 shell 配置失败: {err}"))?;
+        writeln!(file, "\n# Added by Vola installer\n{line}")
+            .map_err(|err| format!("写入 shell 配置失败: {err}"))?;
+    }
+
+    let reload = Some(format!("source {}", rc_file.display()));
+    Ok((true, Some(rc_file), reload))
+}
+
+#[cfg(unix)]
+fn make_executable(path: &std::path::Path) -> Result<(), String> {
+    use std::os::unix::fs::PermissionsExt;
+    let mut perms = std::fs::metadata(path)
+        .map_err(|err| format!("读取命令权限失败: {err}"))?
+        .permissions();
+    perms.set_mode(0o755);
+    std::fs::set_permissions(path, perms).map_err(|err| format!("设置命令权限失败: {err}"))
+}
+
+#[cfg(not(unix))]
+fn make_executable(_path: &std::path::Path) -> Result<(), String> {
+    Ok(())
+}
+
+#[tauri::command]
+fn install_cli_tools(app: tauri::AppHandle) -> Result<CliToolsInstallResult, String> {
+    let source = resolve_bundled_vola_binary(&app)?;
+    let install_dir = cli_install_dir()?;
+    std::fs::create_dir_all(&install_dir).map_err(|err| format!("创建命令目录失败: {err}"))?;
+    let bytes = std::fs::read(&source).map_err(|err| format!("读取内置命令失败: {err}"))?;
+
+    let mut command_paths = Vec::new();
+    let commands = command_names();
+    for command in &commands {
+        let target = install_dir.join(command);
+        std::fs::write(&target, &bytes).map_err(|err| format!("安装 {command} 失败: {err}"))?;
+        make_executable(&target)?;
+        command_paths.push(target.to_string_lossy().into_owned());
+    }
+
+    let (path_updated, rc_file, shell_reload_command) =
+        ensure_install_dir_on_shell_path(&install_dir)?;
+
+    Ok(CliToolsInstallResult {
+        source_path: source.to_string_lossy().into_owned(),
+        install_dir: install_dir.to_string_lossy().into_owned(),
+        commands,
+        command_paths,
+        path_updated,
+        rc_file: rc_file.map(|path| path.to_string_lossy().into_owned()),
+        shell_reload_command,
+    })
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let child_state = Arc::new(Mutex::new(None));
@@ -46,9 +240,7 @@ pub fn run() {
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(BackendProcess {
-            child: child_state,
-        })
+        .manage(BackendProcess { child: child_state })
         .setup(move |app| {
             // 查找 vola 后端二进制文件的位置
             let mut bin_path = PathBuf::from("./bin/vola");
@@ -97,7 +289,7 @@ pub fn run() {
 
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![get_api_base])
+        .invoke_handler(tauri::generate_handler![get_api_base, install_cli_tools])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(move |handle, event| match event {
