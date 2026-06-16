@@ -349,7 +349,7 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
   const dataItemCount = Math.max(0, stats.files + stats.memory + stats.skills + stats.projects + stats.conversations)
   const hasImportedData = dataItemCount > 0 || treeEntries.length > 0
   const featuredConnectionIDs = localMode
-    ? ['codex', 'claude-code', 'claude', 'chatgpt']
+    ? ['claude', 'chatgpt', 'codex', 'claude-code']
     : ['claude', 'chatgpt', 'cursor', 'api']
   const featuredConnectionMethods = featuredConnectionIDs
     .map((id) => connectionMethods.find((method) => method.id === id))
@@ -376,29 +376,26 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
     {
       title: connectedCount > 0 ? tx('管理已连接的 AI 工具', 'Manage connected AI tools') : tx('连接第一个 AI 工具', 'Connect your first AI tool'),
       body: connectedCount > 0
-        ? tx('查看授权状态，或继续接入 Codex、Claude Code、ChatGPT 等工具。', 'Review access and add Codex, Claude Code, ChatGPT, or another tool.')
-        : tx('先把常用 AI 工具接到 Vola，让它能读取你授权的资料。', 'Start by connecting an AI tool so it can read the data you authorize.'),
+        ? tx('查看授权状态，或继续把 Codex、Claude Code、ChatGPT 等工具接到同一份 Hub。', 'Review access and add Codex, Claude Code, ChatGPT, or another tool to the same hub.')
+        : tx('推荐从 Claude 或 ChatGPT 开始。连接后，把测试提示词发给 AI，就能看到它读取你授权的 profile 和 memory。', 'Start with Claude or ChatGPT. After connecting, send the test prompt to confirm it can read authorized profile and memory.'),
       to: '/setup/mcp',
-      cta: connectedCount > 0 ? tx('管理连接', 'Manage') : tx('开始连接', 'Connect'),
+      cta: connectedCount > 0 ? tx('管理连接', 'Manage') : tx('连接 Claude / ChatGPT', 'Connect Claude / ChatGPT'),
       tone: 'primary',
-    },
+    }
+  ]
+  const secondaryActions = [
     {
       title: hasImportedData ? tx('整理已导入资料', 'Review imported data') : tx('导入本机资料', 'Import local data'),
-      body: hasImportedData
-        ? tx('检查记忆、技能和项目资料，把有价值的内容整理成可复用资产。', 'Review memory, skills, and project data, then keep what is useful.')
-        : tx('从本机 App Data 或导出文件开始，让 Vola 先拥有可用资料。', 'Bring in local app data or exported files so Vola has useful material.'),
       to: localMode ? '/imports/local-apps' : '/imports/claude-export',
       cta: hasImportedData ? tx('查看资料', 'Review') : tx('导入资料', 'Import'),
-      tone: 'secondary',
     },
     {
       title: tx('设置备份与同步', 'Set backup and sync'),
-      body: tx('用 GitHub Backup 保留可恢复版本，也可以再配置 WebDAV 或 COS 备份包。', 'Keep recoverable versions with GitHub Backup, then add WebDAV or S3-compatible archive backups if needed.'),
       to: '/sync-backup',
       cta: tx('打开备份', 'Open backup'),
-      tone: 'secondary',
     },
   ]
+  const recommendedConnectionId = 'claude'
 
   return (
     <div className="page home-page dashboard-redesign-page">
@@ -500,9 +497,9 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
 
       <section className="dashboard-focus-panel" aria-label={tx('今日重点', 'Today focus')}>
         <div className="dashboard-focus-copy">
-          <span>{tx('今日概览', 'Today')}</span>
-          <h2>{tx('先把 AI、资料和备份三件事理顺。', 'Start with AI access, data, and backup.')}</h2>
-          <p>{tx('Vola 是给 AI 工具使用的个人数据 Hub。先完成下面三步，再进入文件和高级配置。', 'Vola is a personal data hub for AI tools. Finish these three steps before going deeper into files and advanced settings.')}</p>
+          <span>{tx('首次设置', 'First setup')}</span>
+          <h2>{tx('连接第一个 AI 工具，让它共享你的长期上下文。', 'Connect one AI tool to your long-term context.')}</h2>
+          <p>{tx('Vola 把 profile、memory、projects、skills 和 vault 权限放在一处。连接完成后，Claude、ChatGPT、Codex、Cursor 都可以读取你授权的同一份资料。', 'Vola keeps profile, memory, projects, skills, and vault access in one place. After connecting, Claude, ChatGPT, Codex, and Cursor can use the same authorized data.')}</p>
         </div>
         <div className="dashboard-status-grid" aria-label={tx('当前状态', 'Current status')}>
           {statusItems.map((item) => (
@@ -514,7 +511,7 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
         </div>
       </section>
 
-      <section className="dashboard-next-actions" aria-label={tx('下一步', 'Next actions')}>
+      <section className="dashboard-next-actions is-focused" aria-label={tx('下一步', 'Next actions')}>
         {nextActions.map((action) => (
           <Link key={action.title} to={action.to} className={`dashboard-action-card is-${action.tone}`}>
             <span>{action.title}</span>
@@ -522,28 +519,41 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
             <strong>{action.cta}</strong>
           </Link>
         ))}
+        <div className="dashboard-secondary-action-list" aria-label={tx('稍后设置', 'Later setup')}>
+          {secondaryActions.map((action) => (
+            <Link key={action.title} to={action.to} className="dashboard-secondary-action">
+              <span>{action.title}</span>
+              <strong>{action.cta}</strong>
+            </Link>
+          ))}
+        </div>
       </section>
 
       <section className="dashboard-platform-panel dashboard-platform-panel-compact" aria-label={tx('常用连接', 'Common connections')}>
         <div className="dashboard-section-head">
           <div>
-            <h3>{tx('常用连接', 'Common connections')}</h3>
-            <p>{tx('先显示最常用的入口；其他客户端可以在新手接入指南里继续选择。', 'Showing the most common entry points first. More clients are available in the setup guide.')}</p>
+            <h3>{tx('推荐连接', 'Recommended connections')}</h3>
+            <p>{tx('第一次只需要选一个。Claude 和 ChatGPT 适合验证 profile / memory，Codex 与 Claude Code 适合项目资料和 Skills。', 'Choose one to start. Claude and ChatGPT are good for profile and memory checks; Codex and Claude Code are better for projects and skills.')}</p>
           </div>
           <Link to="/connections" className="dashboard-card-link">{tx('管理连接', 'Manage connections')}</Link>
         </div>
         <div className="dashboard-featured-connection-grid">
           {featuredConnectionMethods.map((method) => {
             const connected = hasConnectedPlatform(connections, grants, method.aliases)
+            const className = [
+              'dashboard-platform-card',
+              connected ? 'is-connected' : '',
+              method.id === recommendedConnectionId ? 'is-recommended' : '',
+            ].filter(Boolean).join(' ')
             return (
-              <Link key={method.id} to={method.to} state={method.state} className={connected ? 'dashboard-platform-card is-connected' : 'dashboard-platform-card'}>
+              <Link key={method.id} to={method.to} state={method.state} className={className}>
                 <span className={`dashboard-platform-icon platform-${method.id}`} aria-hidden="true">
                   <PlatformIcon id={method.id} />
                 </span>
                 <span className="dashboard-platform-copy">
                   <strong>{method.name}</strong>
                   <small>{method.description}</small>
-                  <em>{connected ? tx('已连接', 'Connected') : tx('未连接', 'Not connected')}</em>
+                  <em>{connected ? tx('已连接', 'Connected') : method.id === recommendedConnectionId ? tx('推荐首次连接', 'Recommended first') : tx('可选', 'Optional')}</em>
                 </span>
               </Link>
             )

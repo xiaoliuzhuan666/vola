@@ -699,3 +699,107 @@ ssh family-growth-tencent 'docker network ls'
 ```
 
 `/api/ops/status`、`/api/ops/instance-status`、`/api/connections` 和浏览器复查都使用了临时短效 `admin` token，读完即撤销。
+
+## 2026-06-15 首次体验简化改动生产发布
+
+目标：发布首页和 MCP 接入页的首次体验简化改动，让新用户优先连接第一个 AI 工具，并把示例数据与网页沙盒放到较低优先级区域。
+
+本地发布前检查：
+
+- `npm --prefix web run build`：通过，包含 `tsc --noEmit` 和 Vite production build。
+- `rm -rf internal/web/dist && cp -R web/dist internal/web/dist`：已同步前端产物到 Go embed 目录。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./...`：通过。
+- `docker compose config --services`：通过，服务为 `db`、`server`。
+- `env VOLA_IMAGE=vola:test POSTGRES_PASSWORD=dummy JWT_SECRET=dummy VAULT_MASTER_KEY=... docker compose -f deploy/tencent/docker-compose.yml config --services`：通过，服务为 `db`、`server`。
+- `bash -n deploy/prod/deploy.sh deploy/tencent/pull-and-deploy.sh`：通过。
+- `git diff --check`：通过。
+- `docs/agent-data-hub-competitor-research.zh-CN.md` 尾部空格检查：通过。
+
+发布前线上状态：
+
+- `https://driver.sunningfun.cn/api/health` 返回 HTTP 502。
+- `docker ps` 没有 `neudrive-server` 和 `neudrive-postgres`。
+- `/opt/neudrive` 存在，`/opt/vola` 不存在。
+- 同机已有 `family-growth-api` 和 `family-growth-api-harmony`，端口分别绑定在 `127.0.0.1:3005` 和 `127.0.0.1:3006`。
+
+镜像：
+
+- 新镜像：`vola:release-202606152057-ux-843c3f60b242-dirty`
+- 新镜像 ID：`sha256:0661efe82fb53da2b9254aae2d176bdbc501eaf04dba369c89e18c0da4cfcf60`
+- 架构：`linux/amd64`
+- 构建命令：
+
+```bash
+docker build --platform linux/amd64 -t vola:release-202606152057-ux-843c3f60b242-dirty .
+```
+
+- 上传命令：
+
+```bash
+docker save vola:release-202606152057-ux-843c3f60b242-dirty | ssh family-growth-tencent 'docker load'
+```
+
+远端改动：
+
+- 备份目录：`/opt/neudrive/backups/deploy-20260615T130436Z`
+- 备份 env：`/opt/neudrive/backups/deploy-20260615T130436Z/neudrive.env`
+- 备份 Compose：`/opt/neudrive/backups/deploy-20260615T130436Z/docker-compose.yml`
+- 旧镜像记录：`/opt/neudrive/backups/deploy-20260615T130436Z/previous-image.txt`
+- 旧镜像：`vola:staging-20260614-registration-lock-amd64`
+- 旧镜像 ID：`sha256:d12e9a93c329ca211758da388e36bc81d0ae9c2fc1ce75126862e9eb8b824db8`
+- 修改项：仅更新 `/opt/neudrive/config/neudrive.env` 里的 `NEUDRIVE_IMAGE`。
+
+执行命令：
+
+```bash
+ssh family-growth-tencent '
+  cd /opt/neudrive/deploy/tencent &&
+  docker compose -p neudrive --env-file /opt/neudrive/config/neudrive.env -f docker-compose.yml up -d db server &&
+  docker compose -p neudrive --env-file /opt/neudrive/config/neudrive.env -f docker-compose.yml ps
+'
+```
+
+生产复查结果：
+
+- 服务器本机 `http://127.0.0.1:18080/api/health`：HTTP 200，`status=ok`，`storage=postgres`。
+- 公网 `https://driver.sunningfun.cn/api/health`：HTTP 200，`status=ok`，`storage=postgres`。
+- 公网 `https://driver.sunningfun.cn/api/config`：HTTP 200，`public_registration_enabled=true`，`github_app_enabled=true`，`storage=postgres`。
+- `http://driver.sunningfun.cn/`：HTTP 301 跳转到 HTTPS。
+- `https://driver.sunningfun.cn/`：HTTP 200。
+- 浏览器打开首页：标题为 `Personal data hub for AI agents — Vola`。
+- 浏览器打开 `/setup/mcp`：未登录状态跳转到 `/login?redirect=%2Fsetup%2Fmcp`，页面标题为 `登录 — Vola`。
+- 浏览器控制台：0 个 error，0 个 warning。
+- `docker compose ps`：
+  - `neudrive-server` 使用 `vola:release-202606152057-ux-843c3f60b242-dirty`，端口 `127.0.0.1:18080->8080/tcp`。
+  - `neudrive-postgres` 使用 `postgres:16-alpine`，状态为 healthy。
+- 端口检查：
+  - `127.0.0.1:18080` 已绑定给 Vola。
+  - `127.0.0.1:3005` 和 `127.0.0.1:3006` 仍绑定给 family-growth 服务。
+  - 本次检查未观察到 `127.0.0.1:18090` 监听。
+- `docker ps`：`family-growth-api` 与 `family-growth-api-harmony` 仍为 healthy。
+- `docker compose logs --tail=120 server`：未看到启动错误；`RunExternalBackups` 本轮执行结果为 `succeeded=1`。
+
+未验证：
+
+- 没有使用生产账号登录验证 `/setup/mcp` 内页；线上未登录访问会跳转登录页。
+- 没有重新做自注册临时账号创建和清理；本轮只读取 `/api/config` 确认公开注册开关仍为开启状态。
+- 没有调用实例管理员接口；本次改动不涉及实例管理员权限。
+- 没有做数据库恢复演练；本次没有数据库迁移或数据结构改动。
+
+过程记录：
+
+- 第一次远端备份脚本在读取旧镜像字段时因为 shell 变量展开失败退出，发生在修改 env 前；随后换用 `grep | sed` 读取旧镜像并重新执行成功。
+
+回滚方式：
+
+```bash
+ssh family-growth-tencent '
+  cp /opt/neudrive/backups/deploy-20260615T130436Z/neudrive.env /opt/neudrive/config/neudrive.env &&
+  cp /opt/neudrive/backups/deploy-20260615T130436Z/docker-compose.yml /opt/neudrive/deploy/tencent/docker-compose.yml &&
+  cd /opt/neudrive/deploy/tencent &&
+  docker compose -p neudrive --env-file /opt/neudrive/config/neudrive.env -f docker-compose.yml up -d db server &&
+  docker compose -p neudrive --env-file /opt/neudrive/config/neudrive.env -f docker-compose.yml ps
+'
+```
+
+如果只回滚镜像，也可以把 `/opt/neudrive/config/neudrive.env` 中的 `NEUDRIVE_IMAGE` 改回 `vola:staging-20260614-registration-lock-amd64`，再执行同一条 `docker compose ... up -d db server`。
