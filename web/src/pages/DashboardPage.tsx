@@ -258,20 +258,20 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
       aliases: ['workbuddy', 'workbuddy-agent'],
     },
     {
-      id: 'claude-code',
-      name: 'Claude Code',
-      description: tx('连接 Claude Code CLI', 'Connect Claude Code CLI'),
-      to: '/setup/cli',
-      state: { cloudPlatform: 'claude' },
-      aliases: ['claude-code', 'claude code'],
-    },
-    {
       id: 'codex',
       name: 'Codex',
       description: tx('连接 Codex CLI', 'Connect Codex CLI'),
       to: '/setup/cli',
       state: { cloudPlatform: 'codex' },
       aliases: ['codex', 'codex-cli'],
+    },
+    {
+      id: 'claude-code',
+      name: 'Claude Code',
+      description: tx('连接 Claude Code CLI', 'Connect Claude Code CLI'),
+      to: '/setup/cli',
+      state: { cloudPlatform: 'claude' },
+      aliases: ['claude-code', 'claude code'],
     },
     {
       id: 'gemini',
@@ -349,7 +349,7 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
   const dataItemCount = Math.max(0, stats.files + stats.memory + stats.skills + stats.projects + stats.conversations)
   const hasImportedData = dataItemCount > 0 || treeEntries.length > 0
   const featuredConnectionIDs = localMode
-    ? ['claude', 'chatgpt', 'codex', 'claude-code']
+    ? ['codex', 'claude-code', 'claude', 'chatgpt']
     : ['claude', 'chatgpt', 'cursor', 'api']
   const featuredConnectionMethods = featuredConnectionIDs
     .map((id) => connectionMethods.find((method) => method.id === id))
@@ -377,9 +377,11 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
       title: connectedCount > 0 ? tx('管理已连接的 AI 工具', 'Manage connected AI tools') : tx('连接第一个 AI 工具', 'Connect your first AI tool'),
       body: connectedCount > 0
         ? tx('查看授权状态，或继续把 Codex、Claude Code、ChatGPT 等工具接到同一份 Hub。', 'Review access and add Codex, Claude Code, ChatGPT, or another tool to the same hub.')
-        : tx('推荐从 Claude 或 ChatGPT 开始。连接后，把测试提示词发给 AI，就能看到它读取你授权的 profile 和 memory。', 'Start with Claude or ChatGPT. After connecting, send the test prompt to confirm it can read authorized profile and memory.'),
-      to: '/setup/mcp',
-      cta: connectedCount > 0 ? tx('管理连接', 'Manage') : tx('连接 Claude / ChatGPT', 'Connect Claude / ChatGPT'),
+        : localMode
+          ? tx('推荐先连接 Codex，其次 Claude Code。连接后，在 AI 工具里验证它能读取你授权的资料。', 'Start with Codex, then Claude Code. After connecting, verify the AI tool can read authorized data.')
+          : tx('推荐从 Claude 或 ChatGPT 开始。连接后，把测试提示词发给 AI，就能看到它读取你授权的 profile 和 memory。', 'Start with Claude or ChatGPT. After connecting, send the test prompt to confirm it can read authorized profile and memory.'),
+      to: localMode ? '/setup/cli' : '/setup/mcp',
+      cta: connectedCount > 0 ? tx('管理连接', 'Manage') : localMode ? tx('连接 Codex', 'Connect Codex') : tx('连接 Claude / ChatGPT', 'Connect Claude / ChatGPT'),
       tone: 'primary',
     }
   ]
@@ -395,7 +397,7 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
       cta: tx('打开备份', 'Open backup'),
     },
   ]
-  const recommendedConnectionId = 'claude'
+  const recommendedConnectionId = localMode ? 'codex' : 'claude'
 
   return (
     <div className="page home-page dashboard-redesign-page">
@@ -533,7 +535,10 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
         <div className="dashboard-section-head">
           <div>
             <h3>{tx('推荐连接', 'Recommended connections')}</h3>
-            <p>{tx('第一次只需要选一个。Claude 和 ChatGPT 适合验证 profile / memory，Codex 与 Claude Code 适合项目资料和 Skills。', 'Choose one to start. Claude and ChatGPT are good for profile and memory checks; Codex and Claude Code are better for projects and skills.')}</p>
+            <p>{localMode
+              ? tx('第一次只需要选一个。优先推荐 Codex，其次 Claude Code。', 'Choose one to start. Codex is recommended first, then Claude Code.')
+              : tx('第一次只需要选一个。Claude 和 ChatGPT 适合验证 profile / memory，Codex 与 Claude Code 适合项目资料和 Skills。', 'Choose one to start. Claude and ChatGPT are good for profile and memory checks; Codex and Claude Code are better for projects and skills.')}
+            </p>
           </div>
           <Link to="/connections" className="dashboard-card-link">{tx('管理连接', 'Manage connections')}</Link>
         </div>

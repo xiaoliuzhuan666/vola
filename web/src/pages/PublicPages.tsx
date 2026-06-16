@@ -350,12 +350,12 @@ const integrations: IntegrationGuide[] = [
       en: 'For terminal users running Codex, Claude Code, Gemini CLI, or Cursor Agent.',
     },
     demo: {
-      zh: '先登录 Vola 官网，再复制对应 CLI 命令并验证连接。',
-      en: 'First sign in to the Vola website, then copy the matching CLI commands and verify the connection.',
+      zh: '优先用 Codex 连接；团队已经在用 Claude Code 时，再选择 Claude Code。',
+      en: 'Start with Codex. Choose Claude Code when your team already uses it.',
     },
     workflowSummary: {
-      zh: '先登录 Vola，再选择你使用的 CLI 并复制对应命令。',
-      en: 'Sign in to Vola first, then choose your CLI and copy the matching commands.',
+      zh: '推荐 Codex，其次 Claude Code；复制对应命令后完成浏览器授权。',
+      en: 'Codex is recommended first, then Claude Code. Copy the matching command and finish browser authorization.',
     },
     guideTitle: {
       zh: '把 Codex / Claude CLI 连接到 Vola',
@@ -375,10 +375,22 @@ const integrations: IntegrationGuide[] = [
         }],
       },
       {
-        title: { zh: '连接 Claude Code', en: 'Connect Claude Code' },
+        title: { zh: '推荐：连接 Codex CLI', en: 'Recommended: connect Codex CLI' },
         copy: {
-          zh: '使用 Claude Code 时，先添加 Vola，再在 Claude Code 里运行 `/mcp` 完成授权。',
-          en: 'If you use Claude Code, add Vola first, then run `/mcp` inside Claude Code to authorize.',
+          zh: '运行这一条命令，Codex 会添加 Vola 并打开浏览器授权。',
+          en: 'Run this one command. Codex adds Vola and opens browser authorization.',
+        },
+        codes: [{
+          label: { zh: 'Codex CLI command', en: 'Codex CLI command' },
+          language: 'bash',
+          value: `codex mcp add vola --url ${MCP_URL} && codex mcp login vola`,
+        }],
+      },
+      {
+        title: { zh: '其次：连接 Claude Code', en: 'Second: connect Claude Code' },
+        copy: {
+          zh: '团队已经在用 Claude Code 时，添加 Vola 后在 Claude Code 里运行 `/mcp` 完成授权。',
+          en: 'When your team already uses Claude Code, add Vola, then run `/mcp` inside Claude Code to authorize.',
         },
         codes: [
           {
@@ -392,18 +404,6 @@ const integrations: IntegrationGuide[] = [
             value: '/mcp',
           },
         ],
-      },
-      {
-        title: { zh: '连接 Codex CLI', en: 'Connect Codex CLI' },
-        copy: {
-          zh: '使用 Codex CLI 时，运行下面三行命令：添加、登录、查看状态。',
-          en: 'If you use Codex CLI, run the three commands below: add, log in, and list status.',
-        },
-        codes: [{
-          label: { zh: 'Codex CLI commands', en: 'Codex CLI commands' },
-          language: 'bash',
-          value: `codex mcp add vola --url ${MCP_URL}\ncodex mcp login vola\ncodex mcp list`,
-        }],
       },
       {
         title: { zh: '用 neu 导入、浏览和验证数据', en: 'Use neu to import, browse, and verify data' },
@@ -433,7 +433,7 @@ const integrations: IntegrationGuide[] = [
     },
     detailHighlights: [
       { zh: '用 `neu login` 登录 Vola 官网账号。', en: 'Use `neu login` to sign in to your Vola website account.' },
-      { zh: '为 Claude Code 或 Codex CLI 添加 remote MCP。', en: 'Add remote MCP for Claude Code or Codex CLI.' },
+      { zh: '优先为 Codex 添加 remote MCP，Claude Code 作为第二选择。', en: 'Add remote MCP for Codex first, with Claude Code as the second option.' },
       { zh: '用 neu 命令导入、浏览和验证资料。', en: 'Use neu commands to import, browse, and verify material.' },
       { zh: '`vola`、`vol`、`neudrive` 和 `xlzdrive` 只是兼容入口。', en: '`vola`, `vol`, `neudrive`, and `xlzdrive` are compatibility aliases.' },
     ],

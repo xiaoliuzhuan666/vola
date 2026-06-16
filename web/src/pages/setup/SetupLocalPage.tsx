@@ -28,19 +28,10 @@ export default function SetupLocalPage() {
       description={tx('通过本地 Vola MCP 程序和访问凭证连接，适合本地开发或内网环境。', 'Connect through the local Vola MCP program and an access credential for local development or internal networks.')}
     >
       <p className="setup-note setup-note-first">
-        {tx('说明默认直接可看，不会自动创建 token。推荐把 token 放进环境变量 ', 'The guide is view-only by default and will not create a token automatically. Prefer storing the token in ')}<code>{TOKEN_ENV_NAME}</code>{tx('，再让 Claude Code 或 Codex CLI 在启动本地 MCP binary 时读取它。', ' so Claude Code or Codex CLI can read it when starting the local MCP binary.')}
+        {tx('普通用户推荐先用“连接 AI 工具”里的 Codex 快速连接。这里适合需要手动管理 token 的场景，建议把 token 放进环境变量 ', 'Most users should start with the Codex quick connect flow in AI tool setup. This page is for manual token management. Store the token in ')}<code>{TOKEN_ENV_NAME}</code>{tx('。', '.')}
       </p>
 
       <div className="setup-tabs" role="tablist" aria-label={tx('本地模式平台', 'Local mode platforms')}>
-        <button
-          type="button"
-          role="tab"
-          className={`setup-tab ${localPlatform === 'claude' ? 'setup-tab-active' : ''}`}
-          aria-selected={localPlatform === 'claude'}
-          onClick={() => setLocalPlatform('claude')}
-        >
-          Claude
-        </button>
         <button
           type="button"
           role="tab"
@@ -48,7 +39,18 @@ export default function SetupLocalPage() {
           aria-selected={localPlatform === 'codex'}
           onClick={() => setLocalPlatform('codex')}
         >
-          Codex
+          <span>Codex</span>
+          <small>{tx('推荐', 'Recommended')}</small>
+        </button>
+        <button
+          type="button"
+          role="tab"
+          className={`setup-tab ${localPlatform === 'claude' ? 'setup-tab-active' : ''}`}
+          aria-selected={localPlatform === 'claude'}
+          onClick={() => setLocalPlatform('claude')}
+        >
+          <span>Claude Code</span>
+          <small>{tx('其次', 'Second')}</small>
         </button>
       </div>
 
