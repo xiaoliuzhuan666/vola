@@ -150,8 +150,29 @@ GitHub Release 资产：
 
 发布完成后回填：
 
-- 提交：待回填。
+- 提交：`88bfb812c77848226d633df1e4f4ddd27dd0337e`
 - tag：`v0.1.5`
-- Release workflow run：待回填。
+- Release workflow run：`27606558923`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27606558923`
 - Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.5`
-- workflow 结果：待回填。
+- workflow 结果：success
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.5_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.5_x64.dmg`
+- `linux-x86_64-vola_0.1.5_amd64.AppImage`
+- `windows-x86_64-vola_0.1.5_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.5`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
+
+注意：
+
+- GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/download-artifact@v4` 和 `softprops/action-gh-release@v2`，未影响本次打包。
