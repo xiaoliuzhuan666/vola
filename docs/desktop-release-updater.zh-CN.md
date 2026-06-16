@@ -255,7 +255,7 @@ GitHub Release 资产：
 
 发布完成后回填：
 
-- 提交：`f9947a44184e6d9d8204bf341ddf5d205d544978`
+- 提交：`f9947a42a62dc01640e87fd4b0d6543b4001a283`
 - tag：`v0.1.7`
 - Release workflow run：`27655621463`
 - Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27655621463`
