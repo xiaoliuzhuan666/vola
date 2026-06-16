@@ -12,7 +12,8 @@ function detectTauriRuntime() {
   if (typeof window === "undefined") return false;
   const protocol = window.location?.protocol || "";
   const hostname = window.location?.hostname || "";
-  return !!(window as any).__TAURI_INTERNALS__ || protocol === "tauri:" || hostname === "tauri.localhost";
+  const runtime = window as any;
+  return !!runtime.__TAURI__ || !!runtime.__TAURI_INTERNALS__ || protocol === "tauri:" || hostname === "tauri.localhost";
 }
 
 export const isTauri = detectTauriRuntime();

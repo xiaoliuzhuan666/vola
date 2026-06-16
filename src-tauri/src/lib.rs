@@ -1,11 +1,15 @@
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream, ToSocketAddrs};
 use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::Manager;
 
 // 保存 Go 守护进程句柄的全局 State 结构体
 struct BackendProcess {
     child: Arc<Mutex<Option<Child>>>,
+    api_base: Arc<Mutex<Option<String>>>,
 }
 
 #[derive(serde::Serialize)]
@@ -19,8 +23,19 @@ struct CliToolsInstallResult {
     shell_reload_command: Option<String>,
 }
 
+const BACKEND_HOST: &str = "127.0.0.1";
+const BACKEND_PORT_START: u16 = 42690;
+const BACKEND_PORT_END: u16 = 42719;
+const DEFAULT_API_BASE: &str = "http://127.0.0.1:42690";
+
 #[tauri::command]
-fn get_api_base() -> String {
+fn get_api_base(state: tauri::State<'_, BackendProcess>) -> String {
+    if let Ok(lock) = state.api_base.lock() {
+        if let Some(api_base) = lock.as_ref() {
+            return api_base.clone();
+        }
+    }
+
     let home = std::env::var("HOME").unwrap_or_default();
 
     // 兼容传统路径和新路径
@@ -33,11 +48,9 @@ fn get_api_base() -> String {
     // 轮询最多 10 次（共 5 秒），等待 Go 进程把 runtime.json 写完
     for _ in 0..10 {
         for path in &paths {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
-                    if let Some(api_base) = val.get("api_base").and_then(|v| v.as_str()) {
-                        return api_base.to_string();
-                    }
+            if let Some(api_base) = read_runtime_api_base(path) {
+                if api_base_reachable(&api_base) {
+                    return api_base;
                 }
             }
         }
@@ -45,7 +58,70 @@ fn get_api_base() -> String {
     }
 
     // 默认退回
-    "http://127.0.0.1:42690".to_string()
+    DEFAULT_API_BASE.to_string()
+}
+
+fn read_runtime_api_base(path: &str) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let val = serde_json::from_str::<serde_json::Value>(&content).ok()?;
+    val.get("api_base")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+}
+
+fn api_base_reachable(api_base: &str) -> bool {
+    let Some(endpoint) = api_base
+        .trim()
+        .trim_end_matches('/')
+        .strip_prefix("http://")
+        .map(|value| value.split('/').next().unwrap_or(""))
+    else {
+        return false;
+    };
+    if endpoint.is_empty() {
+        return false;
+    }
+    let Ok(addresses) = endpoint.to_socket_addrs() else {
+        return false;
+    };
+    addresses.into_iter().any(|addr| {
+        let Ok(mut stream) = TcpStream::connect_timeout(&addr, Duration::from_millis(250)) else {
+            return false;
+        };
+        let _ = stream.set_read_timeout(Some(Duration::from_millis(500)));
+        let _ = stream.set_write_timeout(Some(Duration::from_millis(500)));
+        let request =
+            format!("GET /api/config HTTP/1.1\r\nHost: {endpoint}\r\nConnection: close\r\n\r\n");
+        if stream.write_all(request.as_bytes()).is_err() {
+            return false;
+        }
+        let mut buf = [0_u8; 64];
+        match stream.read(&mut buf) {
+            Ok(n) if n > 0 => {
+                let response = String::from_utf8_lossy(&buf[..n]);
+                response.starts_with("HTTP/1.1 200") || response.starts_with("HTTP/1.0 200")
+            }
+            _ => false,
+        }
+    })
+}
+
+fn port_available(port: u16) -> bool {
+    TcpListener::bind((BACKEND_HOST, port)).is_ok()
+}
+
+fn choose_backend_port() -> u16 {
+    for port in BACKEND_PORT_START..=BACKEND_PORT_END {
+        if port_available(port) {
+            return port;
+        }
+    }
+    TcpListener::bind((BACKEND_HOST, 0))
+        .and_then(|listener| listener.local_addr())
+        .map(|addr| addr.port())
+        .unwrap_or(BACKEND_PORT_START)
 }
 
 fn home_dir() -> Result<PathBuf, String> {
@@ -235,56 +311,51 @@ fn install_cli_tools(app: tauri::AppHandle) -> Result<CliToolsInstallResult, Str
 pub fn run() {
     let child_state = Arc::new(Mutex::new(None));
     let child_state_clone = child_state.clone();
+    let api_base_state = Arc::new(Mutex::new(None));
+    let api_base_state_clone = api_base_state.clone();
 
     tauri::Builder::default()
         .plugin(tauri_plugin_log::Builder::default().build())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
-        .manage(BackendProcess { child: child_state })
+        .manage(BackendProcess {
+            child: child_state,
+            api_base: api_base_state,
+        })
         .setup(move |app| {
-            // 查找 vola 后端二进制文件的位置
-            let mut bin_path = PathBuf::from("./bin/vola");
+            match resolve_bundled_vola_binary(app.handle()) {
+                Ok(bin_path) => {
+                    println!("Launching Go backend from: {:?}", bin_path);
+                    let port = choose_backend_port();
+                    let listen_addr = format!("{BACKEND_HOST}:{port}");
+                    let api_base = format!("http://{listen_addr}");
+                    let child = Command::new(bin_path)
+                        .arg("server")
+                        .arg("--local-mode")
+                        .arg("--listen")
+                        .arg(&listen_addr)
+                        .arg("--storage")
+                        .arg("sqlite")
+                        .arg("--public-base-url")
+                        .arg(&api_base)
+                        .spawn();
 
-            // 1. 如果在当前开发路径，看看二进制是否存在
-            if !bin_path.exists() {
-                // 2. 如果是打包好的环境，从资源目录读取
-                if let Ok(res_dir) = app.path().resource_dir() {
-                    bin_path = res_dir.join("bin/vola");
-                }
-            }
-
-            // 3. 如果还是没有，尝试从可执行文件所在目录找
-            if !bin_path.exists() {
-                if let Ok(exe_path) = std::env::current_exe() {
-                    if let Some(parent) = exe_path.parent() {
-                        bin_path = parent.join("vola");
-                        if !bin_path.exists() {
-                            bin_path = parent.join("bin/vola");
+                    match child {
+                        Ok(c) => {
+                            if let Ok(mut lock) = api_base_state_clone.lock() {
+                                *lock = Some(api_base);
+                            }
+                            *child_state_clone.lock().unwrap() = Some(c);
+                            println!("Go backend started successfully.");
+                        }
+                        Err(e) => {
+                            eprintln!("Failed to spawn Go backend: {:?}", e);
                         }
                     }
                 }
-            }
-
-            if bin_path.exists() {
-                println!("Launching Go backend from: {:?}", bin_path);
-                let child = Command::new(bin_path)
-                    .arg("server")
-                    .arg("--local-mode")
-                    .arg("--storage")
-                    .arg("sqlite")
-                    .spawn();
-
-                match child {
-                    Ok(c) => {
-                        *child_state_clone.lock().unwrap() = Some(c);
-                        println!("Go backend started successfully.");
-                    }
-                    Err(e) => {
-                        eprintln!("Failed to spawn Go backend: {:?}", e);
-                    }
+                Err(e) => {
+                    eprintln!("{e}");
                 }
-            } else {
-                eprintln!("Go backend binary 'vola' not found. Please compile it first.");
             }
 
             Ok(())

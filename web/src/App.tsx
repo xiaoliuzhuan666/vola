@@ -269,11 +269,13 @@ function App() {
   const [teams, setTeams] = useState<any[]>([])
   const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false)
   const [selectedTeamID, setSelectedTeamID] = useState<string>('')
+  const [desktopStartupError, setDesktopStartupError] = useState(false)
   const { tx } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const systemSettingsEnabled = !!publicConfig?.system_settings_enabled
   const localMode = !!publicConfig?.local_mode
+  const desktopConsoleHome = isTauri && localMode
   const publicRegistrationEnabled = publicConfig?.public_registration_enabled !== false
   const currentUser = user || null
   const currentUserName = userDisplayName(currentUser, localMode, tx)
@@ -336,6 +338,7 @@ function App() {
 
   const currentUserInitial = currentUserName.slice(0, 1).toUpperCase()
   const importsHomePath = localMode ? '/imports/local-apps' : '/imports/claude-export'
+  const homePath = desktopConsoleHome ? '/codex-console' : '/'
 
   const checkAuth = useCallback(async () => {
     const clearAuthParamsFromURL = () => {
@@ -351,6 +354,7 @@ function App() {
     const authToken = params.get('auth_token')
     const authRefresh = params.get('auth_refresh')
     const localToken = params.get('local_token')
+    setDesktopStartupError(false)
     if (authToken) {
       localStorage.setItem('token', authToken)
       if (authRefresh) localStorage.setItem('refresh_token', authRefresh)
@@ -380,6 +384,7 @@ function App() {
           await new Promise((resolve) => setTimeout(resolve, 500))
           continue
         }
+        if (isTauri) setDesktopStartupError(true)
         setPublicConfig({})
         break
       }
@@ -610,6 +615,32 @@ function App() {
     )
   }
 
+  if (!user && !localMode && isTauri) {
+    return (
+      <div className="loading-screen">
+        {!desktopStartupError && <div className="loading-spinner" />}
+        <h2 style={{ fontSize: '18px', fontWeight: 850, color: '#12192d', marginTop: '16px', marginBottom: '4px' }}>{PRODUCT_NAME}</h2>
+        <p style={{ fontSize: '13px', color: '#506074' }}>
+          {desktopStartupError
+            ? tx('本地数据服务暂时没有响应，请重试或重新打开 Vola。', 'The local data service is not responding. Try again or reopen Vola.')
+            : tx('正在准备桌面控制台...', 'Preparing desktop console...')}
+        </p>
+        {desktopStartupError && (
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={() => {
+              setLoading(true)
+              void checkAuth()
+            }}
+          >
+            {tx('重试', 'Retry')}
+          </button>
+        )}
+      </div>
+    )
+  }
+
   if (!user && !localMode) {
     const protectedSignupRedirect = `/signup?redirect=${encodeURIComponent(location.pathname + location.search)}`
     const protectedLoginRedirect = `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
@@ -671,9 +702,9 @@ function App() {
         <nav className="sidebar-nav">
           <div className="sidebar-group-header">{tx('日常任务', 'Daily Work')}</div>
 
-          <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+          <NavLink to={homePath} end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <NavIcon name="home" />
-            <span>{tx('今日概览', 'Today')}</span>
+            <span>{desktopConsoleHome ? 'Codex Console' : tx('今日概览', 'Today')}</span>
           </NavLink>
 
           <NavLink to="/setup/mcp" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
@@ -751,7 +782,7 @@ function App() {
                 <NavLink to="/cli" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
                   {tx('命令行工具', 'Command Line')}
                 </NavLink>
-                {localMode && (
+                {localMode && !desktopConsoleHome && (
                   <NavLink to="/codex-console" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
                     Codex Console
                   </NavLink>
@@ -811,7 +842,7 @@ function App() {
         <RouteErrorBoundary key={location.pathname} fallback={routeErrorFallback}>
         <Suspense fallback={routeFallback}>
           <Routes>
-            <Route path="/" element={<DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} />} />
+            <Route path="/" element={desktopConsoleHome ? <Navigate to="/codex-console" replace /> : <DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} />} />
             <Route path="/plan" element={<Navigate to="/onboarding" replace />} />
             <Route path="/onboarding" element={<Navigate to="/setup/mcp" replace />} />
             <Route path="/onboarding/:platform" element={<LegacyOnboardingRedirect />} />

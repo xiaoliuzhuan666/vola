@@ -176,3 +176,56 @@ GitHub Release 资产：
 注意：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/download-artifact@v4` 和 `softprops/action-gh-release@v2`，未影响本次打包。
+
+## 2026-06-16 v0.1.6 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点修复新版桌面包打开后停在“本地数据服务暂时没有响应”的问题，并让桌面端首页直接进入 Codex Console。
+
+问题含义：
+
+- 桌面窗口已经打开，但前端没有连上本地 Vola 数据服务。
+- 本机复查发现一个旧 runtime 地址可能指向已经停止的端口；同时旧的包内 `vola` 后端程序没有包含最新 Codex Console API，导致 `/api/local/codex-console` 不可用。
+
+本次修复：
+
+- 桌面端启动后优先使用当前进程刚启动的 API 地址，不再优先信任旧 runtime 文件。
+- 旧 runtime 文件只作为备用来源，并且必须通过 `/api/config` 连通检查。
+- 桌面端自动选择 `42690..42719` 中可用端口启动本地服务。
+- 桌面端启动本地服务时显式传入 `--listen` 和 `--public-base-url`。
+- 打包环境优先使用 `.app/Contents/Resources/bin/vola`，避免误用仓库里的旧 `./bin/vola`。
+- Tauri `beforeBuildCommand` 现在会在构建前重新编译包内 Go 后端，避免本机和 GitHub Actions 打出来的桌面包带上旧后端。
+- 桌面端本地模式打开后直接进入 `tauri://localhost/codex-console`，侧边栏首项为 Codex Console。
+
+本地发版前验证：
+
+- `cargo fmt --manifest-path src-tauri/Cargo.toml`：通过。
+- `npm --prefix web run build`：通过。
+- `cargo check --manifest-path src-tauri/Cargo.toml`：通过。
+- `TAURI_ENV_TARGET_TRIPLE=aarch64-apple-darwin node scripts/tauri-web-command.mjs build`：通过，生成 `src-tauri/bin/vola`，文件类型为 macOS arm64 Mach-O。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./...`：通过。
+- `git diff --check`：通过。
+- 本机 Tauri `.app` 构建：通过，产物包含 `vola.app` 和签名 updater 包 `vola.app.tar.gz`。
+- 包内后端程序检查：`vola.app/Contents/Resources/bin/vola` 为 macOS arm64 Mach-O，时间为 2026-06-16 22:08:02 CST。
+- 直接启动新 `.app`：通过，进程从 `vola.app/Contents/Resources/bin/vola server --local-mode --listen 127.0.0.1:42690 --storage sqlite --public-base-url http://127.0.0.1:42690` 拉起后端。
+- `GET /api/config`：通过，返回 `local_mode: true`。
+- `POST /api/local/owner-token` 后带 token 请求 `GET /api/local/codex-console`：通过，返回 `threads: 397`、`skill_candidates: 33`、`memory_candidates: 62`、`overview: true`。
+- Computer Use 验证桌面窗口：通过，当前 URL 为 `tauri://localhost/codex-console`，页面显示 Codex Console，不再显示“本地数据服务暂时没有响应”。
+
+发布完成后回填：
+
+- 提交：
+- tag：`v0.1.6`
+- Release workflow run：
+- Actions 页面：
+- Release 页面：
+- workflow 结果：
+
+GitHub Release 资产待发布后复查：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.6_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.6_x64.dmg`
+- `linux-x86_64-vola_0.1.6_amd64.AppImage`
+- `windows-x86_64-vola_0.1.6_x64-setup.exe`
