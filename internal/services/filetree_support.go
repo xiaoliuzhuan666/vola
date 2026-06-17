@@ -268,6 +268,10 @@ func classifyEntryKind(rawPath string, isDirectory bool) string {
 		return "project_context"
 	case strings.HasPrefix(publicPath, "/projects/") && strings.HasSuffix(publicPath, "/log.jsonl"):
 		return "project_log"
+	case strings.HasPrefix(publicPath, "/projects/") && strings.Contains(publicPath, "/materials/") && strings.HasSuffix(publicPath, ".md"):
+		return "project_material"
+	case strings.HasPrefix(publicPath, "/projects/") && strings.Contains(publicPath, "/context-packs/") && strings.HasSuffix(publicPath, ".md"):
+		return "project_context_pack"
 	case strings.HasPrefix(publicPath, "/inbox/") && strings.HasSuffix(publicPath, ".json"):
 		return "inbox_message"
 	case strings.HasPrefix(publicPath, "/roles/") && strings.HasSuffix(publicPath, "/SKILL.md"):

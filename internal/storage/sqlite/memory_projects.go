@@ -206,7 +206,7 @@ func (s *Store) ListProjects(ctx context.Context, userID uuid.UUID) ([]models.Pr
 		project.Description = localFirstNonEmpty(projectDescriptionFromMetadata(project.Metadata), localFirstMarkdownParagraph(project.ContextMD))
 		project.PrimaryPath = hubpath.ProjectContextPath(name)
 		project.LogPath = hubpath.ProjectLogPath(name)
-		project.Capabilities = []string{"context", "logs"}
+		project.Capabilities = localProjectCapabilities()
 		out = append(out, project)
 	}
 	return out, nil
@@ -246,7 +246,7 @@ func (s *Store) CreateProject(ctx context.Context, userID uuid.UUID, name string
 		Description:  "",
 		PrimaryPath:  hubpath.ProjectContextPath(name),
 		LogPath:      hubpath.ProjectLogPath(name),
-		Capabilities: []string{"context", "logs"},
+		Capabilities: localProjectCapabilities(),
 		ContextMD:    "",
 		Metadata:     localProjectBundleMetadata(name, "", "active", source),
 		CreatedAt:    entry.CreatedAt,
@@ -267,7 +267,7 @@ func (s *Store) GetProject(ctx context.Context, userID uuid.UUID, name string) (
 		Description:  localFirstNonEmpty(projectDescriptionFromMetadata(entry.Metadata), localFirstMarkdownParagraph(entry.Content)),
 		PrimaryPath:  hubpath.ProjectContextPath(name),
 		LogPath:      hubpath.ProjectLogPath(name),
-		Capabilities: []string{"context", "logs"},
+		Capabilities: localProjectCapabilities(),
 		ContextMD:    entry.Content,
 		Metadata:     cloneProjectMetadata(entry.Metadata),
 		CreatedAt:    entry.CreatedAt,
@@ -420,11 +420,15 @@ func localProjectBundleMetadata(name, contextMD, status, source string) map[stri
 		Status:       localFirstNonEmpty(status, "active"),
 		PrimaryPath:  hubpath.ProjectContextPath(name),
 		LogPath:      hubpath.ProjectLogPath(name),
-		Capabilities: []string{"context", "logs"},
+		Capabilities: localProjectCapabilities(),
 	}
 	metadata := services.BundleMetadata(summary)
 	metadata["project"] = name
 	return metadata
+}
+
+func localProjectCapabilities() []string {
+	return []string{"context", "logs", "materials", "context-packs", "repository-export"}
 }
 
 func projectDescriptionFromMetadata(metadata map[string]interface{}) string {

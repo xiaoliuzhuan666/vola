@@ -15,6 +15,12 @@ func TestCanonicalPaths(t *testing.T) {
 	if got := ProjectContextPath("demo"); got != "/projects/demo/context.md" {
 		t.Fatalf("ProjectContextPath() = %q", got)
 	}
+	if got := ProjectMaterialPath("demo", "Backend API"); got != "/projects/demo/materials/backend-api.md" {
+		t.Fatalf("ProjectMaterialPath() = %q", got)
+	}
+	if got := ProjectContextPackPath("demo", "Backend Handoff"); got != "/projects/demo/context-packs/backend-handoff.md" {
+		t.Fatalf("ProjectContextPackPath() = %q", got)
+	}
 	if got := InboxMessagePath("worker:policy@de.hub", "incoming", "abc123"); !strings.Contains(got, "/incoming/abc123.json") {
 		t.Fatalf("InboxMessagePath() = %q", got)
 	}

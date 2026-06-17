@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
+import { useCallback, useEffect, useMemo, useState, type DragEvent, type FormEvent } from 'react'
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   api,
@@ -8,6 +8,10 @@ import {
   type LocalLibraryProjectCandidate,
   type LocalLibraryScanResponse,
   type LocalPlatformImportSummary,
+  type ProjectContextPack,
+  type ProjectMaterial,
+  type ProjectRepositoryExport,
+  type ProjectRepositoryExportApplyResult,
 } from '../api'
 import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../components/MaterialsSectionToolbar'
@@ -86,7 +90,56 @@ export default function ProjectsPage() {
   const [localLibraryNotice, setLocalLibraryNotice] = useState('')
   const [codexImport, setCodexImport] = useState<LocalPlatformImportSummary | null>(null)
   const [codexImporting, setCodexImporting] = useState(false)
+  const [projectMaterials, setProjectMaterials] = useState<ProjectMaterial[]>([])
+  const [projectContextPacks, setProjectContextPacks] = useState<ProjectContextPack[]>([])
+  const [repositoryExport, setRepositoryExport] = useState<ProjectRepositoryExport | null>(null)
+  const [repositoryApply, setRepositoryApply] = useState<ProjectRepositoryExportApplyResult | null>(null)
+  const [projectWorkspaceLoading, setProjectWorkspaceLoading] = useState(false)
+  const [materialSaving, setMaterialSaving] = useState(false)
+  const [packBuilding, setPackBuilding] = useState(false)
+  const [repoExporting, setRepoExporting] = useState(false)
+  const [repoApplying, setRepoApplying] = useState(false)
+  const [copySourcePath, setCopySourcePath] = useState('')
+  const [repoExportDraft, setRepoExportDraft] = useState({
+    repositoryRoot: '',
+    repositoryDir: 'docs/ai-context',
+    overwrite: true,
+  })
+  const [materialDraft, setMaterialDraft] = useState({
+    title: '',
+    sourceUrl: '',
+    repositoryPath: '',
+    tags: '',
+    content: '',
+  })
+  const [packDraft, setPackDraft] = useState({
+    title: '',
+    purpose: '',
+    repositoryDir: 'docs/ai-context/context-packs',
+  })
+  const [selectedMaterialPaths, setSelectedMaterialPaths] = useState<string[]>([])
+  const [selectedPackPaths, setSelectedPackPaths] = useState<string[]>([])
   const { activeMenuId, closeMenu, isMenuOpen, toggleMenu } = useResourceCardMenu()
+
+  const loadProjectWorkspace = useCallback(async (name: string) => {
+    if (!name) return
+    setProjectWorkspaceLoading(true)
+    try {
+      const [materials, packs] = await Promise.all([
+        api.getProjectMaterials(name),
+        api.getProjectContextPacks(name),
+      ])
+      setProjectMaterials(materials)
+      setProjectContextPacks(packs)
+      setRepositoryApply(null)
+      setSelectedMaterialPaths((paths) => paths.filter((path) => materials.some((item) => item.path === path)))
+      setSelectedPackPaths((paths) => paths.filter((path) => packs.some((item) => item.path === path)))
+    } catch (err: any) {
+      setError(err.message || tx('加载项目资料失败', 'Failed to load project material'))
+    } finally {
+      setProjectWorkspaceLoading(false)
+    }
+  }, [tx])
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -96,14 +149,19 @@ export default function ProjectsPage() {
         const node = await api.getTree(currentBrowsePath)
         setBundleNode(node)
         setProjects([])
+        setRepositoryExport(null)
         closeMenu()
         setSelectedEntryPath(null)
+        void loadProjectWorkspace(projectName)
         return
       }
 
       const data = await api.getProjects()
       setProjects(data || [])
       setBundleNode(null)
+      setProjectMaterials([])
+      setProjectContextPacks([])
+      setRepositoryExport(null)
       closeMenu()
       setSelectedProjectName(null)
     } catch (err: any) {
@@ -111,7 +169,7 @@ export default function ProjectsPage() {
     } finally {
       setLoading(false)
     }
-  }, [closeMenu, currentBrowsePath, isBundleView, tx])
+  }, [closeMenu, currentBrowsePath, isBundleView, loadProjectWorkspace, projectName, tx])
 
   const {
     closeDialog: closeDeleteDialog,
@@ -250,6 +308,153 @@ export default function ProjectsPage() {
     } finally {
       setLocalLibraryImporting(false)
     }
+  }
+
+  const parseTags = (value: string) =>
+    value.split(',').map((item) => item.trim()).filter(Boolean)
+
+  const resetMaterialDraft = () => {
+    setMaterialDraft({ title: '', sourceUrl: '', repositoryPath: '', tags: '', content: '' })
+  }
+
+  const handleSaveMaterial = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!projectName || !materialDraft.content.trim()) return
+    setMaterialSaving(true)
+    setError('')
+    try {
+      await api.saveProjectMaterial(projectName, {
+        title: materialDraft.title.trim() || 'Project material',
+        content: materialDraft.content,
+        source_url: materialDraft.sourceUrl.trim() || undefined,
+        repository_path: materialDraft.repositoryPath.trim() || undefined,
+        tags: parseTags(materialDraft.tags),
+        source_type: materialDraft.sourceUrl.trim() ? 'url' : 'markdown',
+      })
+      resetMaterialDraft()
+      await loadProjectWorkspace(projectName)
+      await load()
+    } catch (err: any) {
+      setError(err.message || tx('保存资料失败', 'Failed to save material'))
+    } finally {
+      setMaterialSaving(false)
+    }
+  }
+
+  const handleCopyMaterial = async (sourcePath?: string) => {
+    const path = (sourcePath || copySourcePath).trim()
+    if (!projectName || !path) return
+    setMaterialSaving(true)
+    setError('')
+    try {
+      await api.copyProjectMaterial(projectName, {
+        source_path: path,
+        repository_path: materialDraft.repositoryPath.trim() || undefined,
+        source_url: materialDraft.sourceUrl.trim() || undefined,
+        tags: parseTags(materialDraft.tags),
+      })
+      setCopySourcePath('')
+      await loadProjectWorkspace(projectName)
+      await load()
+    } catch (err: any) {
+      setError(err.message || tx('复制资料失败', 'Failed to copy material'))
+    } finally {
+      setMaterialSaving(false)
+    }
+  }
+
+  const handleMaterialDrop = async (event: DragEvent<HTMLElement>) => {
+    event.preventDefault()
+    const path = event.dataTransfer.getData('text/plain')
+    if (path) await handleCopyMaterial(path)
+  }
+
+  const handleBuildContextPack = async (event: FormEvent) => {
+    event.preventDefault()
+    if (!projectName) return
+    setPackBuilding(true)
+    setError('')
+    try {
+      const pack = await api.buildProjectContextPack(projectName, {
+        title: packDraft.title.trim() || `${projectName} AI context`,
+        purpose: packDraft.purpose.trim() || undefined,
+        repository_dir: packDraft.repositoryDir.trim() || undefined,
+        material_paths: selectedMaterialPaths.length > 0 ? selectedMaterialPaths : undefined,
+        include_context: true,
+        include_recent_logs: true,
+      })
+      setSelectedPackPaths([pack.path])
+      setPackDraft((draft) => ({ ...draft, title: '', purpose: '' }))
+      await loadProjectWorkspace(projectName)
+      await load()
+    } catch (err: any) {
+      setError(err.message || tx('生成上下文包失败', 'Failed to build context pack'))
+    } finally {
+      setPackBuilding(false)
+    }
+  }
+
+  const handleBuildRepositoryExport = async () => {
+    if (!projectName) return
+    setRepoExporting(true)
+    setError('')
+    try {
+      const result = await api.buildProjectRepositoryExport(projectName, {
+        repository_dir: repoExportDraft.repositoryDir.trim() || 'docs/ai-context',
+        material_paths: selectedMaterialPaths.length > 0 ? selectedMaterialPaths : undefined,
+        pack_paths: selectedPackPaths.length > 0 ? selectedPackPaths : undefined,
+        include_index: true,
+      })
+      setRepositoryExport(result)
+      setRepositoryApply(null)
+    } catch (err: any) {
+      setError(err.message || tx('生成仓库资料失败', 'Failed to build repository export'))
+    } finally {
+      setRepoExporting(false)
+    }
+  }
+
+  const handleApplyRepositoryExport = async () => {
+    if (!projectName || !repoExportDraft.repositoryRoot.trim()) return
+    setRepoApplying(true)
+    setError('')
+    try {
+      const result = await api.applyProjectRepositoryExport(projectName, {
+        repository_root: repoExportDraft.repositoryRoot.trim(),
+        repository_dir: repoExportDraft.repositoryDir.trim() || 'docs/ai-context',
+        material_paths: selectedMaterialPaths.length > 0 ? selectedMaterialPaths : undefined,
+        pack_paths: selectedPackPaths.length > 0 ? selectedPackPaths : undefined,
+        include_index: true,
+        overwrite: repoExportDraft.overwrite,
+      })
+      setRepositoryApply(result)
+      setRepositoryExport({
+        project: result.project,
+        repository_dir: result.repository_dir,
+        generated_at: result.generated_at,
+        files: result.files.map((file) => ({
+          path: file.path,
+          content: '',
+          source: file.source,
+        })),
+      })
+    } catch (err: any) {
+      setError(err.message || tx('写入仓库失败', 'Failed to write repository files'))
+    } finally {
+      setRepoApplying(false)
+    }
+  }
+
+  const toggleMaterialPath = (path: string) => {
+    setSelectedMaterialPaths((current) => (
+      current.includes(path) ? current.filter((item) => item !== path) : [...current, path]
+    ))
+  }
+
+  const togglePackPath = (path: string) => {
+    setSelectedPackPaths((current) => (
+      current.includes(path) ? current.filter((item) => item !== path) : [...current, path]
+    ))
   }
 
   const openProjectBundle = useCallback((name: string, relativeDir = '') => {
@@ -472,7 +677,285 @@ export default function ProjectsPage() {
             description={tx('按 GitHub 文件列表样式浏览这个项目的所有文件。', 'Browse every file in this project with the GitHub-style file list.')}
             actionHref="/?type=Project"
             actionLabel={tx('在首页查看', 'View on Home')}
+            onFileDragStart={(entry, event) => {
+              if (!entry.name.toLowerCase().endsWith('.md')) return
+              event.dataTransfer.setData('text/plain', entry.path)
+              event.dataTransfer.effectAllowed = 'copy'
+            }}
+            fileMenuItems={(entry) => (
+              !entry.is_dir && entry.name.toLowerCase().endsWith('.md')
+                ? [{
+                    key: 'copy-material',
+                    label: tx('复制到项目资料', 'Copy to project material'),
+                    onSelect: () => void handleCopyMaterial(entry.path),
+                  }]
+                : []
+            )}
           />
+        ) : null}
+
+        {currentBundleContext ? (
+          <section
+            className="materials-panel project-context-workbench"
+            onDragOver={(event) => {
+              event.preventDefault()
+              event.dataTransfer.dropEffect = 'copy'
+            }}
+            onDrop={(event) => void handleMaterialDrop(event)}
+          >
+            <div className="materials-section-head">
+              <div>
+                <h3 className="materials-section-title">{tx('项目资料', 'Project material')}</h3>
+                <p className="materials-section-copy">{tx('右键 Markdown 文件或拖到这里，保存成这个项目的 AI 资料；需要协作时再写入项目仓库。', 'Right-click a Markdown file or drop it here to save it as AI material for this project, then write it into the repo for collaboration.')}</p>
+              </div>
+              <div className="form-actions">
+                <button className="btn btn-sm materials-toolbar-control" disabled={projectWorkspaceLoading} onClick={() => void loadProjectWorkspace(projectName)}>
+                  {projectWorkspaceLoading ? tx('刷新中...', 'Refreshing...') : tx('刷新', 'Refresh')}
+                </button>
+                <button className="btn btn-sm btn-primary materials-toolbar-control" disabled={repoExporting} onClick={() => void handleBuildRepositoryExport()}>
+                  {repoExporting ? tx('生成中...', 'Creating...') : tx('生成仓库文件', 'Build repo files')}
+                </button>
+              </div>
+            </div>
+
+            <div className="project-repo-export-bar">
+              <div className="form-group">
+                <label htmlFor="project-repo-root">{tx('本机仓库根目录', 'Local repo root')}</label>
+                <input
+                  id="project-repo-root"
+                  value={repoExportDraft.repositoryRoot}
+                  onChange={(event) => setRepoExportDraft((draft) => ({ ...draft, repositoryRoot: event.target.value }))}
+                  placeholder="/Users/me/work/app"
+                />
+              </div>
+              <div className="form-group">
+                <label htmlFor="project-repo-dir">{tx('仓库内目录', 'Repo directory')}</label>
+                <input
+                  id="project-repo-dir"
+                  value={repoExportDraft.repositoryDir}
+                  onChange={(event) => setRepoExportDraft((draft) => ({ ...draft, repositoryDir: event.target.value }))}
+                  placeholder="docs/ai-context"
+                />
+              </div>
+              <label className="project-repo-overwrite">
+                <input
+                  type="checkbox"
+                  checked={repoExportDraft.overwrite}
+                  onChange={(event) => setRepoExportDraft((draft) => ({ ...draft, overwrite: event.target.checked }))}
+                />
+                <span>{tx('覆盖已有文件', 'Overwrite files')}</span>
+              </label>
+              <button
+                className="btn btn-primary"
+                type="button"
+                disabled={repoApplying || !repoExportDraft.repositoryRoot.trim()}
+                onClick={() => void handleApplyRepositoryExport()}
+              >
+                {repoApplying ? tx('写入中...', 'Writing...') : tx('写入本机仓库', 'Write to repo')}
+              </button>
+            </div>
+
+            <div className="project-context-grid">
+              <form className="project-context-card" onSubmit={handleSaveMaterial}>
+                <div className="data-record-title">{tx('保存 Markdown', 'Save Markdown')}</div>
+                <div className="form-row project-context-form-row">
+                  <div className="form-group">
+                    <label htmlFor="project-material-title">{tx('标题', 'Title')}</label>
+                    <input
+                      id="project-material-title"
+                      value={materialDraft.title}
+                      onChange={(event) => setMaterialDraft((draft) => ({ ...draft, title: event.target.value }))}
+                      placeholder={tx('后端接口说明', 'Backend API notes')}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="project-material-url">{tx('原文链接', 'Source URL')}</label>
+                    <input
+                      id="project-material-url"
+                      value={materialDraft.sourceUrl}
+                      onChange={(event) => setMaterialDraft((draft) => ({ ...draft, sourceUrl: event.target.value }))}
+                      placeholder="https://..."
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label htmlFor="project-material-repo-path">{tx('仓库路径', 'Repo path')}</label>
+                    <input
+                      id="project-material-repo-path"
+                      value={materialDraft.repositoryPath}
+                      onChange={(event) => setMaterialDraft((draft) => ({ ...draft, repositoryPath: event.target.value }))}
+                      placeholder="docs/ai-context/materials/backend-api.md"
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label htmlFor="project-material-tags">{tx('标签', 'Tags')}</label>
+                  <input
+                    id="project-material-tags"
+                    value={materialDraft.tags}
+                    onChange={(event) => setMaterialDraft((draft) => ({ ...draft, tags: event.target.value }))}
+                    placeholder={tx('backend, api', 'backend, api')}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="project-material-content">Markdown</label>
+                  <textarea
+                    id="project-material-content"
+                    value={materialDraft.content}
+                    onChange={(event) => setMaterialDraft((draft) => ({ ...draft, content: event.target.value }))}
+                    placeholder={tx('粘贴 Markdown 内容，或从上方文件列表右键复制。', 'Paste Markdown, or copy from the file list above.')}
+                    rows={7}
+                  />
+                </div>
+                <div className="form-actions">
+                  <button className="btn btn-primary" type="submit" disabled={materialSaving || !materialDraft.content.trim()}>
+                    {materialSaving ? tx('保存中...', 'Saving...') : tx('保存资料', 'Save material')}
+                  </button>
+                  <button className="btn" type="button" onClick={resetMaterialDraft} disabled={materialSaving}>
+                    {tx('清空', 'Clear')}
+                  </button>
+                </div>
+              </form>
+
+              <div className="project-context-card">
+                <div className="data-record-title">{tx('从 Vola 文件复制', 'Copy from Vola file')}</div>
+                <div className="form-group">
+                  <label htmlFor="project-copy-source">{tx('文件路径', 'File path')}</label>
+                  <input
+                    id="project-copy-source"
+                    value={copySourcePath}
+                    onChange={(event) => setCopySourcePath(event.target.value)}
+                    placeholder="/projects/demo/docs/backend.md"
+                  />
+                </div>
+                <div className="form-actions">
+                  <button className="btn btn-primary" type="button" disabled={materialSaving || !copySourcePath.trim()} onClick={() => void handleCopyMaterial()}>
+                    {materialSaving ? tx('复制中...', 'Copying...') : tx('复制到资料', 'Copy to material')}
+                  </button>
+                </div>
+                <div className="project-drop-zone">
+                  {tx('把 Markdown 文件卡片拖到这里', 'Drop Markdown file cards here')}
+                </div>
+              </div>
+
+              <form className="project-context-card" onSubmit={handleBuildContextPack}>
+                <div className="data-record-title">{tx('AI 上下文包', 'AI context pack')}</div>
+                <div className="form-group">
+                  <label htmlFor="project-pack-title">{tx('标题', 'Title')}</label>
+                  <input
+                    id="project-pack-title"
+                    value={packDraft.title}
+                    onChange={(event) => setPackDraft((draft) => ({ ...draft, title: event.target.value }))}
+                    placeholder={`${projectName} AI context`}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="project-pack-purpose">{tx('用途', 'Purpose')}</label>
+                  <input
+                    id="project-pack-purpose"
+                    value={packDraft.purpose}
+                    onChange={(event) => setPackDraft((draft) => ({ ...draft, purpose: event.target.value }))}
+                    placeholder={tx('给 Codex 开始后端联调前读取', 'Read before Codex starts backend integration')}
+                  />
+                </div>
+                <div className="form-group">
+                  <label htmlFor="project-pack-repo-dir">{tx('仓库目录', 'Repo dir')}</label>
+                  <input
+                    id="project-pack-repo-dir"
+                    value={packDraft.repositoryDir}
+                    onChange={(event) => setPackDraft((draft) => ({ ...draft, repositoryDir: event.target.value }))}
+                  />
+                </div>
+                <div className="form-actions">
+                  <button className="btn btn-primary" type="submit" disabled={packBuilding}>
+                    {packBuilding ? tx('生成中...', 'Creating...') : tx('生成上下文包', 'Build context pack')}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            <div className="project-context-lists">
+              <div className="project-context-card">
+                <div className="data-record-head">
+                  <div>
+                    <div className="data-record-title">{tx('已保存资料', 'Saved material')}</div>
+                    <div className="data-record-secondary">{tx(`${selectedMaterialPaths.length || projectMaterials.length} 个会进入下一份上下文包`, `${selectedMaterialPaths.length || projectMaterials.length} will be used in the next context pack`)}</div>
+                  </div>
+                </div>
+                {projectMaterials.length === 0 ? (
+                  <div className="dashboard-file-empty">{tx('还没有项目资料。', 'No project material yet.')}</div>
+                ) : (
+                  <div className="data-record-list">
+                    {projectMaterials.map((item) => (
+                      <button
+                        key={item.path}
+                        type="button"
+                        className={`project-context-list-row${selectedMaterialPaths.includes(item.path) ? ' is-selected' : ''}`}
+                        onClick={() => toggleMaterialPath(item.path)}
+                      >
+                        <span>{item.title}</span>
+                        <code>{item.repository_path || item.path}</code>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="project-context-card">
+                <div className="data-record-title">{tx('上下文包', 'Context packs')}</div>
+                {projectContextPacks.length === 0 ? (
+                  <div className="dashboard-file-empty">{tx('还没有上下文包。', 'No context packs yet.')}</div>
+                ) : (
+                  <div className="data-record-list">
+                    {projectContextPacks.map((item) => (
+                      <button
+                        key={item.path}
+                        type="button"
+                        className={`project-context-list-row${selectedPackPaths.includes(item.path) ? ' is-selected' : ''}`}
+                        onClick={() => togglePackPath(item.path)}
+                      >
+                        <span>{item.title}</span>
+                        <code>{item.repository_path || item.path}</code>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              <div className="project-context-card">
+                <div className="data-record-title">{tx('仓库文件', 'Repository files')}</div>
+                {!repositoryExport ? (
+                  <div className="dashboard-file-empty">{tx('生成或写入后会显示可提交到 Git 的文件。', 'Generated or written files ready for Git will appear here.')}</div>
+                ) : (
+                  <div className="project-bundle-paths">
+                    {repositoryExport.files.map((file) => (
+                      <div key={file.path} className="project-bundle-path-row">
+                        <span className="project-bundle-path-label">{tx('文件', 'File')}</span>
+                        <code className="project-bundle-path-value">{file.path}</code>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {repositoryApply ? (
+                  <div className="project-repo-apply-result">
+                    <div className="data-record-secondary">
+                      {tx(
+                        `写入 ${repositoryApply.files.filter((file) => file.status === 'written').length} 个，跳过 ${repositoryApply.files.filter((file) => file.status === 'skipped').length} 个，失败 ${repositoryApply.files.filter((file) => file.status === 'error').length} 个。`,
+                        `Written ${repositoryApply.files.filter((file) => file.status === 'written').length}, skipped ${repositoryApply.files.filter((file) => file.status === 'skipped').length}, failed ${repositoryApply.files.filter((file) => file.status === 'error').length}.`,
+                      )}
+                    </div>
+                    <div className="project-bundle-paths">
+                      {repositoryApply.files.map((file) => (
+                        <div key={`${file.path}:${file.status}`} className="project-bundle-path-row">
+                          <span className={`project-bundle-path-label repo-status-${file.status}`}>{file.status}</span>
+                          <code className="project-bundle-path-value">{file.target_path || file.path}</code>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </section>
         ) : null}
 
         {currentBundleContext ? (
@@ -557,6 +1040,16 @@ export default function ProjectsPage() {
                                 void handleDownloadZip(entry.path)
                               },
                             },
+                            ...(!entry.is_dir && entry.name.toLowerCase().endsWith('.md')
+                              ? [{
+                                  key: 'copy-material',
+                                  label: tx('复制到项目资料', 'Copy to project material'),
+                                  onSelect: () => {
+                                    closeMenu()
+                                    void handleCopyMaterial(entry.path)
+                                  },
+                                }]
+                              : []),
                             {
                               key: 'select',
                               label: selectedEntryPath === entry.path ? tx('取消选中', 'Unselect') : tx('加入选择', 'Select'),
@@ -580,6 +1073,15 @@ export default function ProjectsPage() {
                       onMenuToggle={() => toggleMenu(entry.path)}
                       onSelect={() => setSelectedEntryPath(entry.path)}
                       onOpen={entry.is_dir ? () => openBundleFolder(entry.path) : (editable ? () => openFileEditor(entry.path) : undefined)}
+                      draggable={!entry.is_dir && entry.name.toLowerCase().endsWith('.md')}
+                      onDragStart={(event) => {
+                        event.dataTransfer.setData('text/plain', entry.path)
+                        event.dataTransfer.effectAllowed = 'copy'
+                      }}
+                      onContextMenu={(event) => {
+                        event.preventDefault()
+                        toggleMenu(entry.path)
+                      }}
                     />
                   )
                 })}

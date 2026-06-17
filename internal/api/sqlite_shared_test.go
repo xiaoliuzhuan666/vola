@@ -1653,6 +1653,172 @@ func TestSQLiteSharedServerWebDashboardEndpoints(t *testing.T) {
 	}
 }
 
+func TestSQLiteSharedProjectMaterialsContextPackAndRepositoryExport(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	userID, err := store.FirstUserID(ctx)
+	if err != nil {
+		t.Fatalf("FirstUserID: %v", err)
+	}
+	if _, err := store.CreateProject(ctx, userID, "ai-dev"); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/projects/ai-dev/backend-api.md", "# Backend API\n\nPOST /orders creates orders.", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "file",
+		MinTrustLevel: models.TrustLevelWork,
+	}); err != nil {
+		t.Fatalf("WriteEntry source doc: %v", err)
+	}
+
+	status, copied := doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/materials/copy", adminToken, []byte(`{
+		"source_path":"/projects/ai-dev/backend-api.md",
+		"repository_path":"docs/ai-context/materials/backend-api.md",
+		"tags":["backend","api"]
+	}`))
+	if status != http.StatusCreated || !copied.OK {
+		t.Fatalf("copy material failed: status=%d body=%+v", status, copied)
+	}
+	for _, expected := range []string{`"title":"Backend API"`, `"source_path":"/projects/ai-dev/backend-api.md"`, `"repository_path":"docs/ai-context/materials/backend-api.md"`} {
+		if !bytes.Contains(copied.Data, []byte(expected)) {
+			t.Fatalf("expected %q in copied material: %s", expected, string(copied.Data))
+		}
+	}
+
+	status, pack := doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/context-packs", adminToken, []byte(`{
+		"title":"Backend handoff",
+		"purpose":"Codex reads this before backend integration",
+		"repository_dir":"docs/ai-context/context-packs"
+	}`))
+	if status != http.StatusCreated || !pack.OK {
+		t.Fatalf("build context pack failed: status=%d body=%+v", status, pack)
+	}
+	for _, expected := range []string{`"title":"Backend handoff"`, `POST /orders creates orders.`, `"repository_path":"docs/ai-context/context-packs/backend-handoff.md"`} {
+		if !bytes.Contains(pack.Data, []byte(expected)) {
+			t.Fatalf("expected %q in context pack: %s", expected, string(pack.Data))
+		}
+	}
+
+	status, exported := doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/repository-export", adminToken, []byte(`{"repository_dir":"docs/ai-context"}`))
+	if status != http.StatusOK || !exported.OK {
+		t.Fatalf("build repository export failed: status=%d body=%+v", status, exported)
+	}
+	for _, expected := range []string{`"path":"docs/ai-context/README.md"`, `"path":"docs/ai-context/materials/backend-api.md"`, `"path":"docs/ai-context/context-packs/backend-handoff.md"`} {
+		if !bytes.Contains(exported.Data, []byte(expected)) {
+			t.Fatalf("expected %q in repository export: %s", expected, string(exported.Data))
+		}
+	}
+
+	repoRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatalf("mkdir repo root: %v", err)
+	}
+	applyBody := fmt.Sprintf(`{"repository_root":%q,"repository_dir":"docs/ai-context","overwrite":true}`, repoRoot)
+	status, applied := doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/repository-export/apply", adminToken, []byte(applyBody))
+	if status != http.StatusOK || !applied.OK {
+		t.Fatalf("apply repository export failed: status=%d body=%+v", status, applied)
+	}
+	expectedFiles := []string{
+		filepath.Join(repoRoot, "docs", "ai-context", "README.md"),
+		filepath.Join(repoRoot, "docs", "ai-context", "materials", "backend-api.md"),
+		filepath.Join(repoRoot, "docs", "ai-context", "context-packs", "backend-handoff.md"),
+	}
+	for _, target := range expectedFiles {
+		data, err := os.ReadFile(target)
+		if err != nil {
+			t.Fatalf("expected applied file %s: %v", target, err)
+		}
+		if !bytes.Contains(data, []byte("Backend API")) && filepath.Base(target) != "README.md" {
+			t.Fatalf("expected backend content in %s: %s", target, string(data))
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(repoRoot, "docs", "ai-context", "materials", "backend-api.md"), []byte("manual\n"), 0o644); err != nil {
+		t.Fatalf("write manual file: %v", err)
+	}
+	noOverwriteBody := fmt.Sprintf(`{"repository_root":%q,"repository_dir":"docs/ai-context","overwrite":false}`, repoRoot)
+	status, applied = doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/repository-export/apply", adminToken, []byte(noOverwriteBody))
+	if status != http.StatusOK || !applied.OK {
+		t.Fatalf("apply repository export without overwrite failed: status=%d body=%+v", status, applied)
+	}
+	data, err := os.ReadFile(filepath.Join(repoRoot, "docs", "ai-context", "materials", "backend-api.md"))
+	if err != nil {
+		t.Fatalf("read manual file: %v", err)
+	}
+	if string(data) != "manual\n" {
+		t.Fatalf("expected manual file to stay unchanged, got %q", string(data))
+	}
+}
+
+func TestSQLiteSharedProjectRepositoryExportApplyRejectsUnsafeTarget(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	userID, err := store.FirstUserID(ctx)
+	if err != nil {
+		t.Fatalf("FirstUserID: %v", err)
+	}
+	if _, err := store.CreateProject(ctx, userID, "unsafe-export"); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/projects/unsafe-export/source.md", "# Source\n\nKeep me in repo.", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "file",
+		MinTrustLevel: models.TrustLevelWork,
+	}); err != nil {
+		t.Fatalf("WriteEntry source doc: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/projects/unsafe-export/materials/malicious.md", "# Malicious\n\nDo not leave repo.", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "project_material",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata: map[string]interface{}{
+			"project":         "unsafe-export",
+			"title":           "Malicious",
+			"repository_path": "../escape.md",
+		},
+	}); err != nil {
+		t.Fatalf("WriteEntry malicious material: %v", err)
+	}
+	repoRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatalf("mkdir repo root: %v", err)
+	}
+	body := fmt.Sprintf(`{"repository_root":%q,"repository_dir":"docs/ai-context"}`, repoRoot)
+	status, applied := doJSON(t, http.MethodPost, ts.URL+"/api/projects/unsafe-export/repository-export/apply", adminToken, []byte(body))
+	if status != http.StatusOK || !applied.OK {
+		t.Fatalf("apply repository export failed: status=%d body=%+v", status, applied)
+	}
+	if bytes.Contains(applied.Data, []byte(`"target_path":"`+filepath.Dir(repoRoot))) {
+		t.Fatalf("unsafe target leaked outside repo: %s", string(applied.Data))
+	}
+	if !bytes.Contains(applied.Data, []byte(`"status":"error"`)) {
+		t.Fatalf("expected unsafe file to be reported as error: %s", string(applied.Data))
+	}
+
+	symlinkRoot := filepath.Join(t.TempDir(), "repo-symlink")
+	if err := os.MkdirAll(symlinkRoot, 0o755); err != nil {
+		t.Fatalf("mkdir symlink root: %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(symlinkRoot, "docs")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "ai-context")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outside dir exists before symlink safety check: %v", err)
+	}
+	body = fmt.Sprintf(`{"repository_root":%q,"repository_dir":"docs/ai-context"}`, symlinkRoot)
+	status, applied = doJSON(t, http.MethodPost, ts.URL+"/api/projects/unsafe-export/repository-export/apply", adminToken, []byte(body))
+	if status != http.StatusOK || !applied.OK {
+		t.Fatalf("apply repository export through symlink failed: status=%d body=%+v", status, applied)
+	}
+	if !bytes.Contains(applied.Data, []byte(`symlink directory`)) {
+		t.Fatalf("expected symlink directory error: %s", string(applied.Data))
+	}
+	if _, err := os.Stat(filepath.Join(outside, "ai-context")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("wrote outside repo through symlink: %v", err)
+	}
+}
+
 func TestSQLiteSharedServerWriteResponsesIncludeLocalGitSync(t *testing.T) {
 	ts, store, adminToken, _, _ := newTestHTTPServer(t)
 	ctx := context.Background()

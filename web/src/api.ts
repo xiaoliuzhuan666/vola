@@ -417,6 +417,116 @@ export interface LocalLibraryImportResponse {
   warnings?: string[];
 }
 
+export interface ProjectMaterialInput {
+  title: string;
+  slug?: string;
+  content: string;
+  source_path?: string;
+  source_url?: string;
+  source_type?: string;
+  description?: string;
+  tags?: string[];
+  source_updated_at?: string;
+  repository_path?: string;
+}
+
+export interface ProjectMaterial {
+  project: string;
+  title: string;
+  slug: string;
+  path: string;
+  content?: string;
+  source_path?: string;
+  source_url?: string;
+  source_type?: string;
+  description?: string;
+  tags?: string[];
+  source_updated_at?: string;
+  repository_path?: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectMaterialCopyInput {
+  source_path: string;
+  title?: string;
+  slug?: string;
+  source_url?: string;
+  description?: string;
+  tags?: string[];
+  repository_path?: string;
+  source_updated_at?: string;
+}
+
+export interface ProjectContextPackInput {
+  title: string;
+  slug?: string;
+  purpose?: string;
+  material_paths?: string[];
+  include_context?: boolean;
+  include_recent_logs?: boolean;
+  recent_log_limit?: number;
+  repository_dir?: string;
+  repository_filename?: string;
+}
+
+export interface ProjectContextPack {
+  project: string;
+  title: string;
+  slug: string;
+  path: string;
+  content?: string;
+  purpose?: string;
+  material_paths?: string[];
+  repository_path?: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRepositoryExportInput {
+  repository_dir?: string;
+  material_paths?: string[];
+  pack_paths?: string[];
+  include_index?: boolean;
+}
+
+export interface ProjectRepositoryExportApplyInput extends ProjectRepositoryExportInput {
+  repository_root: string;
+  overwrite?: boolean;
+}
+
+export interface ProjectRepositoryExportFile {
+  path: string;
+  content: string;
+  source?: string;
+}
+
+export interface ProjectRepositoryExportApplyFile {
+  path: string;
+  target_path: string;
+  source?: string;
+  status: "written" | "skipped" | "error";
+  bytes_written?: number;
+  message?: string;
+}
+
+export interface ProjectRepositoryExport {
+  project: string;
+  repository_dir: string;
+  files: ProjectRepositoryExportFile[];
+  generated_at: string;
+}
+
+export interface ProjectRepositoryExportApplyResult {
+  project: string;
+  repository_root: string;
+  repository_dir: string;
+  files: ProjectRepositoryExportApplyFile[];
+  generated_at: string;
+}
+
 export function normalizeDashboardStats(stats?: Partial<DashboardStats> | null): DashboardStats {
   return {
     connections: Number(stats?.connections || 0),
@@ -1874,22 +1984,53 @@ export const api = {
   // Projects
   getProjects: () =>
     request<{ projects: any[] }>("/projects").then((r) => r.projects),
-  getProject: (name: string) => request<any>(`/projects/${name}`),
+  getProject: (name: string) => request<any>(`/projects/${encodeURIComponent(name)}`),
   createProject: (name: string) =>
     request<any>("/projects", {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
   archiveProject: (name: string) =>
-    request<any>(`/projects/${name}/archive`, { method: "PUT" }),
+    request<any>(`/projects/${encodeURIComponent(name)}/archive`, { method: "PUT" }),
   appendProjectLog: (
     name: string,
     data: { source: string; action: string; summary: string; tags?: string[] },
   ) =>
-    request<any>(`/projects/${name}/log`, {
+    request<any>(`/projects/${encodeURIComponent(name)}/log`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  getProjectMaterials: (name: string) =>
+    request<{ materials: ProjectMaterial[] }>(`/projects/${encodeURIComponent(name)}/materials`).then((r) => r.materials || []),
+  saveProjectMaterial: (name: string, data: ProjectMaterialInput) =>
+    request<ProjectMaterial>(`/projects/${encodeURIComponent(name)}/materials`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  copyProjectMaterial: (name: string, data: ProjectMaterialCopyInput) =>
+    request<ProjectMaterial>(`/projects/${encodeURIComponent(name)}/materials/copy`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getProjectContextPacks: (name: string) =>
+    request<{ context_packs: ProjectContextPack[] }>(`/projects/${encodeURIComponent(name)}/context-packs`).then((r) => r.context_packs || []),
+  buildProjectContextPack: (name: string, data: ProjectContextPackInput) =>
+    request<ProjectContextPack>(`/projects/${encodeURIComponent(name)}/context-packs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  readProjectContextPack: (name: string, pack: string) =>
+    request<{ context_pack: ProjectContextPack }>(`/projects/${encodeURIComponent(name)}/context-packs/${encodeURIComponent(pack)}`).then((r) => r.context_pack),
+  buildProjectRepositoryExport: (name: string, data?: ProjectRepositoryExportInput) =>
+    request<{ repository_export: ProjectRepositoryExport }>(`/projects/${encodeURIComponent(name)}/repository-export`, {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }).then((r) => r.repository_export),
+  applyProjectRepositoryExport: (name: string, data: ProjectRepositoryExportApplyInput) =>
+    request<{ repository_export_apply: ProjectRepositoryExportApplyResult }>(`/projects/${encodeURIComponent(name)}/repository-export/apply`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }).then((r) => r.repository_export_apply),
   scanLocalLibrary: (data?: LocalLibraryScanRequest) =>
     request<LocalLibraryScanResponse>("/local/library/scan", {
       method: "POST",

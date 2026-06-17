@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -60,7 +62,7 @@ func (s *ProjectService) List(ctx context.Context, userID uuid.UUID) ([]models.P
 		p.Description = firstNonEmpty(metadataString(p.Metadata, "description"), firstMarkdownParagraph(p.ContextMD))
 		p.PrimaryPath = hubpath.ProjectContextPath(p.Name)
 		p.LogPath = hubpath.ProjectLogPath(p.Name)
-		p.Capabilities = []string{"context", "logs"}
+		p.Capabilities = projectCapabilities()
 		projects = append(projects, p)
 	}
 	return projects, rows.Err()
@@ -90,7 +92,7 @@ func (s *ProjectService) Get(ctx context.Context, userID uuid.UUID, name string)
 	p.Description = firstNonEmpty(metadataString(p.Metadata, "description"), firstMarkdownParagraph(p.ContextMD))
 	p.PrimaryPath = hubpath.ProjectContextPath(p.Name)
 	p.LogPath = hubpath.ProjectLogPath(p.Name)
-	p.Capabilities = []string{"context", "logs"}
+	p.Capabilities = projectCapabilities()
 	return &p, nil
 }
 
@@ -169,7 +171,7 @@ func (s *ProjectService) Create(ctx context.Context, userID uuid.UUID, name stri
 		Description:  "",
 		PrimaryPath:  hubpath.ProjectContextPath(name),
 		LogPath:      hubpath.ProjectLogPath(name),
-		Capabilities: []string{"context", "logs"},
+		Capabilities: projectCapabilities(),
 		ContextMD:    "",
 		Metadata:     projectBundleDirectoryMetadata(name, "", "active", source),
 		CreatedAt:    now,
@@ -356,6 +358,284 @@ func (s *ProjectService) GetLogs(ctx context.Context, projectID uuid.UUID, limit
 	return logs, rows.Err()
 }
 
+func (s *ProjectService) SaveMaterial(ctx context.Context, userID uuid.UUID, projectName string, input models.ProjectMaterialInput) (*models.ProjectMaterial, error) {
+	if s.fileTree == nil {
+		return nil, fmt.Errorf("project.SaveMaterial: file tree service not configured")
+	}
+	if _, err := s.Get(ctx, userID, projectName); err != nil {
+		return nil, fmt.Errorf("project.SaveMaterial: project not found: %w", err)
+	}
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		title = firstMarkdownHeading(input.Content)
+	}
+	if title == "" {
+		title = "Project material"
+	}
+	if strings.TrimSpace(input.Content) == "" {
+		return nil, fmt.Errorf("project.SaveMaterial: content is required")
+	}
+	slug := firstNonEmpty(input.Slug, title)
+	entryPath := hubpath.ProjectMaterialPath(projectName, slug)
+	now := time.Now().UTC()
+	metadata := map[string]interface{}{
+		"project":     projectName,
+		"title":       title,
+		"source":      SourceOrDefault(ctx, "manual"),
+		"imported_at": now.Format(time.RFC3339),
+	}
+	if value := strings.TrimSpace(input.SourceURL); value != "" {
+		metadata["source_url"] = value
+	}
+	if value := hubpath.NormalizePublic(input.SourcePath); value != "/" {
+		metadata["source_path"] = value
+	}
+	if value := strings.TrimSpace(input.SourceType); value != "" {
+		metadata["source_type"] = value
+	}
+	if value := strings.TrimSpace(input.Description); value != "" {
+		metadata["description"] = value
+	}
+	if value := strings.TrimSpace(input.SourceUpdatedAt); value != "" {
+		metadata["source_updated_at"] = value
+	}
+	if value := normalizeRepositoryPath(input.RepositoryPath); value != "" {
+		metadata["repository_path"] = value
+	}
+	if tags := cleanStringSlice(input.Tags); len(tags) > 0 {
+		metadata["tags"] = tags
+	}
+	entry, err := s.fileTree.WriteEntry(ctx, userID, entryPath, input.Content, "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "project_material",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata:      metadata,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("project.SaveMaterial: write material: %w", err)
+	}
+	return projectMaterialFromEntry(projectName, *entry), nil
+}
+
+func (s *ProjectService) CopyMaterial(ctx context.Context, userID uuid.UUID, projectName string, input models.ProjectMaterialCopyInput) (*models.ProjectMaterial, error) {
+	if s.fileTree == nil {
+		return nil, fmt.Errorf("project.CopyMaterial: file tree service not configured")
+	}
+	sourcePath := strings.TrimSpace(input.SourcePath)
+	if sourcePath == "" {
+		return nil, fmt.Errorf("project.CopyMaterial: source_path is required")
+	}
+	entry, err := s.fileTree.Read(ctx, userID, sourcePath, models.TrustLevelFull)
+	if err != nil {
+		return nil, fmt.Errorf("project.CopyMaterial: read source: %w", err)
+	}
+	if entry.IsDirectory {
+		return nil, fmt.Errorf("project.CopyMaterial: source_path must be a Markdown file")
+	}
+	contentType := strings.ToLower(strings.TrimSpace(entry.ContentType))
+	publicSourcePath := hubpath.StorageToPublic(entry.Path)
+	if !strings.HasSuffix(strings.ToLower(publicSourcePath), ".md") && !strings.Contains(contentType, "markdown") {
+		return nil, fmt.Errorf("project.CopyMaterial: source_path must be a Markdown file")
+	}
+	title := firstNonEmpty(input.Title, metadataString(entry.Metadata, "title"), firstMarkdownHeading(entry.Content), strings.TrimSuffix(path.Base(publicSourcePath), ".md"))
+	return s.SaveMaterial(ctx, userID, projectName, models.ProjectMaterialInput{
+		Title:           title,
+		Slug:            firstNonEmpty(input.Slug, strings.TrimSuffix(path.Base(publicSourcePath), ".md")),
+		Content:         entry.Content,
+		SourcePath:      publicSourcePath,
+		SourceURL:       input.SourceURL,
+		SourceType:      "vola-file",
+		Description:     input.Description,
+		Tags:            input.Tags,
+		SourceUpdatedAt: firstNonEmpty(input.SourceUpdatedAt, entry.UpdatedAt.UTC().Format(time.RFC3339)),
+		RepositoryPath:  input.RepositoryPath,
+	})
+}
+
+func (s *ProjectService) ListMaterials(ctx context.Context, userID uuid.UUID, projectName string) ([]models.ProjectMaterial, error) {
+	if s.fileTree == nil {
+		return nil, fmt.Errorf("project.ListMaterials: file tree service not configured")
+	}
+	if _, err := s.Get(ctx, userID, projectName); err != nil {
+		return nil, fmt.Errorf("project.ListMaterials: project not found: %w", err)
+	}
+	entries, err := s.fileTree.List(ctx, userID, hubpath.ProjectMaterialsDir(projectName), models.TrustLevelFull)
+	if err != nil {
+		if err == ErrEntryNotFound {
+			return []models.ProjectMaterial{}, nil
+		}
+		return nil, fmt.Errorf("project.ListMaterials: %w", err)
+	}
+	materials := make([]models.ProjectMaterial, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDirectory || !strings.HasSuffix(hubpath.NormalizePublic(entry.Path), ".md") {
+			continue
+		}
+		materials = append(materials, *projectMaterialFromEntry(projectName, entry))
+	}
+	return materials, nil
+}
+
+func (s *ProjectService) BuildContextPack(ctx context.Context, userID uuid.UUID, projectName string, input models.ProjectContextPackInput) (*models.ProjectContextPack, error) {
+	if s.fileTree == nil {
+		return nil, fmt.Errorf("project.BuildContextPack: file tree service not configured")
+	}
+	project, err := s.Get(ctx, userID, projectName)
+	if err != nil {
+		return nil, fmt.Errorf("project.BuildContextPack: project not found: %w", err)
+	}
+	title := strings.TrimSpace(input.Title)
+	if title == "" {
+		title = "AI context pack"
+	}
+	slug := firstNonEmpty(input.Slug, title)
+	includeContext := boolDefault(input.IncludeContext, true)
+	includeRecentLogs := boolDefault(input.IncludeRecentLogs, true)
+	limit := input.RecentLogLimit
+	if limit <= 0 {
+		limit = 20
+	}
+	if limit > 100 {
+		limit = 100
+	}
+
+	materials, err := s.contextPackMaterials(ctx, userID, projectName, input.MaterialPaths)
+	if err != nil {
+		return nil, err
+	}
+	logs := []models.ProjectLog{}
+	if includeRecentLogs {
+		if items, logErr := s.GetLogs(ctx, project.ID, limit); logErr == nil {
+			logs = items
+		}
+	}
+
+	content := renderProjectContextPack(project, title, strings.TrimSpace(input.Purpose), includeContext, logs, materials)
+	entryPath := hubpath.ProjectContextPackPath(projectName, slug)
+	repositoryPath := contextPackRepositoryPath(input.RepositoryDir, input.RepositoryFilename, path.Base(entryPath))
+	metadata := map[string]interface{}{
+		"project":                 projectName,
+		"title":                   title,
+		"purpose":                 strings.TrimSpace(input.Purpose),
+		"source":                  SourceOrDefault(ctx, "manual"),
+		"material_paths":          materialPaths(materials),
+		"include_context":         includeContext,
+		"include_recent_logs":     includeRecentLogs,
+		"recent_log_limit":        limit,
+		"repository_path":         repositoryPath,
+		"generated_at":            time.Now().UTC().Format(time.RFC3339),
+		"repository_export_ready": true,
+	}
+	entry, err := s.fileTree.WriteEntry(ctx, userID, entryPath, content, "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "project_context_pack",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata:      metadata,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("project.BuildContextPack: write pack: %w", err)
+	}
+	return projectContextPackFromEntry(projectName, *entry), nil
+}
+
+func (s *ProjectService) ListContextPacks(ctx context.Context, userID uuid.UUID, projectName string) ([]models.ProjectContextPack, error) {
+	if s.fileTree == nil {
+		return nil, fmt.Errorf("project.ListContextPacks: file tree service not configured")
+	}
+	if _, err := s.Get(ctx, userID, projectName); err != nil {
+		return nil, fmt.Errorf("project.ListContextPacks: project not found: %w", err)
+	}
+	entries, err := s.fileTree.List(ctx, userID, hubpath.ProjectContextPacksDir(projectName), models.TrustLevelFull)
+	if err != nil {
+		if err == ErrEntryNotFound {
+			return []models.ProjectContextPack{}, nil
+		}
+		return nil, fmt.Errorf("project.ListContextPacks: %w", err)
+	}
+	packs := make([]models.ProjectContextPack, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IsDirectory || !strings.HasSuffix(hubpath.NormalizePublic(entry.Path), ".md") {
+			continue
+		}
+		packs = append(packs, *projectContextPackFromEntry(projectName, entry))
+	}
+	return packs, nil
+}
+
+func (s *ProjectService) ReadContextPack(ctx context.Context, userID uuid.UUID, projectName, pack string) (*models.ProjectContextPack, error) {
+	if s.fileTree == nil {
+		return nil, fmt.Errorf("project.ReadContextPack: file tree service not configured")
+	}
+	if _, err := s.Get(ctx, userID, projectName); err != nil {
+		return nil, fmt.Errorf("project.ReadContextPack: project not found: %w", err)
+	}
+	entryPath := pack
+	if !strings.HasPrefix(strings.TrimSpace(pack), "/") {
+		entryPath = hubpath.ProjectContextPackPath(projectName, strings.TrimSuffix(pack, ".md"))
+	}
+	entry, err := s.fileTree.Read(ctx, userID, entryPath, models.TrustLevelFull)
+	if err != nil {
+		return nil, fmt.Errorf("project.ReadContextPack: %w", err)
+	}
+	return projectContextPackFromEntry(projectName, *entry), nil
+}
+
+func (s *ProjectService) BuildRepositoryExport(ctx context.Context, userID uuid.UUID, projectName string, input models.ProjectRepositoryExportInput) (*models.ProjectRepositoryExport, error) {
+	if s.fileTree == nil {
+		return nil, fmt.Errorf("project.BuildRepositoryExport: file tree service not configured")
+	}
+	if _, err := s.Get(ctx, userID, projectName); err != nil {
+		return nil, fmt.Errorf("project.BuildRepositoryExport: project not found: %w", err)
+	}
+	repoDir := normalizeRepositoryDir(input.RepositoryDir)
+	if repoDir == "" {
+		repoDir = "docs/ai-context"
+	}
+	includeIndex := boolDefault(input.IncludeIndex, true)
+	materials, err := s.contextPackMaterials(ctx, userID, projectName, input.MaterialPaths)
+	if err != nil {
+		return nil, err
+	}
+	packs, err := s.repositoryExportPacks(ctx, userID, projectName, input.PackPaths)
+	if err != nil {
+		return nil, err
+	}
+	files := make([]models.ProjectRepositoryExportFile, 0, len(materials)+len(packs)+1)
+	if includeIndex {
+		files = append(files, models.ProjectRepositoryExportFile{
+			Path:    path.Join(repoDir, "README.md"),
+			Content: renderRepositoryExportIndex(projectName, repoDir, materials, packs),
+			Source:  "vola",
+		})
+	}
+	for _, material := range materials {
+		target := material.RepositoryPath
+		if target == "" {
+			target = path.Join(repoDir, "materials", path.Base(material.Path))
+		}
+		files = append(files, models.ProjectRepositoryExportFile{
+			Path:    target,
+			Content: material.Content,
+			Source:  material.Path,
+		})
+	}
+	for _, pack := range packs {
+		target := pack.RepositoryPath
+		if target == "" {
+			target = path.Join(repoDir, "context-packs", path.Base(pack.Path))
+		}
+		files = append(files, models.ProjectRepositoryExportFile{
+			Path:    target,
+			Content: pack.Content,
+			Source:  pack.Path,
+		})
+	}
+	return &models.ProjectRepositoryExport{
+		Project:       projectName,
+		RepositoryDir: repoDir,
+		Files:         files,
+		GeneratedAt:   time.Now().UTC(),
+	}, nil
+}
+
 func (s *ProjectService) projectIdentity(ctx context.Context, projectID uuid.UUID) (string, uuid.UUID, error) {
 	if s.repo != nil {
 		return s.repo.GetProjectIdentity(ctx, projectID)
@@ -396,6 +676,241 @@ func reverseProjectLogs(logs []models.ProjectLog) {
 	}
 }
 
+func projectCapabilities() []string {
+	return []string{"context", "logs", "materials", "context-packs", "repository-export"}
+}
+
+func projectMaterialFromEntry(projectName string, entry models.FileTreeEntry) *models.ProjectMaterial {
+	publicPath := hubpath.StorageToPublic(entry.Path)
+	title := firstNonEmpty(metadataString(entry.Metadata, "title"), firstMarkdownHeading(entry.Content), strings.TrimSuffix(path.Base(publicPath), ".md"))
+	return &models.ProjectMaterial{
+		Project:         firstNonEmpty(metadataString(entry.Metadata, "project"), projectName),
+		Title:           title,
+		Slug:            strings.TrimSuffix(path.Base(publicPath), ".md"),
+		Path:            publicPath,
+		Content:         entry.Content,
+		SourcePath:      metadataString(entry.Metadata, "source_path"),
+		SourceURL:       metadataString(entry.Metadata, "source_url"),
+		SourceType:      metadataString(entry.Metadata, "source_type"),
+		Description:     firstNonEmpty(metadataString(entry.Metadata, "description"), firstMarkdownParagraph(entry.Content)),
+		Tags:            cleanStringSlice(toStringSlice(entry.Metadata["tags"])),
+		SourceUpdatedAt: metadataString(entry.Metadata, "source_updated_at"),
+		RepositoryPath:  metadataString(entry.Metadata, "repository_path"),
+		Metadata:        entry.Metadata,
+		CreatedAt:       entry.CreatedAt,
+		UpdatedAt:       entry.UpdatedAt,
+	}
+}
+
+func projectContextPackFromEntry(projectName string, entry models.FileTreeEntry) *models.ProjectContextPack {
+	publicPath := hubpath.StorageToPublic(entry.Path)
+	title := firstNonEmpty(metadataString(entry.Metadata, "title"), firstMarkdownHeading(entry.Content), strings.TrimSuffix(path.Base(publicPath), ".md"))
+	return &models.ProjectContextPack{
+		Project:        firstNonEmpty(metadataString(entry.Metadata, "project"), projectName),
+		Title:          title,
+		Slug:           strings.TrimSuffix(path.Base(publicPath), ".md"),
+		Path:           publicPath,
+		Content:        entry.Content,
+		Purpose:        metadataString(entry.Metadata, "purpose"),
+		MaterialPaths:  cleanStringSlice(toStringSlice(entry.Metadata["material_paths"])),
+		RepositoryPath: metadataString(entry.Metadata, "repository_path"),
+		Metadata:       entry.Metadata,
+		CreatedAt:      entry.CreatedAt,
+		UpdatedAt:      entry.UpdatedAt,
+	}
+}
+
+func (s *ProjectService) contextPackMaterials(ctx context.Context, userID uuid.UUID, projectName string, requested []string) ([]models.ProjectMaterial, error) {
+	if len(cleanStringSlice(requested)) == 0 {
+		return s.ListMaterials(ctx, userID, projectName)
+	}
+	materials := make([]models.ProjectMaterial, 0, len(requested))
+	for _, rawPath := range cleanStringSlice(requested) {
+		entryPath := rawPath
+		if !strings.HasPrefix(entryPath, "/") {
+			entryPath = hubpath.ProjectMaterialPath(projectName, strings.TrimSuffix(entryPath, ".md"))
+		}
+		entry, err := s.fileTree.Read(ctx, userID, entryPath, models.TrustLevelFull)
+		if err != nil {
+			return nil, fmt.Errorf("project.contextPackMaterials: read %s: %w", rawPath, err)
+		}
+		materials = append(materials, *projectMaterialFromEntry(projectName, *entry))
+	}
+	return materials, nil
+}
+
+func (s *ProjectService) repositoryExportPacks(ctx context.Context, userID uuid.UUID, projectName string, requested []string) ([]models.ProjectContextPack, error) {
+	if len(cleanStringSlice(requested)) == 0 {
+		return s.ListContextPacks(ctx, userID, projectName)
+	}
+	packs := make([]models.ProjectContextPack, 0, len(requested))
+	for _, rawPath := range cleanStringSlice(requested) {
+		pack, err := s.ReadContextPack(ctx, userID, projectName, rawPath)
+		if err != nil {
+			return nil, err
+		}
+		packs = append(packs, *pack)
+	}
+	return packs, nil
+}
+
+func materialPaths(materials []models.ProjectMaterial) []string {
+	out := make([]string, 0, len(materials))
+	for _, material := range materials {
+		if strings.TrimSpace(material.Path) != "" {
+			out = append(out, material.Path)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+func renderProjectContextPack(project *models.Project, title, purpose string, includeContext bool, logs []models.ProjectLog, materials []models.ProjectMaterial) string {
+	var b strings.Builder
+	b.WriteString("# " + title + "\n\n")
+	b.WriteString("- Project: `" + project.Name + "`\n")
+	b.WriteString("- Generated at: " + time.Now().UTC().Format(time.RFC3339) + "\n")
+	if purpose != "" {
+		b.WriteString("- Purpose: " + purpose + "\n")
+	}
+	if len(materials) > 0 {
+		b.WriteString("- Source materials:\n")
+		for _, material := range materials {
+			b.WriteString("  - `" + material.Path + "`")
+			if material.SourceURL != "" {
+				b.WriteString(" (" + material.SourceURL + ")")
+			}
+			b.WriteString("\n")
+		}
+	}
+	if includeContext {
+		b.WriteString("\n## Project Context\n\n")
+		if strings.TrimSpace(project.ContextMD) == "" {
+			b.WriteString("_No project context has been written yet._\n")
+		} else {
+			b.WriteString(strings.TrimSpace(project.ContextMD) + "\n")
+		}
+	}
+	if len(logs) > 0 {
+		b.WriteString("\n## Recent Logs\n\n")
+		for _, log := range logs {
+			when := ""
+			if !log.CreatedAt.IsZero() {
+				when = " · " + log.CreatedAt.UTC().Format(time.RFC3339)
+			}
+			action := firstNonEmpty(log.Action, "log")
+			b.WriteString("- " + action + when + ": " + strings.TrimSpace(log.Summary) + "\n")
+		}
+	}
+	if len(materials) > 0 {
+		b.WriteString("\n## Materials\n")
+		for _, material := range materials {
+			b.WriteString("\n### " + material.Title + "\n\n")
+			b.WriteString("- Vola path: `" + material.Path + "`\n")
+			if material.SourceURL != "" {
+				b.WriteString("- Source URL: " + material.SourceURL + "\n")
+			}
+			if material.SourceUpdatedAt != "" {
+				b.WriteString("- Source updated at: " + material.SourceUpdatedAt + "\n")
+			}
+			if material.RepositoryPath != "" {
+				b.WriteString("- Repository path: `" + material.RepositoryPath + "`\n")
+			}
+			b.WriteString("\n")
+			b.WriteString(strings.TrimSpace(material.Content) + "\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func renderRepositoryExportIndex(projectName, repoDir string, materials []models.ProjectMaterial, packs []models.ProjectContextPack) string {
+	var b strings.Builder
+	b.WriteString("# AI Context: " + projectName + "\n\n")
+	b.WriteString("This directory contains Vola-managed project context for AI-assisted collaboration.\n\n")
+	b.WriteString("- Source project: `" + projectName + "`\n")
+	b.WriteString("- Default directory: `" + repoDir + "`\n")
+	b.WriteString("- Generated at: " + time.Now().UTC().Format(time.RFC3339) + "\n\n")
+	if len(packs) > 0 {
+		b.WriteString("## Context Packs\n\n")
+		for _, pack := range packs {
+			target := firstNonEmpty(pack.RepositoryPath, path.Join(repoDir, "context-packs", path.Base(pack.Path)))
+			b.WriteString("- [" + pack.Title + "](" + strings.TrimPrefix(target, repoDir+"/") + ")")
+			if pack.Purpose != "" {
+				b.WriteString(" - " + pack.Purpose)
+			}
+			b.WriteString("\n")
+		}
+		b.WriteString("\n")
+	}
+	if len(materials) > 0 {
+		b.WriteString("## Materials\n\n")
+		for _, material := range materials {
+			target := firstNonEmpty(material.RepositoryPath, path.Join(repoDir, "materials", path.Base(material.Path)))
+			b.WriteString("- [" + material.Title + "](" + strings.TrimPrefix(target, repoDir+"/") + ")")
+			if material.SourceURL != "" {
+				b.WriteString(" - " + material.SourceURL)
+			}
+			b.WriteString("\n")
+		}
+	}
+	return strings.TrimRight(b.String(), "\n") + "\n"
+}
+
+func boolDefault(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func cleanStringSlice(values []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" || seen[trimmed] {
+			continue
+		}
+		seen[trimmed] = true
+		out = append(out, trimmed)
+	}
+	return out
+}
+
+func normalizeRepositoryPath(raw string) string {
+	cleaned := strings.TrimSpace(strings.ReplaceAll(raw, "\\", "/"))
+	cleaned = strings.TrimPrefix(cleaned, "/")
+	cleaned = path.Clean(cleaned)
+	if cleaned == "." || strings.HasPrefix(cleaned, "../") || cleaned == ".." {
+		return ""
+	}
+	return cleaned
+}
+
+func normalizeRepositoryDir(raw string) string {
+	cleaned := normalizeRepositoryPath(raw)
+	if cleaned == "" {
+		return ""
+	}
+	return strings.TrimSuffix(cleaned, "/")
+}
+
+func contextPackRepositoryPath(repoDir, filename, fallback string) string {
+	dir := normalizeRepositoryDir(repoDir)
+	if dir == "" {
+		dir = "docs/ai-context/context-packs"
+	}
+	name := strings.TrimSpace(strings.ReplaceAll(filename, "\\", "/"))
+	if name == "" {
+		name = fallback
+	}
+	name = path.Base(name)
+	if !strings.HasSuffix(strings.ToLower(name), ".md") {
+		name += ".md"
+	}
+	return path.Join(dir, name)
+}
+
 func projectBundleDirectoryMetadata(name, contextMD, status, source string) map[string]interface{} {
 	summary := models.BundleSummary{
 		Kind:         BundleKindProject,
@@ -406,7 +921,7 @@ func projectBundleDirectoryMetadata(name, contextMD, status, source string) map[
 		Status:       firstNonEmpty(status, "active"),
 		PrimaryPath:  hubpath.ProjectContextPath(name),
 		LogPath:      hubpath.ProjectLogPath(name),
-		Capabilities: []string{"context", "logs"},
+		Capabilities: projectCapabilities(),
 	}
 	metadata := BundleMetadata(summary)
 	metadata["project"] = name

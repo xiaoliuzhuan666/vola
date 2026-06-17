@@ -370,3 +370,37 @@ GitHub Release 资产：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。
 - 本次 tag 基于 `v0.1.8` 发布线创建，避免丢失上一版团队资产本机同步功能；没有把主工作区中的其他未发布改动带入本次发布。
+
+## 2026-06-17 v0.1.11 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点是把 Vola 项目资料变成更适合 AI 协作的日常工作入口：个人/团队资料继续保存在 Vola，需要协作时可以生成到代码仓库的 `docs/ai-context` 目录。
+
+本次更新：
+
+- 项目页新增“项目资料”工作台，可粘贴 Markdown，也可从 Vola 文件树复制 Markdown。
+- 项目文件列表里的 Markdown 支持右键“复制到项目资料”，文件卡片也支持拖到项目资料区。
+- 支持生成 AI 上下文包，把项目说明、近期记录和选中的资料合成协作用 Markdown。
+- 支持生成仓库资料列表，并在本地模式写入指定仓库目录，默认路径为 `docs/ai-context`。
+- 后端和 MCP 新增项目资料、上下文包、仓库导出相关接口，Codex 可直接读取和使用同一批项目知识。
+- 仓库写入增加路径安全检查：要求仓库目录已存在，拒绝写出仓库范围，拒绝通过 symlink 写入或穿越目录。
+- 项目资料区域统一了模块间距，并修正表单输入被通用布局覆盖后挤在一行的问题。
+
+本地发版前验证：
+
+- `npm --prefix web run typecheck`：通过。
+- `npm --prefix web run build`：通过。
+- `rsync -a --delete web/dist/ internal/web/dist/`：通过。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./internal/web ./internal/hubpath ./internal/services ./internal/api ./internal/mcp`：通过。
+- `git diff --check`：通过。
+- 本地浏览器验证 `/data/projects/ai-dev`：通过，项目资料工作台可见，`backend-api.md` 右键菜单显示“复制到项目资料”。
+- 本地浏览器验证仓库写入：通过，测试仓库生成 `docs/ai-context/README.md`、`docs/ai-context/materials/backend-api.md`、`docs/ai-context/context-packs/backend-handoff.md`。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.11`。
+
+发布完成后回填：
+
+- 提交：待回填
+- tag：`v0.1.11`
+- Release workflow run：待回填
+- Actions 页面：待回填
+- Release 页面：待回填
+- workflow 结果：待回填
