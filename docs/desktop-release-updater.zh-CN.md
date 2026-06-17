@@ -234,6 +234,56 @@ GitHub Release 资产：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。
 
+## 2026-06-17 v0.1.8 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点是降低团队 Skill / MCP 进入本机工具的使用成本，并把项目定位写清楚。
+
+本次更新：
+
+- 新增 `GET /api/local/tools/status`，展示 Codex、Claude Code、Cursor、Gemini CLI 的安装、连接、同步模式和下一步动作。
+- Team Library 和 MCP Hub 展示更清楚的本机同步结果，Codex / Claude Code 可刷新本机连接，Cursor / Gemini CLI 保持导出或手工处理。
+- Skills 页面新增标签过滤、集合卡片和小团队入门资料包。
+- 团队 Skill 发布记录新增版本号和发布说明展示。
+- 侧边栏保留“本机同步”常驻入口，MCP Hub 增加资源推荐预览；推荐只生成说明，不自动安装第三方 MCP server。
+- 新增 `docs/core-principles.zh-CN.md`，并把 cc-switch、SkillHub 等相似项目调研整理到本地文档。
+
+本地发版前验证：
+
+- `GOCACHE=/private/tmp/vola-go-cache go test ./internal/api ./internal/platforms ./internal/mcp`：通过。
+- `npm --prefix web run build`：通过。
+- `git diff --check`：通过。
+- 本地浏览器验证 `/team` 和 `/mcp-hub`：通过，console error 为 0。
+
+发布完成后回填：
+
+- 提交：`18d807455f0a37716027dcc8cd5a5fddee62d73e`
+- tag：`v0.1.8`
+- Release workflow run：`27666209036`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27666209036`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.8`
+- workflow 结果：第二次执行通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.8_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.8_x64.dmg`
+- `linux-x86_64-vola_0.1.8_amd64.AppImage`
+- `windows-x86_64-vola_0.1.8_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.8`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
+
+注意：
+
+- 第一次执行中 `Desktop linux-x86_64` 在下载 crates 时遇到 GitHub runner DNS 解析失败，报错为 `Could not resolve host: static.crates.io`，因此 Release 发布步骤被跳过；第二次执行已通过。
+- GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`、`actions/download-artifact@v4` 和 `softprops/action-gh-release@v2`，未影响本次打包。
+
 ## 2026-06-17 v0.1.7 GitHub 打包记录
 
 本次准备按 GitHub tag 发布流程重新打包桌面端，重点是让团队 Skill / MCP 更容易同步到本机 Codex 和 Claude Code。
