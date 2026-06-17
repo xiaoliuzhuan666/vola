@@ -136,6 +136,141 @@ func TestImportAgentExportClaudeConversationWritesCanonicalArchive(t *testing.T)
 	}
 }
 
+func TestImportAgentExportArchivesLargeProfileRules(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	client := &Client{store: store, userID: user.ID}
+
+	content := strings.Repeat("Keep this imported profile rule for archive handling.\n", 1400)
+	result, err := client.ImportAgentExport(ctx, "codex", AgentExportPayload{
+		ProfileRules: []AgentProfileRule{
+			{
+				Title:       "Large AGENTS.md",
+				Content:     content,
+				Exactness:   "exact",
+				SourcePaths: []string{"~/.codex/AGENTS.md"},
+				Confidence:  1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportAgentExport: %v", err)
+	}
+	if result.ProfileCategories != 1 || result.Artifacts != 1 || result.Archived != 1 {
+		t.Fatalf("unexpected result counts: %+v", result)
+	}
+
+	profilePath := "/memory/profile/codex-agent.md"
+	archivePath := "/platforms/codex/agent/profile-rules.md"
+	profile, err := store.Read(ctx, user.ID, profilePath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read profile: %v", err)
+	}
+	if len(profile.Content) >= agentProfileContentLimitBytes ||
+		!strings.Contains(profile.Content, "Full archive: `"+archivePath+"`") {
+		t.Fatalf("unexpected profile summary: %s", profile.Content)
+	}
+	archive, err := store.Read(ctx, user.ID, archivePath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read archive: %v", err)
+	}
+	if !strings.Contains(archive.Content, "Keep this imported profile rule") ||
+		len(archive.Content) <= agentProfileContentLimitBytes {
+		t.Fatalf("archive did not preserve large profile rules")
+	}
+}
+
+func TestRenderArchivedProfileRulesSummaryFitsMemoryLimit(t *testing.T) {
+	longPath := "/Users/demo/.codex/plugins/cache/" + strings.Repeat("nested-directory/", 80) + "SKILL.md"
+	rules := make([]AgentProfileRule, 0, 40)
+	for i := 0; i < 40; i++ {
+		rules = append(rules, AgentProfileRule{
+			Title:       strings.Repeat("Very long imported Codex rule title ", 80),
+			SourcePaths: []string{longPath, longPath + ".backup"},
+		})
+	}
+
+	summary := renderArchivedProfileRulesSummary("codex", "/platforms/codex/agent/profile-rules.md", 512*1024, rules)
+	if len(summary) >= agentProfileContentLimitBytes {
+		t.Fatalf("summary length = %d, want under %d", len(summary), agentProfileContentLimitBytes)
+	}
+	if !strings.Contains(summary, "Full archive: `/platforms/codex/agent/profile-rules.md`") ||
+		!strings.Contains(summary, "...and ") {
+		t.Fatalf("summary should preserve archive pointer and omission marker, got: %s", summary)
+	}
+}
+
+func TestImportAgentExportArchivesLargeMemoryItems(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	client := &Client{store: store, userID: user.ID}
+
+	content := strings.Repeat("Preserve this imported memory item in the archive.\n", 1800)
+	result, err := client.ImportAgentExport(ctx, "codex", AgentExportPayload{
+		MemoryItems: []AgentMemoryItem{{
+			Title:       "Large memory",
+			Content:     content,
+			Exactness:   "exact",
+			SourcePaths: []string{"~/.codex/memory.md"},
+		}},
+	})
+	if err != nil {
+		t.Fatalf("ImportAgentExport: %v", err)
+	}
+	if result.MemoryItems != 1 || result.Artifacts != 1 || result.Archived != 1 {
+		t.Fatalf("unexpected result counts: %+v", result)
+	}
+
+	var archivePath string
+	for _, importedPath := range result.Paths {
+		if strings.HasPrefix(importedPath, "/platforms/codex/agent/memory/") {
+			archivePath = importedPath
+			break
+		}
+	}
+	if archivePath == "" {
+		t.Fatalf("expected memory archive path in %+v", result.Paths)
+	}
+	archive, err := store.Read(ctx, user.ID, archivePath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read archive: %v", err)
+	}
+	if !strings.Contains(archive.Content, "Preserve this imported memory item") ||
+		len(archive.Content) <= agentScratchContentLimitBytes {
+		t.Fatalf("archive did not preserve large memory item")
+	}
+
+	scratch, err := store.GetScratchActive(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetScratchActive: %v", err)
+	}
+	if len(scratch) != 1 {
+		t.Fatalf("scratch entries = %d, want 1", len(scratch))
+	}
+	if len(scratch[0].Content) >= agentScratchContentLimitBytes ||
+		!strings.Contains(scratch[0].Content, "Full archive: `"+archivePath+"`") {
+		t.Fatalf("unexpected scratch summary: %s", scratch[0].Content)
+	}
+}
+
 func TestImportAgentExportClaudeConversationPreservesStructuredParts(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(filepath.Join(t.TempDir(), "local.db"))

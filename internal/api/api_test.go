@@ -12,6 +12,7 @@ import (
 
 	"github.com/agi-bar/vola/internal/models"
 	"github.com/agi-bar/vola/internal/services"
+	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
 	"github.com/google/uuid"
 )
 
@@ -127,6 +128,96 @@ func TestTreeSyntheticConversationBundleGetsBundleContext(t *testing.T) {
 	}
 	if got := child["name"]; got != "conversation.md" {
 		t.Fatalf("child name = %v, want conversation.md", got)
+	}
+}
+
+func TestTreeSnapshotMissingPathReturnsEmptySnapshot(t *testing.T) {
+	fileTree := services.NewFileTreeServiceWithRepo(stubFileTreeRepo{})
+	ts, _ := newTestServerWithFileTree(fileTree)
+	defer ts.Close()
+
+	resp, err := authGet(ts, "/api/tree/snapshot?path=%2Fsettings")
+	if err != nil {
+		t.Fatalf("GET missing tree snapshot: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	body := parseJSON(resp)
+	if got := body["path"]; got != "/settings" {
+		t.Fatalf("path = %v, want /settings", got)
+	}
+	entries, ok := body["entries"].([]interface{})
+	if !ok {
+		t.Fatalf("entries = %T, want array", body["entries"])
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries length = %d, want 0", len(entries))
+	}
+}
+
+func TestLocalLibraryMarkdownClassificationRecognizesCodexFiles(t *testing.T) {
+	cases := []struct {
+		name     string
+		path     string
+		title    string
+		content  string
+		category string
+		generic  bool
+	}{
+		{
+			name:     "skill markdown",
+			path:     "/Users/demo/.agents/skills/release/SKILL.md",
+			title:    "Release Skill",
+			content:  "# Release Skill\n\nUse when publishing releases.",
+			category: "skill",
+			generic:  true,
+		},
+		{
+			name:     "agent instructions",
+			path:     "/Users/demo/work/project/AGENTS.md",
+			title:    "Agent Instructions",
+			content:  "# Agent Instructions\n\nKeep project rules here.",
+			category: "agent-instructions",
+			generic:  true,
+		},
+		{
+			name:     "codex note",
+			path:     "/Users/demo/.codex/rules/local.md",
+			title:    "Local Rules",
+			content:  "# Local Rules\n\nUser preferences.",
+			category: "codex-note",
+			generic:  false,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			category, generic := classifyLocalMarkdown(tc.path, tc.title, tc.content)
+			if category != tc.category || generic != tc.generic {
+				t.Fatalf("classifyLocalMarkdown() = (%q, %v), want (%q, %v)", category, generic, tc.category, tc.generic)
+			}
+		})
+	}
+}
+
+func TestArchivedAgentProfileRulesSummaryFitsMemoryLimit(t *testing.T) {
+	longPath := "/Users/demo/.codex/plugins/cache/" + strings.Repeat("nested-directory/", 80) + "SKILL.md"
+	rules := make([]sqlitestorage.AgentProfileRule, 0, 40)
+	for i := 0; i < 40; i++ {
+		rules = append(rules, sqlitestorage.AgentProfileRule{
+			Title:       strings.Repeat("Very long imported Codex rule title ", 80),
+			SourcePaths: []string{longPath, longPath + ".backup"},
+		})
+	}
+
+	summary := renderArchivedAgentProfileRulesSummary("codex", "/platforms/codex/agent/profile-rules.md", 512*1024, rules)
+	if len(summary) >= localPlatformProfileContentLimitBytes {
+		t.Fatalf("summary length = %d, want under %d", len(summary), localPlatformProfileContentLimitBytes)
+	}
+	if !strings.Contains(summary, "Full archive: `/platforms/codex/agent/profile-rules.md`") ||
+		!strings.Contains(summary, "...and ") {
+		t.Fatalf("summary should preserve archive pointer and omission marker, got: %s", summary)
 	}
 }
 

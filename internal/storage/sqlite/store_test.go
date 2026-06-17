@@ -9,6 +9,7 @@ import (
 	"errors"
 	"path/filepath"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -775,3 +776,36 @@ func TestSQLiteWALModeReadConcurrency(t *testing.T) {
 	}
 }
 
+func TestSQLiteConcurrentWritesSerialize(t *testing.T) {
+	ctx, store, userID := openTestStore(t)
+
+	workers := 8
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(workerID int) {
+			defer wg.Done()
+			path := filepath.Join("/notes", "concurrent", "note-"+strconv.Itoa(workerID)+".md")
+			if _, err := store.WriteEntry(ctx, userID, path, "concurrent write\n", "text/markdown", models.FileTreeWriteOptions{
+				MinTrustLevel: models.TrustLevelGuest,
+			}); err != nil {
+				errs <- err
+			}
+		}(i)
+	}
+	wg.Wait()
+	close(errs)
+
+	for err := range errs {
+		t.Errorf("concurrent write failed: %v", err)
+	}
+
+	entries, err := store.List(ctx, userID, "/notes/concurrent", models.TrustLevelGuest)
+	if err != nil {
+		t.Fatalf("List concurrent notes: %v", err)
+	}
+	if len(entries) != workers {
+		t.Fatalf("entries = %d, want %d", len(entries), workers)
+	}
+}
