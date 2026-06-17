@@ -281,3 +281,92 @@ GitHub Release 资产：
 注意：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。
+
+## 2026-06-17 v0.1.8 GitHub 打包记录
+
+本次按 GitHub tag 发布流程重新打包桌面端，重点是继续优化小团队 Agent 资料与 Skill/MCP 共享中心，把 Team Library 和 MCP Hub 的本机同步入口做得更清楚，并保留 Cursor / Gemini CLI 的导出边界。
+
+本次更新：
+
+- 团队 Skill / MCP 页面继续强化本机同步状态与入口。
+- 文档补充 Vola 的核心定位：个人和小团队的私有 Agent 资料中心，安全同步到 Codex、Claude Code 等本机工具。
+- 继续说明 Cursor / Gemini CLI 以预览和导出为主，不自动改本机配置。
+
+发布完成后回填：
+
+- 提交：`18d807455f0a37716027dcc8cd5a5fddee62d73e`
+- tag：`v0.1.8`
+- Release workflow run：`27666209036`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27666209036`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.8`
+- workflow 结果：通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.8_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.8_x64.dmg`
+- `linux-x86_64-vola_0.1.8_amd64.AppImage`
+- `windows-x86_64-vola_0.1.8_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.8`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
+
+注意：
+
+- GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/download-artifact@v4`、`actions/upload-artifact@v4` 或 `softprops/action-gh-release@v2`，未影响本次打包。
+
+## 2026-06-17 v0.1.9 GitHub 打包记录
+
+本次按 GitHub tag 发布流程重新打包桌面端，重点修复本地 App Data 导入 Codex/Claude Code 资料时，超大 profile rules 写入单条 profile memory 触发 `memory.UpsertProfile: content exceeds maximum size of 65536 bytes` 的问题。
+
+本次修复：
+
+- Codex/Claude Code 导入到 Vola 时，如果 agent profile rules 小于 64 KiB，仍按原逻辑写入 `/memory/profile/<platform>-agent.md`。
+- 如果 profile rules 超过 64 KiB，完整原文改存到 `/platforms/<platform>/agent/profile-rules.md`。
+- profile memory 只保存短摘要、原始大小和完整归档路径，避免超过 profile 单条大小限制。
+- 旧 SQLite client 导入路径和本地 HTTP API 导入路径都使用同样策略。
+- 导入结果会返回 profile path 和 archive path，方便前端或调用方展示真实写入位置。
+
+本地发版前验证：
+
+- `GOCACHE=/private/tmp/vola-go-cache go test ./internal/api ./internal/platforms ./internal/mcp`：通过。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./internal/storage/sqlite`：通过。
+- `npm --prefix web run build`：通过。第一次在临时发布目录执行时因未安装依赖出现 `tsc: command not found`，执行 `npm ci --prefix web` 后重试通过。
+- `git diff --check`：通过。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.9`。
+
+发布完成后回填：
+
+- 提交：`e16b7e8d9960606d263a52ea2e2cbead76e96a5e`
+- tag：`v0.1.9`
+- Release workflow run：`27675563202`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27675563202`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.9`
+- workflow 结果：通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.9_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.9_x64.dmg`
+- `linux-x86_64-vola_0.1.9_amd64.AppImage`
+- `windows-x86_64-vola_0.1.9_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.9`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
+
+注意：
+
+- GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。
+- 本次 tag 基于 `v0.1.8` 发布线创建，避免丢失上一版团队资产本机同步功能；没有把主工作区中的其他未发布改动带入本次发布。
