@@ -47,6 +47,7 @@ type teamMcpAsset struct {
 	PublishedAt           string            `json:"published_at,omitempty"`
 	ArchivedAt            string            `json:"archived_at,omitempty"`
 	Path                  string            `json:"path,omitempty"`
+	Tags                  []string          `json:"tags,omitempty"`
 }
 
 type teamMcpsResponse struct {
@@ -67,6 +68,7 @@ type teamMcpSaveRequest struct {
 	Headers     map[string]string `json:"headers,omitempty"`
 	Status      string            `json:"status,omitempty"`
 	Visibility  string            `json:"visibility,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
 }
 
 func (s *Server) handleTeamMcpList(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +115,7 @@ func (s *Server) handleTeamMcpSave(w http.ResponseWriter, r *http.Request) {
 		Headers:     req.Headers,
 		Status:      req.Status,
 		Visibility:  req.Visibility,
+		Tags:        req.Tags,
 	})
 	if asset.Slug == "" || asset.Name == "" {
 		respondValidationError(w, "slug", "mcp slug and name are required")
@@ -464,7 +467,25 @@ func (s *Server) normalizeTeamMcpAsset(asset teamMcpAsset) teamMcpAsset {
 	default:
 		asset.Visibility = "private"
 	}
+	asset.Tags = cleanTags(asset.Tags)
 	return asset
+}
+
+func cleanTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, t := range tags {
+		clean := strings.TrimSpace(strings.ToLower(t))
+		if clean != "" && !seen[clean] {
+			seen[clean] = true
+			out = append(out, clean)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func teamMcpVisible(asset teamMcpAsset) bool {
@@ -484,6 +505,9 @@ func renderTeamMcpReadme(asset teamMcpAsset) string {
 	b.WriteString("# MCP: " + firstNonEmpty(asset.Name, asset.Slug) + "\n\n")
 	if asset.Description != "" {
 		b.WriteString(asset.Description + "\n\n")
+	}
+	if len(asset.Tags) > 0 {
+		b.WriteString("- Tags: " + strings.Join(asset.Tags, ", ") + "\n\n")
 	}
 	b.WriteString("## Connection Parameters\n\n")
 	b.WriteString("- Transport: " + asset.Transport + "\n")

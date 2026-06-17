@@ -66,7 +66,7 @@ type pageSEO struct {
 }
 
 const (
-	siteURL            = "https://www.vola.cn"
+	siteURL            = "https://www.vola.ai"
 	productName        = "Vola"
 	defaultTitle       = "Personal data hub for AI agents — Vola"
 	defaultDescription = "Vola is a personal data hub for AI agents, connecting profile, memory, projects, conversations, skills, and vault access."

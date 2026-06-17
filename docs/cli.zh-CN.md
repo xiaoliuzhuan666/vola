@@ -23,13 +23,15 @@ make install
 ```bash
 neu status
 neu platform ls
+neu connect codex
 neu connect claude
 neu browse
 ```
 
 - `neu status` 用来检查本地 daemon、本地存储和当前 target 是否就绪。
 - `neu platform ls` 用来查看已安装的平台 adapter 和连接状态。
-- `neu connect claude` 用来为当前环境安装 / 配置 Claude 集成。
+- `neu connect codex` 是推荐连接方式，用来配置 Codex MCP 和 Vola 管理的 Codex Skill。
+- `neu connect claude` 是第二推荐，用来为当前环境安装 / 配置 Claude Code 集成。
 - `neu browse` 用来在浏览器中打开本地 Hub。
 
 ## 内置帮助

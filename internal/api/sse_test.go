@@ -47,7 +47,7 @@ func TestSSEEventBrokerAndBroadcaster(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("team", teamID)
 		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
-		
+
 		server.Router.ServeHTTP(w, r)
 	}))
 	defer ts.Close()
@@ -144,7 +144,7 @@ func TestSSEReadWatchdogTimeoutAndReconnect(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("team", teamID)
 		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
-		
+
 		server.Router.ServeHTTP(w, r)
 	}))
 	defer ts.Close()
@@ -153,7 +153,8 @@ func TestSSEReadWatchdogTimeoutAndReconnect(t *testing.T) {
 	defer cancel()
 
 	// subscribeTeamSse should connect, handshake, then block and get closed by the watchdog
-	err := subscribeTeamSse(ctx, ts.URL, generateTestJWT(), teamID, nil)
+	s := &Server{}
+	err := s.subscribeTeamSse(ctx, ts.URL, generateTestJWT(), teamID, nil)
 
 	if err == nil {
 		t.Fatal("expected subscribeTeamSse to return error on watchdog timeout, got nil")
@@ -190,7 +191,7 @@ func TestSSEEventReplayOnReconnect(t *testing.T) {
 		rctx := chi.NewRouteContext()
 		rctx.URLParams.Add("team", teamID)
 		r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
-		
+
 		server.Router.ServeHTTP(w, r)
 	}))
 	defer ts.Close()
@@ -198,13 +199,14 @@ func TestSSEEventReplayOnReconnect(t *testing.T) {
 	// 1. Establish first connection, then close it to record lastSeenTime
 	ctx, cancel := context.WithCancel(context.Background())
 	var lastSeenTime time.Time
-	
+
 	go func() {
 		time.Sleep(30 * time.Millisecond)
 		cancel() // disconnect
 	}()
 
-	_ = subscribeTeamSse(ctx, ts.URL, generateTestJWT(), teamID, &lastSeenTime)
+	s := &Server{}
+	_ = s.subscribeTeamSse(ctx, ts.URL, generateTestJWT(), teamID, &lastSeenTime)
 
 	if lastSeenTime.IsZero() {
 		t.Fatal("expected lastSeenTime to be recorded after first connection")
@@ -260,7 +262,7 @@ func TestSSEEventReplayOnReconnect(t *testing.T) {
 func TestClientTokenSilentRotation(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
-	
+
 	configFilePath := filepath.Join(tempDir, "config.json")
 	t.Setenv("VOLA_CONFIG", configFilePath)
 
@@ -334,7 +336,8 @@ func TestClientTokenSilentRotation(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	syncTeamListeners(ctx)
+	s := &Server{}
+	s.syncTeamListeners(ctx)
 
 	// Verify the side effects
 	if callCountRefresh != 1 {
@@ -361,7 +364,7 @@ func TestClientTokenSilentRotation(t *testing.T) {
 func TestClientTokenSilentRotationConcurrency(t *testing.T) {
 	tempDir := t.TempDir()
 	t.Setenv("HOME", tempDir)
-	
+
 	configFilePath := filepath.Join(tempDir, "config.json")
 	t.Setenv("VOLA_CONFIG", configFilePath)
 
@@ -385,24 +388,24 @@ func TestClientTokenSilentRotationConcurrency(t *testing.T) {
 		if r.URL.Path == "/api/auth/refresh" {
 			// Add latency to make concurrent requests overlap
 			time.Sleep(50 * time.Millisecond)
-			
+
 			// Thread-safe increment
 			importCount := &callCountRefresh
 			importCount2 := int32(1)
-			
+
 			// Standard atomic increment
 			_ = importCount
 			_ = importCount2
 			// Let's use mutex or atomic inside mock server to count accurately
 			w.Header().Set("Content-Type", "application/json")
-			
+
 			// We can use a simple map lookup or standard write
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte(`{
 				"access_token": "concurrency-fresh-token",
 				"refresh_token": "concurrency-refresh-token"
 			}`))
-			
+
 			// Use global atomic package by copying its value or just inline increment
 			// Since we want to check callCountRefresh, let's keep track using standard sync/atomic
 			return
@@ -424,7 +427,7 @@ func TestClientTokenSilentRotationConcurrency(t *testing.T) {
 	// Mock server with local count
 	var mu sync.Mutex
 	callCount := 0
-	
+
 	// Re-assign mock handlers for clean thread-safe counting
 	ts.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/auth/refresh" {
@@ -432,7 +435,7 @@ func TestClientTokenSilentRotationConcurrency(t *testing.T) {
 			mu.Lock()
 			callCount++
 			mu.Unlock()
-			
+
 			w.Header().Set("Content-Type", "application/json")
 			_, _ = w.Write([]byte(`{
 				"access_token": "concurrency-fresh-token",
@@ -483,7 +486,7 @@ func TestClientTokenSilentRotationConcurrency(t *testing.T) {
 	mu.Lock()
 	actualCalls := callCount
 	mu.Unlock()
-	
+
 	if actualCalls != 1 {
 		t.Errorf("expected only 1 network refresh call due to singleflight lock, but got %d", actualCalls)
 	}
@@ -498,4 +501,3 @@ func TestClientTokenSilentRotationConcurrency(t *testing.T) {
 		t.Errorf("expected Token to be 'concurrency-fresh-token', got %s", finalProfile.Token)
 	}
 }
-

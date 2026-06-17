@@ -24,12 +24,19 @@ type MCPServersConfig struct {
 }
 
 type ConfigMCPServer struct {
-	ID      string            `json:"id"`
-	Name    string            `json:"name"`
-	Enabled bool              `json:"enabled"`
-	Command string            `json:"command"`
-	Args    []string          `json:"args"`
-	Env     map[string]string `json:"env"`
+	ID          string            `json:"id"`
+	Name        string            `json:"name"`
+	Enabled     bool              `json:"enabled"`
+	Transport   string            `json:"transport,omitempty"`
+	Command     string            `json:"command,omitempty"`
+	Args        []string          `json:"args,omitempty"`
+	Env         map[string]string `json:"env,omitempty"`
+	URL         string            `json:"url,omitempty"`
+	Headers     map[string]string `json:"headers,omitempty"`
+	Description string            `json:"description,omitempty"`
+	Status      string            `json:"status,omitempty"`
+	Visibility  string            `json:"visibility,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
 }
 
 type ManagedServer struct {

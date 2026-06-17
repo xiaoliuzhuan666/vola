@@ -222,7 +222,7 @@ func NewServerWithDeps(deps ServerDeps) *Server {
 	}
 	s.setupRoutes()
 	StartMcpHealthChecker(context.Background())
-	StartTeamEventsListener(context.Background())
+	s.StartTeamEventsListener(context.Background())
 	return s
 }
 
@@ -370,6 +370,14 @@ func (s *Server) setupRoutes() {
 		r.Get("/api/projects", s.handleListProjects)
 		r.Post("/api/projects", s.handleCreateProject)
 		r.Get("/api/projects/{name}", s.handleGetProject)
+		r.Get("/api/projects/{name}/materials", s.handleListProjectMaterials)
+		r.Post("/api/projects/{name}/materials", s.handleSaveProjectMaterial)
+		r.Post("/api/projects/{name}/materials/copy", s.handleCopyProjectMaterial)
+		r.Get("/api/projects/{name}/context-packs", s.handleListProjectContextPacks)
+		r.Post("/api/projects/{name}/context-packs", s.handleBuildProjectContextPack)
+		r.Get("/api/projects/{name}/context-packs/{pack}", s.handleReadProjectContextPack)
+		r.Post("/api/projects/{name}/repository-export", s.handleBuildProjectRepositoryExport)
+		r.Post("/api/projects/{name}/repository-export/apply", s.handleApplyProjectRepositoryExport)
 		r.Post("/api/projects/{name}/log", s.handleAppendProjectLog)
 		r.Put("/api/projects/{name}/archive", s.handleArchiveProject)
 		r.Post("/api/projects/{name}/summarize", s.handleSummarizeProject)
@@ -378,6 +386,7 @@ func (s *Server) setupRoutes() {
 		r.Get("/api/dashboard/stats", s.handleDashboardStats)
 		r.Get("/api/dashboard/activities", s.handleGetDashboardActivities)
 		r.Get("/api/ops/status", s.handleOpsStatus)
+		r.Get("/api/ops/instance-status", s.handleOpsInstanceStatus)
 
 		// Admin account management
 		r.Get("/api/admin/users", s.handleAdminUsersList)
@@ -440,6 +449,7 @@ func (s *Server) setupRoutes() {
 		// Local Git mirror settings
 		r.Get("/api/local/config", s.handleLocalConfigGet)
 		r.Put("/api/local/config", s.handleLocalConfigUpdate)
+		r.Put("/api/local/workspace/active", s.handleLocalWorkspaceActiveUpdate)
 		r.Get("/api/local/git-mirror", s.handleLocalGitMirrorGet)
 		r.Put("/api/local/git-mirror", s.handleLocalGitMirrorUpdate)
 		r.Post("/api/local/git-mirror/github/test", s.handleLocalGitMirrorGitHubTest)
@@ -465,6 +475,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/api/local/mcp/clients/register", s.handleLocalMCPClientsRegister)
 		r.Post("/api/local/mcp/clients/unregister", s.handleLocalMCPClientsUnregister)
 		r.Get("/api/local/mcp/health", s.handleLocalMcpHealth)
+		r.Get("/api/local/tools/status", s.handleLocalToolsStatus)
+		r.Post("/api/local/platform/connection/refresh", s.handleLocalPlatformConnectionRefresh)
 
 		// GPT Setup
 		r.Get("/api/gpt/setup", s.handleGPTSetup)
@@ -874,6 +886,7 @@ func (s *Server) handlePublicConfig(w http.ResponseWriter, r *http.Request) {
 		"github_app_enabled":                      s.GitHubAppClientID != "",
 		"github_app_slug":                         s.GitHubAppSlug,
 		"billing_enabled":                         s.billingEnabled(),
+		"public_registration_enabled":             s.publicRegistrationEnabled(),
 		"system_settings_enabled":                 s.systemSettingsEnabled(),
 		"git_mirror_manual_sync_cooldown_seconds": s.gitMirrorManualSyncCooldownSeconds(),
 	}
@@ -904,6 +917,13 @@ func (s *Server) billingEnabled() bool {
 		return false
 	}
 	return s.Config.EnableBilling
+}
+
+func (s *Server) publicRegistrationEnabled() bool {
+	if s.Config == nil {
+		return false
+	}
+	return s.Config.EnablePublicRegistration
 }
 
 // ---------------------------------------------------------------------------

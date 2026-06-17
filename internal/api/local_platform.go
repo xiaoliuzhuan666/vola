@@ -17,6 +17,7 @@ import (
 
 	"github.com/agi-bar/vola/internal/hubpath"
 	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 	"github.com/agi-bar/vola/internal/skillsarchive"
 	sqlitestorage "github.com/agi-bar/vola/internal/storage/sqlite"
 	"github.com/go-chi/chi/v5"
@@ -48,6 +49,10 @@ type localPlatformSkillsArchiveRequest struct {
 	Platform    string `json:"platform"`
 	ArchivePath string `json:"archive_path"`
 }
+
+const localPlatformProfileContentLimitBytes = 64 * 1024
+const localPlatformProfileSummaryBudgetBytes = localPlatformProfileContentLimitBytes - 4096
+const localPlatformScratchContentLimitBytes = 64 * 1024
 
 func (s *Server) ensureLocalPlatformMode(w http.ResponseWriter) bool {
 	if s.isLocalMode() {
@@ -385,13 +390,9 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 	source := "agent:" + platform
 
 	if content := renderAgentProfileRules(platform, payload.ProfileRules); strings.TrimSpace(content) != "" {
-		category := platform + "-agent"
-		if err := s.MemoryService.UpsertProfile(ctx, userID, category, content, source); err != nil {
+		if err := s.importAgentProfileRules(ctx, userID, platform, source, content, payload.ProfileRules, result); err != nil {
 			return nil, err
 		}
-		result.ProfileCategories++
-		result.Imported++
-		result.Paths = append(result.Paths, hubpath.ProfilePath(category))
 	}
 
 	for _, item := range payload.MemoryItems {
@@ -400,7 +401,7 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 		}
 		now := time.Now().UTC()
 		expiresAt := now.AddDate(1, 0, 0)
-		entry, err := s.MemoryService.ImportScratch(ctx, userID, renderAgentMemoryItem(item), source, item.Title, now, &expiresAt)
+		entry, err := s.importAgentMemoryItem(ctx, userID, platform, source, item, now, &expiresAt, result)
 		if err != nil {
 			return nil, err
 		}
@@ -455,57 +456,30 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 		}
 	}
 
-	if written, err := s.writeLocalAgentArtifact(ctx, userID, platform, "automations.json", payload.Automations); err != nil {
+	if err := s.importOptionalAgentArtifact(ctx, userID, platform, "automations.json", payload.Automations, result, len(payload.Automations), false, nil); err != nil {
 		return nil, err
-	} else if written != "" {
-		result.Artifacts++
-		result.Archived += len(payload.Automations)
-		result.Paths = append(result.Paths, written)
 	}
-	if written, err := s.writeLocalAgentArtifact(ctx, userID, platform, "tools.json", payload.Tools); err != nil {
+	if err := s.importOptionalAgentArtifact(ctx, userID, platform, "tools.json", payload.Tools, result, len(payload.Tools), false, nil); err != nil {
 		return nil, err
-	} else if written != "" {
-		result.Artifacts++
-		result.Archived += len(payload.Tools)
-		result.Paths = append(result.Paths, written)
 	}
-	if written, err := s.writeLocalAgentArtifact(ctx, userID, platform, "connections.json", payload.Connections); err != nil {
+	if err := s.importOptionalAgentArtifact(ctx, userID, platform, "connections.json", payload.Connections, result, len(payload.Connections), false, nil); err != nil {
 		return nil, err
-	} else if written != "" {
-		result.Artifacts++
-		result.Archived += len(payload.Connections)
-		result.Paths = append(result.Paths, written)
 	}
-	if written, err := s.writeLocalAgentArtifact(ctx, userID, platform, "archives.json", payload.Archives); err != nil {
+	if err := s.importOptionalAgentArtifact(ctx, userID, platform, "archives.json", payload.Archives, result, len(payload.Archives), false, nil); err != nil {
 		return nil, err
-	} else if written != "" {
-		result.Artifacts++
-		result.Archived += len(payload.Archives)
-		result.Paths = append(result.Paths, written)
 	}
-	if written, err := s.writeLocalAgentArtifact(ctx, userID, platform, "unsupported.json", payload.Unsupported); err != nil {
+	if err := s.importOptionalAgentArtifact(ctx, userID, platform, "unsupported.json", payload.Unsupported, result, len(payload.Unsupported), true, nil); err != nil {
 		return nil, err
-	} else if written != "" {
-		result.Artifacts++
-		result.Archived += len(payload.Unsupported)
-		result.Blocked += len(payload.Unsupported)
-		result.Paths = append(result.Paths, written)
 	}
-	if written, err := s.writeLocalAgentArtifact(ctx, userID, platform, "sensitive-findings.json", payload.SensitiveFindings); err != nil {
-		return nil, err
-	} else if written != "" {
-		result.Artifacts++
-		result.Archived += len(payload.SensitiveFindings)
+	if err := s.importOptionalAgentArtifact(ctx, userID, platform, "sensitive-findings.json", payload.SensitiveFindings, result, len(payload.SensitiveFindings), false, func() {
 		result.SensitiveFindings += len(payload.SensitiveFindings)
-		result.Paths = append(result.Paths, written)
-	}
-	if written, err := s.writeLocalAgentArtifact(ctx, userID, platform, "vault-candidates.json", payload.VaultCandidates); err != nil {
+	}); err != nil {
 		return nil, err
-	} else if written != "" {
-		result.Artifacts++
-		result.Archived += len(payload.VaultCandidates)
+	}
+	if err := s.importOptionalAgentArtifact(ctx, userID, platform, "vault-candidates.json", payload.VaultCandidates, result, len(payload.VaultCandidates), false, func() {
 		result.VaultCandidates += len(payload.VaultCandidates)
-		result.Paths = append(result.Paths, written)
+	}); err != nil {
+		return nil, err
 	}
 	if content := renderAgentNotes(payload.Notes); strings.TrimSpace(content) != "" {
 		target := filepath.ToSlash(filepath.Join("/platforms", platform, "agent", "notes.md"))
@@ -518,6 +492,11 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 				"exactness":       "reference",
 			},
 		}); err != nil {
+			if errors.Is(err, services.ErrStorageQuotaExceeded) {
+				result.Blocked++
+				sort.Strings(result.Paths)
+				return result, nil
+			}
 			return nil, err
 		}
 		result.Artifacts++
@@ -527,6 +506,195 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 
 	sort.Strings(result.Paths)
 	return result, nil
+}
+
+func (s *Server) importOptionalAgentArtifact(ctx context.Context, userID uuid.UUID, platform, filename string, payload any, result *sqlitestorage.AgentImportResult, archivedCount int, countAsBlocked bool, onWritten func()) error {
+	written, err := s.writeLocalAgentArtifact(ctx, userID, platform, filename, payload)
+	if err != nil {
+		if errors.Is(err, services.ErrStorageQuotaExceeded) {
+			result.Blocked++
+			return nil
+		}
+		return err
+	}
+	if written == "" {
+		return nil
+	}
+	result.Artifacts++
+	result.Archived += archivedCount
+	if countAsBlocked {
+		result.Blocked += archivedCount
+	}
+	if onWritten != nil {
+		onWritten()
+	}
+	result.Paths = append(result.Paths, written)
+	return nil
+}
+
+func (s *Server) importAgentMemoryItem(ctx context.Context, userID uuid.UUID, platform, source string, item sqlitestorage.AgentMemoryItem, createdAt time.Time, expiresAt *time.Time, result *sqlitestorage.AgentImportResult) (*models.FileTreeEntry, error) {
+	content := renderAgentMemoryItem(item)
+	title := strings.TrimSpace(item.Title)
+	if len(content) <= localPlatformScratchContentLimitBytes {
+		return s.MemoryService.ImportScratch(ctx, userID, content, source, title, createdAt, expiresAt)
+	}
+
+	archivePath := agentMemoryArchivePath(platform, title, createdAt)
+	if _, err := s.FileTreeService.WriteEntry(ctx, userID, archivePath, content+"\n", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "file",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata: map[string]interface{}{
+			"source_platform": platform,
+			"capture_mode":    "agent",
+			"exactness":       "reference",
+			"import_kind":     "agent_memory_archive",
+			"original_bytes":  len(content),
+			"memory_title":    title,
+		},
+	}); err != nil {
+		return nil, err
+	}
+	result.Artifacts++
+	result.Archived++
+	result.Paths = append(result.Paths, archivePath)
+
+	summary := renderArchivedAgentMemorySummary(platform, archivePath, len(content), item)
+	return s.MemoryService.ImportScratch(ctx, userID, summary, source, title, createdAt, expiresAt)
+}
+
+func (s *Server) importAgentProfileRules(ctx context.Context, userID uuid.UUID, platform, source, content string, rules []sqlitestorage.AgentProfileRule, result *sqlitestorage.AgentImportResult) error {
+	category := platform + "-agent"
+	profilePath := hubpath.ProfilePath(category)
+	if len(content) <= localPlatformProfileContentLimitBytes {
+		if err := s.MemoryService.UpsertProfile(ctx, userID, category, content, source); err != nil {
+			return err
+		}
+		result.ProfileCategories++
+		result.Imported++
+		result.Paths = append(result.Paths, profilePath)
+		return nil
+	}
+
+	archivePath := filepath.ToSlash(filepath.Join("/platforms", platform, "agent", "profile-rules.md"))
+	if _, err := s.FileTreeService.WriteEntry(ctx, userID, archivePath, content+"\n", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "file",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata: map[string]interface{}{
+			"source_platform":  platform,
+			"capture_mode":     "agent",
+			"exactness":        "reference",
+			"import_kind":      "agent_profile_rules_archive",
+			"profile_category": category,
+			"original_bytes":   len(content),
+		},
+	}); err != nil {
+		return err
+	}
+
+	summary := renderArchivedAgentProfileRulesSummary(platform, archivePath, len(content), rules)
+	if err := s.MemoryService.UpsertProfile(ctx, userID, category, summary, source); err != nil {
+		return err
+	}
+
+	result.ProfileCategories++
+	result.Artifacts++
+	result.Imported++
+	result.Archived++
+	result.Paths = append(result.Paths, profilePath, archivePath)
+	return nil
+}
+
+func renderArchivedAgentProfileRulesSummary(platform, archivePath string, originalBytes int, rules []sqlitestorage.AgentProfileRule) string {
+	lines := []string{
+		fmt.Sprintf("# %s agent-derived profile rules", platform),
+		"",
+		"The imported profile rules were larger than a single profile memory entry, so Vola preserved the exact content as a platform archive.",
+		"",
+		fmt.Sprintf("- Full archive: `%s`", archivePath),
+		fmt.Sprintf("- Original size: %d bytes", originalBytes),
+	}
+	if len(rules) > 0 {
+		lines = append(lines, "- Imported rule groups:")
+		omitted := 0
+		for index, rule := range rules {
+			if index >= 12 {
+				omitted = len(rules) - index
+				break
+			}
+			title := strings.TrimSpace(rule.Title)
+			if title == "" {
+				title = "Rule"
+			}
+			source := ""
+			if len(rule.SourcePaths) > 0 {
+				source = " — " + strings.Join(rule.SourcePaths, ", ")
+			}
+			line := "  - " + truncateRunes(title+source, 512)
+			next := append(lines, line)
+			if len(strings.Join(next, "\n")) > localPlatformProfileSummaryBudgetBytes {
+				omitted = len(rules) - index
+				break
+			}
+			lines = next
+		}
+		if omitted > 0 {
+			lines = append(lines, fmt.Sprintf("  - ...and %d more", omitted))
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
+}
+
+func truncateRunes(value string, limit int) string {
+	if limit <= 0 {
+		return ""
+	}
+	runes := []rune(strings.TrimSpace(value))
+	if len(runes) <= limit {
+		return string(runes)
+	}
+	if limit <= 3 {
+		return string(runes[:limit])
+	}
+	return string(runes[:limit-3]) + "..."
+}
+
+func agentMemoryArchivePath(platform, title string, createdAt time.Time) string {
+	rawTitle := strings.TrimSpace(title)
+	if rawTitle == "" {
+		rawTitle = "memory"
+	}
+	key := fmt.Sprintf("vola/agent-memory-archive/%s/%s/%s", platform, rawTitle, createdAt.UTC().Format(time.RFC3339Nano))
+	id := uuid.NewSHA1(uuid.NameSpaceURL, []byte(key)).String()[:12]
+	slug := truncateRunes(rawTitle, 80)
+	return filepath.ToSlash(filepath.Join("/platforms", platform, "agent", "memory", createdAt.UTC().Format("2006-01-02")+"-"+slug+"-"+id+".md"))
+}
+
+func renderArchivedAgentMemorySummary(platform, archivePath string, originalBytes int, item sqlitestorage.AgentMemoryItem) string {
+	title := strings.TrimSpace(item.Title)
+	if title == "" {
+		title = "Imported memory"
+	}
+	lines := []string{
+		"# " + title,
+		"",
+		"The imported memory item was larger than a single scratch memory entry, so Vola preserved the exact content as a platform archive.",
+		"",
+		fmt.Sprintf("- Source platform: %s", platform),
+		fmt.Sprintf("- Full archive: `%s`", archivePath),
+		fmt.Sprintf("- Original size: %d bytes", originalBytes),
+		fmt.Sprintf("- Exactness: %s", fallbackAgentExactness(item.Exactness)),
+	}
+	if len(item.SourcePaths) > 0 {
+		lines = append(lines, "- Source paths:")
+		for index, sourcePath := range item.SourcePaths {
+			if index >= 8 {
+				lines = append(lines, fmt.Sprintf("  - ...and %d more", len(item.SourcePaths)-index))
+				break
+			}
+			lines = append(lines, "  - "+truncateRunes(sourcePath, 512))
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func (s *Server) writeLocalAgentArtifact(ctx context.Context, userID uuid.UUID, platform, filename string, payload any) (string, error) {
@@ -718,6 +886,10 @@ func fallbackAgentExactness(raw string) string {
 func isEmptyAgentPayload(payload any) bool {
 	switch typed := payload.(type) {
 	case []sqlitestorage.AgentRecord:
+		return len(typed) == 0
+	case []sqlitestorage.AgentSensitiveFinding:
+		return len(typed) == 0
+	case []sqlitestorage.AgentVaultCandidate:
 		return len(typed) == 0
 	default:
 		return payload == nil

@@ -1,4 +1,4 @@
-import { Component, Suspense, lazy, useCallback, useEffect, useState, type ErrorInfo, type ReactNode } from 'react'
+import { Component, Suspense, lazy, useCallback, useEffect, useState, useMemo, type ErrorInfo, type ReactNode } from 'react'
 import { Navigate, NavLink, Outlet, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom'
 import { api, isTauri, type PublicConfig } from './api'
 import LanguageToggle from './components/LanguageToggle'
@@ -57,6 +57,8 @@ type NavIconName =
   | 'growth'
   | 'account'
   | 'settings'
+  | 'skills'
+  | 'memory'
 
 const navIconPaths: Record<NavIconName, ReactNode> = {
   home: (
@@ -138,6 +140,22 @@ const navIconPaths: Record<NavIconName, ReactNode> = {
       <circle cx="9" cy="8.1" r="1.7" />
       <circle cx="15.2" cy="12" r="1.7" />
       <circle cx="11.4" cy="15.9" r="1.7" />
+    </>
+  ),
+  skills: (
+    <>
+      <path d="M7.2 5.6h9.6a1.7 1.7 0 0 1 1.7 1.7v9.4a1.7 1.7 0 0 1-1.7 1.7H7.2a1.7 1.7 0 0 1-1.7-1.7V7.3a1.7 1.7 0 0 1 1.7-1.7Z" />
+      <path d="M8.8 9.2h6.4" />
+      <path d="M8.8 12h4.8" />
+      <path d="M8.8 14.8h6.4" />
+      <path d="M16.5 5.6v12.8" />
+    </>
+  ),
+  memory: (
+    <>
+      <path d="M8.1 7.3a3.4 3.4 0 0 1 6.4-1.6 3.3 3.3 0 0 1 3.7 3.3 3.4 3.4 0 0 1-.8 2.2 3.6 3.6 0 0 1-1.7 6.7H8.3a3.6 3.6 0 0 1-1.7-6.7A3.4 3.4 0 0 1 8.1 7.3Z" />
+      <path d="M9.4 11.4h5.2" />
+      <path d="M10.2 14.1h3.6" />
     </>
   ),
 }
@@ -247,16 +265,80 @@ function App() {
   const [publicConfig, setPublicConfig] = useState<PublicConfig>({})
   const [loading, setLoading] = useState(true)
   const [userMenuOpen, setUserMenuOpen] = useState(false)
+  const [localConfig, setLocalConfig] = useState<any>(null)
+  const [teams, setTeams] = useState<any[]>([])
+  const [workspaceModalOpen, setWorkspaceModalOpen] = useState(false)
+  const [selectedTeamID, setSelectedTeamID] = useState<string>('')
+  const [desktopStartupError, setDesktopStartupError] = useState(false)
   const { tx } = useI18n()
   const navigate = useNavigate()
   const location = useLocation()
   const systemSettingsEnabled = !!publicConfig?.system_settings_enabled
   const localMode = !!publicConfig?.local_mode
+  const desktopConsoleHome = isTauri && localMode
+  const publicRegistrationEnabled = publicConfig?.public_registration_enabled !== false
   const currentUser = user || null
   const currentUserName = userDisplayName(currentUser, localMode, tx)
-  const currentUserHint = userDisplayHint(currentUser, localMode, tx)
+
+  const fetchWorkspaceInfo = useCallback(async () => {
+    if (!localMode || !currentUser) return
+    try {
+      const cfg = await api.getLocalConfig()
+      setLocalConfig(cfg)
+      const list = await api.getTeams()
+      setTeams(list)
+    } catch (err) {
+      console.error('Failed to load workspace info:', err)
+    }
+  }, [localMode, currentUser])
+
+  useEffect(() => {
+    void fetchWorkspaceInfo()
+  }, [fetchWorkspaceInfo])
+
+  const currentActiveTeam = useMemo(() => {
+    if (!localConfig) return null
+    try {
+      const parsed = JSON.parse(localConfig.raw)
+      const activeTeamID = parsed.profiles?.[parsed.current_profile || 'default']?.active_team_id || ''
+      if (!activeTeamID) return null
+      return teams.find((t: any) => t.id === activeTeamID) || null
+    } catch {
+      return null
+    }
+  }, [localConfig, teams])
+
+  const currentUserHint = useMemo(() => {
+    if (localMode && currentActiveTeam) {
+      const roleStr = currentActiveTeam.role === 'owner' ? tx('所有者', 'Owner') :
+                      currentActiveTeam.role === 'admin' ? tx('管理员', 'Admin') :
+                      currentActiveTeam.role === 'member' ? tx('成员', 'Member') :
+                      tx('观察员', 'Viewer')
+      return `${tx('团队：', 'Team: ')}${currentActiveTeam.name} (${roleStr})`
+    }
+    return userDisplayHint(currentUser, localMode, tx)
+  }, [currentUser, localMode, currentActiveTeam, tx])
+
+  useEffect(() => {
+    if (workspaceModalOpen) {
+      const currentActiveTeamID = currentActiveTeam?.id || ''
+      setSelectedTeamID(currentActiveTeamID)
+    }
+  }, [workspaceModalOpen, currentActiveTeam])
+
+  const handleConfirmWorkspaceSwitch = async () => {
+    try {
+      await api.updateLocalActiveWorkspace({ active_team_id: selectedTeamID })
+      setWorkspaceModalOpen(false)
+      window.location.reload()
+    } catch (err) {
+      console.error('Failed to switch workspace:', err)
+    }
+  }
+
   const currentUserInitial = currentUserName.slice(0, 1).toUpperCase()
   const importsHomePath = localMode ? '/imports/local-apps' : '/imports/claude-export'
+  const homePath = desktopConsoleHome ? '/codex-console' : '/'
 
   const checkAuth = useCallback(async () => {
     const clearAuthParamsFromURL = () => {
@@ -272,6 +354,7 @@ function App() {
     const authToken = params.get('auth_token')
     const authRefresh = params.get('auth_refresh')
     const localToken = params.get('local_token')
+    setDesktopStartupError(false)
     if (authToken) {
       localStorage.setItem('token', authToken)
       if (authRefresh) localStorage.setItem('refresh_token', authRefresh)
@@ -301,6 +384,7 @@ function App() {
           await new Promise((resolve) => setTimeout(resolve, 500))
           continue
         }
+        if (isTauri) setDesktopStartupError(true)
         setPublicConfig({})
         break
       }
@@ -429,8 +513,8 @@ function App() {
       try {
         const conns = await api.getConnections()
         if (active) setConnectionCount(conns.length)
-      } catch (err) {
-        console.error("Failed to load connections in sidebar:", err)
+      } catch {
+        if (active) setConnectionCount(0)
       }
     }
     void fetchConnections()
@@ -531,9 +615,36 @@ function App() {
     )
   }
 
+  if (!user && !localMode && isTauri) {
+    return (
+      <div className="loading-screen">
+        {!desktopStartupError && <div className="loading-spinner" />}
+        <h2 style={{ fontSize: '18px', fontWeight: 850, color: '#12192d', marginTop: '16px', marginBottom: '4px' }}>{PRODUCT_NAME}</h2>
+        <p style={{ fontSize: '13px', color: '#506074' }}>
+          {desktopStartupError
+            ? tx('本地数据服务暂时没有响应，请重试或重新打开 Vola。', 'The local data service is not responding. Try again or reopen Vola.')
+            : tx('正在准备桌面控制台...', 'Preparing desktop console...')}
+        </p>
+        {desktopStartupError && (
+          <button
+            className="btn btn-primary"
+            type="button"
+            onClick={() => {
+              setLoading(true)
+              void checkAuth()
+            }}
+          >
+            {tx('重试', 'Retry')}
+          </button>
+        )}
+      </div>
+    )
+  }
+
   if (!user && !localMode) {
     const protectedSignupRedirect = `/signup?redirect=${encodeURIComponent(location.pathname + location.search)}`
     const protectedLoginRedirect = `/login?redirect=${encodeURIComponent(location.pathname + location.search)}`
+    const signupTarget = publicRegistrationEnabled ? protectedSignupRedirect : protectedLoginRedirect
     return (
       <RouteErrorBoundary key={location.key} fallback={routeErrorFallback}>
       <Suspense fallback={routeFallback}>
@@ -547,9 +658,9 @@ function App() {
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/login" element={<LoginPage />} />
-          <Route path="/signup" element={<SignupPage />} />
-          <Route path="/onboarding/*" element={<Navigate to={protectedSignupRedirect} replace />} />
-          <Route path="/plan" element={<Navigate to={protectedSignupRedirect} replace />} />
+          <Route path="/signup" element={<SignupPage publicRegistrationEnabled={publicRegistrationEnabled} />} />
+          <Route path="/onboarding/*" element={<Navigate to={signupTarget} replace />} />
+          <Route path="/plan" element={<Navigate to={signupTarget} replace />} />
           <Route path="*" element={<Navigate to={protectedLoginRedirect} replace />} />
         </Routes>
       </Suspense>
@@ -558,6 +669,12 @@ function App() {
   }
 
   const showGitHubBackup = localMode || !!publicConfig?.github_enabled || !!publicConfig?.github_app_enabled
+  const isAdvancedNavRoute =
+    location.pathname.startsWith('/settings/developer-access') ||
+    location.pathname.startsWith('/settings/developer') ||
+    location.pathname.startsWith('/cli') ||
+    location.pathname.startsWith('/codex-console') ||
+    location.pathname.startsWith('/settings/security')
   const isSyncLoginRoute = location.pathname === '/sync/login'
   const isLegacySyncLoginRoute =
     location.pathname === '/data/sync' &&
@@ -582,28 +699,53 @@ function App() {
         </div>
 
         <nav className="sidebar-nav">
-          <div className="sidebar-group-header">{tx('核心与引导', 'Core & Setup')}</div>
+          <div className="sidebar-group-header">{tx('日常任务', 'Daily Work')}</div>
 
-          <NavLink to="/" end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+          <NavLink to={homePath} end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <NavIcon name="home" />
-            <span>{tx('数据概览', 'Home')}</span>
+            <span>{desktopConsoleHome ? 'Codex Console' : tx('今日概览', 'Today')}</span>
           </NavLink>
 
           <NavLink to="/setup/mcp" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <NavIcon name="settings" />
-            <span>{tx('新手接入指南', 'Get Started')}</span>
+            <span>{tx('连接 AI 工具', 'Connect AI')}</span>
             {connectionCount !== null && (
               connectionCount > 0 ? (
                 <span className="nav-item-badge badge-online" title={tx('AI 已就绪', 'AI Connected')}>
-                  {tx('已连接', 'Linked')}
+                  {tx('已连', 'Linked')}
                 </span>
               ) : (
                 <span className="nav-item-badge badge-offline" title={tx('未连接 AI', 'No AI Connected')}>
-                  {tx('未连接', 'Offline')}
+                  {tx('未连', 'Offline')}
                 </span>
               )
             )}
           </NavLink>
+
+          {localMode && (
+            <NavLink to={importsHomePath} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavIcon name="import" />
+              <span>{tx('导入资料', 'Import Data')}</span>
+            </NavLink>
+          )}
+
+          <NavLink to="/skills" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="skills" />
+            <span>{tx('技能库', 'Skills')}</span>
+          </NavLink>
+
+          <NavLink to="/memory" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="memory" />
+            <span>{tx('记忆', 'Memory')}</span>
+          </NavLink>
+
+          <NavLink to="/growth-proposals" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="growth" />
+            <span>{tx('优化建议', 'Suggestions')}</span>
+          </NavLink>
+
+          <div className="sidebar-divider" />
+          <div className="sidebar-group-header">{tx('同步与协作', 'Sync & Team')}</div>
 
           {localMode && (
             <NavLink to="/settings/profile#cloud-account" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
@@ -612,52 +754,17 @@ function App() {
             </NavLink>
           )}
 
-          <NavLink to="/growth-proposals" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <NavIcon name="growth" />
-            <span>{tx('成长提案', 'Growth Proposals')}</span>
-          </NavLink>
-
-          <div className="sidebar-divider" />
-          <div className="sidebar-group-header">{tx('集成与开发', 'Integrations & Dev')}</div>
-
-          <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <NavIcon name="developer" />
-            <span>{tx('开发者访问', 'Developer Access')}</span>
-          </NavLink>
-
-          <NavLink to="/cli" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <NavIcon name="cli" />
-            <span>{tx('命令行工具', 'Command Line')}</span>
-          </NavLink>
-
-          {localMode && (
-            <NavLink to={importsHomePath} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <NavIcon name="import" />
-              <span>{tx('本地 App Data 导入', 'Local App Data Import')}</span>
-            </NavLink>
-          )}
-
-          {localMode && (
-            <NavLink to="/codex-console" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <NavIcon name="cli" />
-              <span>Codex Console</span>
-            </NavLink>
-          )}
-
-          {localMode && (
-            <NavLink to="/mcp-hub" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <NavIcon name="mcp" />
-              <span>{tx('MCP 控制中心', 'MCP Hub')}</span>
-            </NavLink>
-          )}
-
-          <div className="sidebar-divider" />
-          <div className="sidebar-group-header">{tx('协作与管理', 'Sync & Collab')}</div>
-
           <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <NavIcon name="team" />
             <span>{tx('团队资料', 'Team Library')}</span>
           </NavLink>
+
+          {localMode && (
+            <NavLink to="/mcp-hub" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavIcon name="mcp" />
+              <span>{tx('本机同步', 'Local Sync')}</span>
+            </NavLink>
+          )}
 
           {showGitHubBackup && (
             <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
@@ -666,12 +773,34 @@ function App() {
             </NavLink>
           )}
 
-          {systemSettingsEnabled && (
-            <NavLink to="/settings/security" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <NavIcon name="settings" />
-              <span>{tx('系统设置', 'System Settings')}</span>
-            </NavLink>
-          )}
+          <div className="sidebar-divider" />
+          <div className="nav-group">
+            <details open={isAdvancedNavRoute || undefined}>
+              <summary className={isAdvancedNavRoute ? 'nav-item nav-item-button active' : 'nav-item nav-item-button'}>
+                <NavIcon name="developer" />
+                <span>{tx('高级工具', 'Advanced')}</span>
+                <span className="nav-group-caret">›</span>
+              </summary>
+              <div className="nav-submenu">
+                <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                  {tx('开发者访问', 'Developer Access')}
+                </NavLink>
+                <NavLink to="/cli" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                  {tx('命令行工具', 'Command Line')}
+                </NavLink>
+                {localMode && !desktopConsoleHome && (
+                  <NavLink to="/codex-console" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                    Codex Console
+                  </NavLink>
+                )}
+                {systemSettingsEnabled && (
+                  <NavLink to="/settings/security" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                    {tx('系统设置', 'System Settings')}
+                  </NavLink>
+                )}
+              </div>
+            </details>
+          </div>
         </nav>
 
         <div className="sidebar-footer">
@@ -696,6 +825,11 @@ function App() {
                 <NavLink to="/settings/profile" role="menuitem" onClick={() => setUserMenuOpen(false)}>
                   {tx('个人资料', 'Profile')}
                 </NavLink>
+                {localMode && (
+                  <button type="button" role="menuitem" onClick={() => { setWorkspaceModalOpen(true); setUserMenuOpen(false); }}>
+                    {tx('切换空间', 'Switch Workspace')}
+                  </button>
+                )}
                 <button type="button" role="menuitem" onClick={() => { void handleLogout() }}>
                   {tx('退出', 'Sign out')}
                 </button>
@@ -709,7 +843,7 @@ function App() {
         <RouteErrorBoundary key={location.pathname} fallback={routeErrorFallback}>
         <Suspense fallback={routeFallback}>
           <Routes>
-            <Route path="/" element={<DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} />} />
+            <Route path="/" element={desktopConsoleHome ? <Navigate to="/codex-console" replace /> : <DashboardPage systemSettingsEnabled={systemSettingsEnabled} localMode={localMode} />} />
             <Route path="/plan" element={<Navigate to="/onboarding" replace />} />
             <Route path="/onboarding" element={<Navigate to="/setup/mcp" replace />} />
             <Route path="/onboarding/:platform" element={<LegacyOnboardingRedirect />} />
@@ -788,6 +922,80 @@ function App() {
         </Suspense>
         </RouteErrorBoundary>
       </main>
+      {workspaceModalOpen && (
+        <div className="modal-backdrop" onClick={() => setWorkspaceModalOpen(false)}>
+          <div className="modal-container workspace-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{tx('切换工作空间', 'Switch Workspace')}</h3>
+              <button className="modal-close-btn" onClick={() => setWorkspaceModalOpen(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <p className="modal-desc">{tx('选择要在本地激活的团队或个人工作空间：', 'Select the team or personal workspace to activate locally:')}</p>
+              <div className="workspace-list">
+                {/* 个人空间 */}
+                <div
+                  className={`workspace-item ${!selectedTeamID ? 'active' : ''}`}
+                  onClick={() => setSelectedTeamID('')}
+                >
+                  <div className="workspace-icon personal-icon">👤</div>
+                  <div className="workspace-info">
+                    <div className="workspace-name">{tx('个人空间', 'Personal Workspace')}</div>
+                    <div className="workspace-role">{tx('默认空间', 'Default')}</div>
+                  </div>
+                  <div className="workspace-radio">
+                    <input
+                      type="radio"
+                      checked={!selectedTeamID}
+                      onChange={() => setSelectedTeamID('')}
+                    />
+                  </div>
+                </div>
+
+                {/* 团队空间列表 */}
+                {teams.map((t: any) => (
+                  <div
+                    key={t.id}
+                    className={`workspace-item ${selectedTeamID === t.id ? 'active' : ''}`}
+                    onClick={() => setSelectedTeamID(t.id)}
+                  >
+                    <div className="workspace-icon team-icon">👥</div>
+                    <div className="workspace-info">
+                      <div className="workspace-name">{t.name}</div>
+                      <div className="workspace-role">
+                        {t.role === 'owner' ? tx('所有者', 'Owner') :
+                         t.role === 'admin' ? tx('管理员', 'Admin') :
+                         t.role === 'member' ? tx('成员', 'Member') :
+                         tx('观察员', 'Viewer')}
+                      </div>
+                    </div>
+                    <div className="workspace-radio">
+                      <input
+                        type="radio"
+                        checked={selectedTeamID === t.id}
+                        onChange={() => setSelectedTeamID(t.id)}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button
+                className="btn btn-secondary"
+                onClick={() => setWorkspaceModalOpen(false)}
+              >
+                {tx('取消', 'Cancel')}
+              </button>
+              <button
+                className="btn btn-primary"
+                onClick={handleConfirmWorkspaceSwitch}
+              >
+                {tx('确认切换', 'Switch')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

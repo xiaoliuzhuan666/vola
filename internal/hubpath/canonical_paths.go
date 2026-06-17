@@ -33,6 +33,22 @@ func ProjectLogPath(name string) string {
 	return path.Join(ProjectDir(name), "log.jsonl")
 }
 
+func ProjectMaterialsDir(name string) string {
+	return path.Join(ProjectDir(name), "materials") + "/"
+}
+
+func ProjectMaterialPath(name, slug string) string {
+	return path.Join(ProjectMaterialsDir(name), sanitizeSegment(slug, "material")+".md")
+}
+
+func ProjectContextPacksDir(name string) string {
+	return path.Join(ProjectDir(name), "context-packs") + "/"
+}
+
+func ProjectContextPackPath(name, slug string) string {
+	return path.Join(ProjectContextPacksDir(name), sanitizeSegment(slug, "context-pack")+".md")
+}
+
 func SkillDocPath(name string) string {
 	return fmt.Sprintf("/skills/%s/SKILL.md", sanitizeSegment(name, "skill"))
 }

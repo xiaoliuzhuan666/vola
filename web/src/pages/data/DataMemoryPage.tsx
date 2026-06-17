@@ -3,9 +3,18 @@ import { Link, useNavigate } from 'react-router-dom'
 import { api, type FileNode, type MemoryConflict } from '../../api'
 import GitHubTreeList from '../../components/GitHubTreeList'
 import { useI18n } from '../../i18n'
-import { dataFileEditorRoute, formatDateTime, sourceLabel } from './DataShared'
+import { dataFileEditorRoute, dataProjectBundleRoute, formatDateTime, projectSource, sourceLabel } from './DataShared'
 
 type MemoryTab = 'profile' | 'project' | 'scratch' | 'conflicts'
+
+interface MemoryProject {
+  name: string
+  status: string
+  description?: string
+  last_activity?: string
+  updated_at?: string
+  metadata?: Record<string, any>
+}
 
 function titleFromPath(path: string) {
   return path.split('/').pop()?.replace(/\.md$/i, '').replace(/[-_]+/g, ' ') || path
@@ -16,7 +25,7 @@ export default function DataMemoryPage() {
   const navigate = useNavigate()
   const [tab, setTab] = useState<MemoryTab>('profile')
   const [profileEntries, setProfileEntries] = useState<FileNode[]>([])
-  const [projectEntries, setProjectEntries] = useState<FileNode[]>([])
+  const [projectEntries, setProjectEntries] = useState<MemoryProject[]>([])
   const [scratch, setScratch] = useState('')
   const [conflicts, setConflicts] = useState<MemoryConflict[]>([])
   const [loading, setLoading] = useState(true)
@@ -30,12 +39,12 @@ export default function DataMemoryPage() {
     setError('')
     const [profileResult, projectsResult, scratchResult, conflictsResult] = await Promise.allSettled([
       api.getTreeSnapshot('/memory/profile'),
-      api.getTreeSnapshot('/projects'),
+      api.getProjects(),
       api.getScratchMemory(),
       api.getConflicts(),
     ])
     if (profileResult.status === 'fulfilled') setProfileEntries(profileResult.value.entries.filter((entry) => !entry.is_dir))
-    if (projectsResult.status === 'fulfilled') setProjectEntries(projectsResult.value.entries)
+    if (projectsResult.status === 'fulfilled') setProjectEntries((projectsResult.value || []).filter((entry: MemoryProject) => entry?.name))
     if (scratchResult.status === 'fulfilled') {
       const value = scratchResult.value?.content || scratchResult.value?.scratch || scratchResult.value?.text || ''
       setScratch(typeof value === 'string' ? value : JSON.stringify(value, null, 2))
@@ -147,9 +156,9 @@ export default function DataMemoryPage() {
       {tab === 'project' && (
         <section className="memory-list">
           {projectEntries.map((entry) => (
-            <Link key={entry.path} to={entry.is_dir ? `/data/projects/${encodeURIComponent(entry.name)}` : dataFileEditorRoute(entry.path)} className="memory-row">
-              <strong>{titleFromPath(entry.path)}</strong>
-              <span>{entry.is_dir ? tx('项目', 'Project') : sourceLabel(entry.source, locale)} · {formatDateTime(entry.updated_at || entry.created_at, locale)}</span>
+            <Link key={entry.name} to={dataProjectBundleRoute(entry.name)} className="memory-row">
+              <strong>{entry.name}</strong>
+              <span>{sourceLabel(projectSource(entry), locale)} · {formatDateTime(entry.last_activity || entry.updated_at, locale)}</span>
             </Link>
           ))}
           {projectEntries.length === 0 && <div className="empty-action-state"><p>{tx('还没有项目记忆。', 'No project memory yet.')}</p><Link to="/data/projects" className="btn btn-primary">{tx('创建项目', 'Create project')}</Link></div>}

@@ -276,6 +276,9 @@ func TestToolsList(t *testing.T) {
 	expectedTools := []string{
 		"read_profile", "update_profile", "search_memory",
 		"list_projects", "get_project", "log_action",
+		"save_project_material", "list_project_materials", "copy_project_material",
+		"build_project_context_pack", "list_project_context_packs", "read_project_context_pack",
+		"build_project_repository_export",
 		"list_directory", "read_file", "write_file",
 		"list_secrets", "read_secret",
 		"list_skills", "read_skill",

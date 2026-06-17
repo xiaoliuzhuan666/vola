@@ -61,7 +61,7 @@ func TestMcpHealthCheckerAndEndpoint(t *testing.T) {
 		},
 		JWTSecret: testJWTSecret,
 	})
-	
+
 	req := httptest.NewRequest(http.MethodGet, "/api/local/mcp/health", nil)
 	req.Header.Set("Authorization", "Bearer "+generateTestJWT())
 	w := httptest.NewRecorder()

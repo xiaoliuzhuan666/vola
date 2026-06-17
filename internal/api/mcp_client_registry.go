@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/agi-bar/vola/internal/platforms"
 	"github.com/agi-bar/vola/internal/runtimecfg"
 )
 
@@ -107,40 +108,23 @@ func (s *Server) handleLocalMCPClientsRegister(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// 3. 读取并修改 config
-	var configMap map[string]interface{}
-	data, err := os.ReadFile(claudePath)
-	if err == nil {
-		_ = json.Unmarshal(data, &configMap)
-	}
-	if configMap == nil {
-		configMap = make(map[string]interface{})
-	}
-
-	mcpServers, ok := configMap["mcpServers"].(map[string]interface{})
-	if !ok {
-		mcpServers = make(map[string]interface{})
-		configMap["mcpServers"] = mcpServers
-	}
-
-	mcpServers["vola"] = map[string]interface{}{
-		"command": exePath,
-		"args":    []string{"mcp", "stdio", "--token", ownerToken},
-	}
-
-	// 4. 写回配置文件，确保父目录存在
-	if err := os.MkdirAll(filepath.Dir(claudePath), 0755); err != nil {
-		respondInternalError(w, err)
-		return
-	}
-
-	newData, err := json.MarshalIndent(configMap, "", "  ")
+	// 3. 使用 SafeUpdateMcpConfig 安全修改 config 并不把明文 token 曝露在 args 命令行里
+	err = platforms.SafeUpdateMcpConfig(claudePath, func(configMap map[string]interface{}) error {
+		mcpServers, ok := configMap["mcpServers"].(map[string]interface{})
+		if !ok {
+			mcpServers = make(map[string]interface{})
+			configMap["mcpServers"] = mcpServers
+		}
+		mcpServers["vola"] = map[string]interface{}{
+			"command": exePath,
+			"args":    []string{"mcp", "stdio", "--token-env", "VOLA_TOKEN"},
+			"env": map[string]string{
+				"VOLA_TOKEN": ownerToken,
+			},
+		}
+		return nil
+	})
 	if err != nil {
-		respondInternalError(w, err)
-		return
-	}
-
-	if err := os.WriteFile(claudePath, newData, 0644); err != nil {
 		respondInternalError(w, err)
 		return
 	}
@@ -171,34 +155,19 @@ func (s *Server) handleLocalMCPClientsUnregister(w http.ResponseWriter, r *http.
 		return
 	}
 
-	data, err := os.ReadFile(claudePath)
+	// 使用 SafeUpdateMcpConfig 安全注销
+	err = platforms.SafeUpdateMcpConfig(claudePath, func(configMap map[string]interface{}) error {
+		mcpServers, ok := configMap["mcpServers"].(map[string]interface{})
+		if ok {
+			delete(mcpServers, "vola")
+		}
+		return nil
+	})
 	if err != nil {
 		if os.IsNotExist(err) {
 			respondOK(w, map[string]interface{}{"success": true})
 			return
 		}
-		respondInternalError(w, err)
-		return
-	}
-
-	var configMap map[string]interface{}
-	if err := json.Unmarshal(data, &configMap); err != nil {
-		respondInternalError(w, err)
-		return
-	}
-
-	mcpServers, ok := configMap["mcpServers"].(map[string]interface{})
-	if ok {
-		delete(mcpServers, "vola")
-	}
-
-	newData, err := json.MarshalIndent(configMap, "", "  ")
-	if err != nil {
-		respondInternalError(w, err)
-		return
-	}
-
-	if err := os.WriteFile(claudePath, newData, 0644); err != nil {
 		respondInternalError(w, err)
 		return
 	}

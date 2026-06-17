@@ -38,6 +38,7 @@ POSTGRES_USER=vola
 POSTGRES_PASSWORD=<server secret>
 JWT_SECRET=<server secret>
 VAULT_MASTER_KEY=<server secret>
+INSTANCE_ADMIN_USER_IDS=<operator user uuid>
 PUBLIC_BASE_URL=http://127.0.0.1:18080
 CORS_ORIGINS=http://127.0.0.1:18080
 ```

@@ -1,6 +1,10 @@
 package config
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/google/uuid"
+)
 
 func TestLoadWithOverridesDefaultsUserStorageQuotaTo100MB(t *testing.T) {
 	cfg, err := LoadWithOverrides(map[string]string{
@@ -64,6 +68,76 @@ func TestLoadWithOverridesRejectsInvalidGitMirrorManualSyncCooldown(t *testing.T
 	})
 	if err == nil {
 		t.Fatal("LoadWithOverrides succeeded for invalid Git Mirror manual sync cooldown")
+	}
+}
+
+func TestLoadWithOverridesParsesInstanceAdminUserIDs(t *testing.T) {
+	first := uuid.MustParse("11111111-1111-1111-1111-111111111111")
+	second := uuid.MustParse("22222222-2222-2222-2222-222222222222")
+	cfg, err := LoadWithOverrides(map[string]string{
+		"JWT_SECRET":              "secret",
+		"VAULT_MASTER_KEY":        "vault",
+		"INSTANCE_ADMIN_USER_IDS": first.String() + ", " + second.String() + "\n" + first.String(),
+	})
+	if err != nil {
+		t.Fatalf("LoadWithOverrides: %v", err)
+	}
+	if len(cfg.InstanceAdminUserIDs) != 2 || cfg.InstanceAdminUserIDs[0] != first || cfg.InstanceAdminUserIDs[1] != second {
+		t.Fatalf("InstanceAdminUserIDs = %#v", cfg.InstanceAdminUserIDs)
+	}
+}
+
+func TestLoadWithOverridesRejectsInvalidInstanceAdminUserID(t *testing.T) {
+	_, err := LoadWithOverrides(map[string]string{
+		"JWT_SECRET":              "secret",
+		"VAULT_MASTER_KEY":        "vault",
+		"INSTANCE_ADMIN_USER_IDS": "not-a-uuid",
+	})
+	if err == nil {
+		t.Fatal("LoadWithOverrides succeeded for invalid instance admin user id")
+	}
+}
+
+func TestLoadWithOverridesPublicRegistrationDefaults(t *testing.T) {
+	localCfg, err := LoadWithOverrides(map[string]string{
+		"JWT_SECRET":       "secret",
+		"VAULT_MASTER_KEY": "vault",
+		"PUBLIC_BASE_URL":  "http://127.0.0.1:18080",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithOverrides local: %v", err)
+	}
+	if !localCfg.EnablePublicRegistration {
+		t.Fatal("EnablePublicRegistration = false for local base URL, want true")
+	}
+
+	publicCfg, err := LoadWithOverrides(map[string]string{
+		"DATABASE_URL":     "postgres://vola:prod-password@db:5432/vola?sslmode=disable",
+		"JWT_SECRET":       "prod-jwt-secret",
+		"VAULT_MASTER_KEY": "prod-vault-key",
+		"PUBLIC_BASE_URL":  "https://vola.example.com",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithOverrides public: %v", err)
+	}
+	if publicCfg.EnablePublicRegistration {
+		t.Fatal("EnablePublicRegistration = true for public base URL, want false")
+	}
+}
+
+func TestLoadWithOverridesPublicRegistrationOverride(t *testing.T) {
+	cfg, err := LoadWithOverrides(map[string]string{
+		"DATABASE_URL":                    "postgres://vola:prod-password@db:5432/vola?sslmode=disable",
+		"JWT_SECRET":                      "prod-jwt-secret",
+		"VAULT_MASTER_KEY":                "prod-vault-key",
+		"PUBLIC_BASE_URL":                 "https://vola.example.com",
+		"VOLA_ENABLE_PUBLIC_REGISTRATION": "true",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithOverrides: %v", err)
+	}
+	if !cfg.EnablePublicRegistration {
+		t.Fatal("EnablePublicRegistration = false, want true")
 	}
 }
 
@@ -172,6 +246,7 @@ func TestLoadWithOverridesRejectsInvalidBooleanConfig(t *testing.T) {
 		"TENCENT_COS_PATH_STYLE",
 		"VOLA_ENABLE_SYSTEM_SETTINGS",
 		"VOLA_ENABLE_BILLING",
+		"VOLA_ENABLE_PUBLIC_REGISTRATION",
 		"VOLA_CAPTURE_OAUTH",
 	} {
 		t.Run(key, func(t *testing.T) {
@@ -221,5 +296,89 @@ func TestLoadWithOverridesRejectsIncompleteCOSConfig(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("LoadWithOverrides succeeded for incomplete COS config")
+	}
+}
+
+func TestLoadWithOverridesAllowsDevelopmentDefaultsForLocalPublicBaseURL(t *testing.T) {
+	_, err := LoadWithOverrides(map[string]string{
+		"DATABASE_URL":     "postgres://vola:vola_dev@db:5432/vola?sslmode=disable",
+		"JWT_SECRET":       developmentJWTSecret,
+		"VAULT_MASTER_KEY": developmentVaultMasterKey,
+		"PUBLIC_BASE_URL":  "http://127.0.0.1:18080",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithOverrides rejected local development defaults: %v", err)
+	}
+}
+
+func TestLoadWithOverridesRejectsDevelopmentDefaultsForPublicBaseURL(t *testing.T) {
+	cases := []struct {
+		name      string
+		overrides map[string]string
+	}{
+		{
+			name: "jwt secret",
+			overrides: map[string]string{
+				"DATABASE_URL":     "postgres://vola:prod-password@db:5432/vola?sslmode=disable",
+				"JWT_SECRET":       developmentJWTSecret,
+				"VAULT_MASTER_KEY": "prod-vault-key",
+				"PUBLIC_BASE_URL":  "https://www.vola.ai",
+			},
+		},
+		{
+			name: "sqlite jwt secret",
+			overrides: map[string]string{
+				"DATABASE_URL":     "postgres://vola:prod-password@db:5432/vola?sslmode=disable",
+				"JWT_SECRET":       localSQLiteJWTSecret,
+				"VAULT_MASTER_KEY": "prod-vault-key",
+				"PUBLIC_BASE_URL":  "https://www.vola.ai",
+			},
+		},
+		{
+			name: "vault master key",
+			overrides: map[string]string{
+				"DATABASE_URL":     "postgres://vola:prod-password@db:5432/vola?sslmode=disable",
+				"JWT_SECRET":       "prod-jwt-secret",
+				"VAULT_MASTER_KEY": developmentVaultMasterKey,
+				"PUBLIC_BASE_URL":  "https://www.vola.ai",
+			},
+		},
+		{
+			name: "database url",
+			overrides: map[string]string{
+				"JWT_SECRET":       "prod-jwt-secret",
+				"VAULT_MASTER_KEY": "prod-vault-key",
+				"PUBLIC_BASE_URL":  "https://www.vola.ai",
+			},
+		},
+		{
+			name: "postgres password",
+			overrides: map[string]string{
+				"DATABASE_URL":     "postgres://vola:vola_dev@db:5432/vola?sslmode=disable",
+				"JWT_SECRET":       "prod-jwt-secret",
+				"VAULT_MASTER_KEY": "prod-vault-key",
+				"PUBLIC_BASE_URL":  "https://www.vola.ai",
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := LoadWithOverrides(tc.overrides); err == nil {
+				t.Fatal("LoadWithOverrides succeeded with development defaults for public base URL")
+			}
+		})
+	}
+}
+
+func TestLoadWithOverridesAllowsProductionSecretsForPublicBaseURL(t *testing.T) {
+	_, err := LoadWithOverrides(map[string]string{
+		"DATABASE_URL":     "postgres://vola:prod-password@db:5432/vola?sslmode=disable",
+		"JWT_SECRET":       "prod-jwt-secret",
+		"VAULT_MASTER_KEY": "prod-vault-key",
+		"PUBLIC_BASE_URL":  "https://www.vola.ai",
+	})
+	if err != nil {
+		t.Fatalf("LoadWithOverrides rejected production config: %v", err)
 	}
 }

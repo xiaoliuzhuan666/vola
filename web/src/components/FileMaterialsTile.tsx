@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { DragEvent, MouseEvent, ReactNode } from 'react'
 import type { FileNode } from '../api'
 import { useI18n } from '../i18n'
 import MaterialsTile, { type MaterialsTileSelectOptions } from './MaterialsTile'
@@ -25,6 +25,9 @@ type FileMaterialsTileProps = {
   onMenuToggle?: () => void
   onSelect?: (options: MaterialsTileSelectOptions) => void
   onOpen?: () => void
+  draggable?: boolean
+  onDragStart?: (event: DragEvent<HTMLDivElement>) => void
+  onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void
 }
 
 function meaningfulKind(kind?: string) {
@@ -56,6 +59,9 @@ export default function FileMaterialsTile({
   onMenuToggle,
   onSelect,
   onOpen,
+  draggable,
+  onDragStart,
+  onContextMenu,
 }: FileMaterialsTileProps) {
   const { tx } = useI18n()
   const kind = meaningfulKind(node.kind)
@@ -90,6 +96,9 @@ export default function FileMaterialsTile({
       onMenuToggle={onMenuToggle}
       onSelect={onSelect}
       onOpen={onOpen}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onContextMenu={onContextMenu}
     />
   )
 }

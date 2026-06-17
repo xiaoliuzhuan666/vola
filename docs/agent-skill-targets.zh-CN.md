@@ -7,7 +7,7 @@
 | Agent | 当前状态 | 本地写入 | 导出包 |
 | --- | --- | --- | --- |
 | Claude Code | 可自动同步 | `~/.claude/skills` | 支持 |
-| Codex | 可自动同步 | `~/.codex/skills` | 支持 |
+| Codex | 可自动同步 | `~/.agents/skills` | 支持 |
 | Cursor | 可分配、可导出、暂不自动写入 | 不自动写入 | 支持 |
 | Gemini CLI | 可分配、可导出、暂不自动写入 | 不自动写入 | 支持 |
 
@@ -21,7 +21,7 @@
 
 ## Codex
 
-- 默认目标目录是 `~/.codex/skills`。
+- 默认目标目录是 `~/.agents/skills`。
 - 行为与 Claude Code 一致：只写分配 Skill，只更新带 `.vola-managed.json` 的目录。
 - 从 Claude Code 转换到 Codex 的简单 Skill，可以进入 `/skills/<name>-codex`，再通过本地同步写入 Codex Skill 目录。
 
@@ -56,6 +56,15 @@
 - `.vola-managed.json` 是更新和清理的判断依据。
 - 同名目录如果不是 Vola 管理，预览会显示冲突，应用时不会写入。
 - 清理只处理已取消分配且带 Vola 标记的目录，不删除用户手工创建的 Skill。
+
+## 团队资产到本机
+
+- Codex 和 Claude Code 支持团队 Skill 自动同步到本地管理目录。
+- Codex 和 Claude Code 的团队 MCP 可通过本机同步入口刷新到当前机器的客户端配置。
+- Cursor 和 Gemini CLI 只做导出预览或导出包，不自动写本机配置。
+- 同名但不是 Vola 管理的本机目录不会被覆盖。
+- Team Library 和 MCP Hub 会显示每个平台的状态、同步模式、配置路径和下一步动作；状态接口为 `GET /api/local/tools/status`。
+- 团队 Skill 可以带版本号、发布说明、标签、发布状态和审查状态；这些信息只影响展示和同步判断，不绕过本机写入规则。
 
 ## 当前验证证据
 

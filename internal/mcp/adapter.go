@@ -370,6 +370,92 @@ func (s *MCPServer) getTools() []MCPTool {
 			}, "project", "action", "summary"),
 		},
 		{
+			Name:        "save_project_material",
+			Description: "保存项目资料到 Vola，让 AI 后续可按项目读取；适合保存后端 Markdown、接口说明、评审结论等",
+			InputSchema: jsonSchema(map[string]interface{}{
+				"project":           prop("string", "项目名称"),
+				"title":             prop("string", "资料标题"),
+				"slug":              prop("string", "可选文件名 slug"),
+				"content":           prop("string", "Markdown 正文"),
+				"source_url":        prop("string", "原始文档链接，可选"),
+				"source_type":       prop("string", "来源类型，如 markdown / url / handoff / api-doc"),
+				"description":       prop("string", "简短说明，可选"),
+				"tags":              propArray("string", "标签"),
+				"source_updated_at": prop("string", "原文更新时间，可选"),
+				"repository_path":   prop("string", "建议提交到代码仓库内的路径，如 docs/ai-context/materials/backend-api.md"),
+				"source":            prop("string", "来源（可选，建议直接传平台名，如 codex / cursor / chatgpt）"),
+				"source_platform":   prop("string", "更具体的平台来源（可选，优先级高于 source）"),
+			}, "project", "title", "content"),
+		},
+		{
+			Name:        "list_project_materials",
+			Description: "列出某个项目里已保存的资料",
+			InputSchema: jsonSchema(map[string]interface{}{
+				"project": prop("string", "项目名称"),
+			}, "project"),
+		},
+		{
+			Name:        "copy_project_material",
+			Description: "把 Vola 文件树中已有的 Markdown 文件复制到指定项目资料库；适合从 /projects、/memory、/conversations 中整理协作资料",
+			InputSchema: jsonSchema(map[string]interface{}{
+				"project":           prop("string", "项目名称"),
+				"source_path":       prop("string", "已有 Markdown 文件路径"),
+				"title":             prop("string", "资料标题，可选"),
+				"slug":              prop("string", "可选文件名 slug"),
+				"source_url":        prop("string", "原始文档链接，可选"),
+				"description":       prop("string", "简短说明，可选"),
+				"tags":              propArray("string", "标签"),
+				"repository_path":   prop("string", "建议提交到代码仓库内的路径"),
+				"source_updated_at": prop("string", "原文更新时间，可选"),
+				"source":            prop("string", "来源（可选，建议直接传平台名，如 codex / cursor / chatgpt）"),
+				"source_platform":   prop("string", "更具体的平台来源（可选，优先级高于 source）"),
+			}, "project", "source_path"),
+		},
+		{
+			Name:        "build_project_context_pack",
+			Description: "把项目 context、最近日志和选定资料生成一份 AI 上下文包，适合交给 Codex/Claude 开始工作前读取",
+			InputSchema: jsonSchema(map[string]interface{}{
+				"project":             prop("string", "项目名称"),
+				"title":               prop("string", "上下文包标题"),
+				"slug":                prop("string", "可选文件名 slug"),
+				"purpose":             prop("string", "用途说明"),
+				"material_paths":      propArray("string", "要包含的资料路径；空则包含全部项目资料"),
+				"include_context":     prop("boolean", "是否包含项目 context，默认 true"),
+				"include_recent_logs": prop("boolean", "是否包含最近日志，默认 true"),
+				"recent_log_limit":    prop("integer", "最近日志条数，默认 20"),
+				"repository_dir":      prop("string", "建议仓库目录，默认 docs/ai-context/context-packs"),
+				"repository_filename": prop("string", "建议仓库文件名，可选"),
+				"source":              prop("string", "来源（可选，建议直接传平台名，如 codex / cursor / chatgpt）"),
+				"source_platform":     prop("string", "更具体的平台来源（可选，优先级高于 source）"),
+			}, "project", "title"),
+		},
+		{
+			Name:        "list_project_context_packs",
+			Description: "列出某个项目已生成的 AI 上下文包",
+			InputSchema: jsonSchema(map[string]interface{}{
+				"project": prop("string", "项目名称"),
+			}, "project"),
+		},
+		{
+			Name:        "read_project_context_pack",
+			Description: "读取项目 AI 上下文包正文；pack 可传 slug 或完整 /projects/.../context-packs/*.md 路径",
+			InputSchema: jsonSchema(map[string]interface{}{
+				"project": prop("string", "项目名称"),
+				"pack":    prop("string", "上下文包 slug 或路径"),
+			}, "project", "pack"),
+		},
+		{
+			Name:        "build_project_repository_export",
+			Description: "生成可提交到代码仓库的项目资料 Markdown 文件列表；用于团队协作时把 Vola 项目资料同步进 Git",
+			InputSchema: jsonSchema(map[string]interface{}{
+				"project":        prop("string", "项目名称"),
+				"repository_dir": prop("string", "仓库内目录，默认 docs/ai-context"),
+				"material_paths": propArray("string", "要导出的资料路径；空则导出全部"),
+				"pack_paths":     propArray("string", "要导出的上下文包路径；空则导出全部"),
+				"include_index":  prop("boolean", "是否生成 README.md 索引，默认 true"),
+			}, "project"),
+		},
+		{
 			Name:        "list_directory",
 			Description: "列出文件树中的目录内容；传 scope=team 和 team_id/team 可读取团队 Hub",
 			InputSchema: jsonSchema(map[string]interface{}{
@@ -512,7 +598,9 @@ func (s *MCPServer) getTools() []MCPTool {
 func (s *MCPServer) supportsTool(name string) bool {
 	switch name {
 	case "read_profile", "update_profile", "search_memory", "list_projects", "create_project",
-		"get_project", "log_action", "list_directory", "read_file", "write_file",
+		"get_project", "log_action", "save_project_material", "list_project_materials",
+		"copy_project_material", "build_project_context_pack", "list_project_context_packs", "read_project_context_pack",
+		"build_project_repository_export", "list_directory", "read_file", "write_file",
 		"list_secrets", "read_secret", "list_skills", "read_skill", "list_teams", "get_stats", "save_memory",
 		"import_skill", "import_skills_archive", "create_sync_token", "prepare_skills_upload", "import_claude_memory":
 	default:
@@ -525,6 +613,9 @@ func (s *MCPServer) supportsTool(name string) bool {
 		return s.FileTree != nil
 	case "list_projects", "create_project", "get_project", "log_action":
 		return s.Project != nil
+	case "save_project_material", "list_project_materials", "build_project_context_pack",
+		"copy_project_material", "list_project_context_packs", "read_project_context_pack", "build_project_repository_export":
+		return s.Project != nil && s.FileTree != nil
 	case "list_teams":
 		return s.Team != nil
 	case "list_secrets", "read_secret":
@@ -542,25 +633,32 @@ func (s *MCPServer) supportsTool(name string) bool {
 
 func (s *MCPServer) toolAllowed(name string) bool {
 	scopeMap := map[string]string{
-		"read_profile":          models.ScopeReadProfile,
-		"update_profile":        models.ScopeWriteProfile,
-		"search_memory":         models.ScopeReadMemory,
-		"list_projects":         models.ScopeReadProjects,
-		"create_project":        models.ScopeWriteProjects,
-		"get_project":           models.ScopeReadProjects,
-		"log_action":            models.ScopeWriteProjects,
-		"list_directory":        models.ScopeReadTree,
-		"read_file":             models.ScopeReadTree,
-		"write_file":            models.ScopeWriteTree,
-		"list_secrets":          models.ScopeReadVault,
-		"read_secret":           models.ScopeReadVault,
-		"list_skills":           models.ScopeReadSkills,
-		"read_skill":            models.ScopeReadSkills,
-		"list_teams":            models.ScopeReadTree,
-		"get_stats":             models.ScopeReadProfile,
-		"save_memory":           models.ScopeWriteMemory,
-		"import_skill":          models.ScopeWriteSkills,
-		"import_skills_archive": models.ScopeWriteSkills,
+		"read_profile":                    models.ScopeReadProfile,
+		"update_profile":                  models.ScopeWriteProfile,
+		"search_memory":                   models.ScopeReadMemory,
+		"list_projects":                   models.ScopeReadProjects,
+		"create_project":                  models.ScopeWriteProjects,
+		"get_project":                     models.ScopeReadProjects,
+		"log_action":                      models.ScopeWriteProjects,
+		"save_project_material":           models.ScopeWriteProjects,
+		"list_project_materials":          models.ScopeReadProjects,
+		"copy_project_material":           models.ScopeWriteProjects,
+		"build_project_context_pack":      models.ScopeWriteProjects,
+		"list_project_context_packs":      models.ScopeReadProjects,
+		"read_project_context_pack":       models.ScopeReadProjects,
+		"build_project_repository_export": models.ScopeReadProjects,
+		"list_directory":                  models.ScopeReadTree,
+		"read_file":                       models.ScopeReadTree,
+		"write_file":                      models.ScopeWriteTree,
+		"list_secrets":                    models.ScopeReadVault,
+		"read_secret":                     models.ScopeReadVault,
+		"list_skills":                     models.ScopeReadSkills,
+		"read_skill":                      models.ScopeReadSkills,
+		"list_teams":                      models.ScopeReadTree,
+		"get_stats":                       models.ScopeReadProfile,
+		"save_memory":                     models.ScopeWriteMemory,
+		"import_skill":                    models.ScopeWriteSkills,
+		"import_skills_archive":           models.ScopeWriteSkills,
 	}
 	required, ok := scopeMap[name]
 	if !ok {
@@ -749,6 +847,109 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 			return fmt.Sprintf("error: %v", err), true
 		}
 		return s.appendLocalGitSyncMessage(ctx, "log entry added"), false
+
+	case "save_project_material":
+		writeCtx, _, _ := s.writeHints(args)
+		projectName, _ := args["project"].(string)
+		title, _ := args["title"].(string)
+		content, _ := args["content"].(string)
+		material, err := s.Project.SaveMaterial(writeCtx, s.UserID, projectName, models.ProjectMaterialInput{
+			Title:           title,
+			Slug:            firstMCPStringArg(args, "slug"),
+			Content:         content,
+			SourceURL:       firstMCPStringArg(args, "source_url"),
+			SourceType:      firstMCPStringArg(args, "source_type"),
+			Description:     firstMCPStringArg(args, "description"),
+			Tags:            toStringSlice(args["tags"]),
+			SourceUpdatedAt: firstMCPStringArg(args, "source_updated_at"),
+			RepositoryPath:  firstMCPStringArg(args, "repository_path"),
+		})
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		result, _ := json.MarshalIndent(material, "", "  ")
+		return s.appendLocalGitSyncMessage(ctx, string(result)), false
+
+	case "list_project_materials":
+		projectName, _ := args["project"].(string)
+		materials, err := s.Project.ListMaterials(ctx, s.UserID, projectName)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		result, _ := json.MarshalIndent(materials, "", "  ")
+		return string(result), false
+
+	case "copy_project_material":
+		writeCtx, _, _ := s.writeHints(args)
+		projectName, _ := args["project"].(string)
+		material, err := s.Project.CopyMaterial(writeCtx, s.UserID, projectName, models.ProjectMaterialCopyInput{
+			SourcePath:      firstMCPStringArg(args, "source_path"),
+			Title:           firstMCPStringArg(args, "title"),
+			Slug:            firstMCPStringArg(args, "slug"),
+			SourceURL:       firstMCPStringArg(args, "source_url"),
+			Description:     firstMCPStringArg(args, "description"),
+			Tags:            toStringSlice(args["tags"]),
+			RepositoryPath:  firstMCPStringArg(args, "repository_path"),
+			SourceUpdatedAt: firstMCPStringArg(args, "source_updated_at"),
+		})
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		result, _ := json.MarshalIndent(material, "", "  ")
+		return s.appendLocalGitSyncMessage(ctx, string(result)), false
+
+	case "build_project_context_pack":
+		writeCtx, _, _ := s.writeHints(args)
+		projectName, _ := args["project"].(string)
+		title, _ := args["title"].(string)
+		pack, err := s.Project.BuildContextPack(writeCtx, s.UserID, projectName, models.ProjectContextPackInput{
+			Title:              title,
+			Slug:               firstMCPStringArg(args, "slug"),
+			Purpose:            firstMCPStringArg(args, "purpose"),
+			MaterialPaths:      toStringSlice(args["material_paths"]),
+			IncludeContext:     mcpBoolPtr(args, "include_context"),
+			IncludeRecentLogs:  mcpBoolPtr(args, "include_recent_logs"),
+			RecentLogLimit:     mcpIntArg(args, "recent_log_limit"),
+			RepositoryDir:      firstMCPStringArg(args, "repository_dir"),
+			RepositoryFilename: firstMCPStringArg(args, "repository_filename"),
+		})
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		result, _ := json.MarshalIndent(pack, "", "  ")
+		return s.appendLocalGitSyncMessage(ctx, string(result)), false
+
+	case "list_project_context_packs":
+		projectName, _ := args["project"].(string)
+		packs, err := s.Project.ListContextPacks(ctx, s.UserID, projectName)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		result, _ := json.MarshalIndent(packs, "", "  ")
+		return string(result), false
+
+	case "read_project_context_pack":
+		projectName, _ := args["project"].(string)
+		packName, _ := args["pack"].(string)
+		pack, err := s.Project.ReadContextPack(ctx, s.UserID, projectName, packName)
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		return pack.Content, false
+
+	case "build_project_repository_export":
+		projectName, _ := args["project"].(string)
+		export, err := s.Project.BuildRepositoryExport(ctx, s.UserID, projectName, models.ProjectRepositoryExportInput{
+			RepositoryDir: firstMCPStringArg(args, "repository_dir"),
+			MaterialPaths: toStringSlice(args["material_paths"]),
+			PackPaths:     toStringSlice(args["pack_paths"]),
+			IncludeIndex:  mcpBoolPtr(args, "include_index"),
+		})
+		if err != nil {
+			return fmt.Sprintf("error: %v", err), true
+		}
+		result, _ := json.MarshalIndent(export, "", "  ")
+		return string(result), false
 
 	case "list_directory":
 		scopeTarget, err := s.dataScope(args, false)
@@ -1094,7 +1295,9 @@ func (s *MCPServer) callTool(params ToolCallParams) (string, bool) {
 func (s *MCPServer) isKnownTool(name string) bool {
 	switch name {
 	case "read_profile", "update_profile", "search_memory", "list_projects", "create_project",
-		"get_project", "log_action", "list_directory", "read_file", "write_file",
+		"get_project", "log_action", "save_project_material", "list_project_materials",
+		"copy_project_material", "build_project_context_pack", "list_project_context_packs", "read_project_context_pack",
+		"build_project_repository_export", "list_directory", "read_file", "write_file",
 		"list_secrets", "read_secret", "list_skills", "read_skill", "list_teams", "get_stats", "save_memory",
 		"import_skill", "import_skills_archive", "create_sync_token", "prepare_skills_upload", "import_claude_memory":
 		return true
@@ -1257,4 +1460,45 @@ func toStringSlice(v interface{}) []string {
 		}
 	}
 	return out
+}
+
+func mcpBoolPtr(args map[string]interface{}, key string) *bool {
+	value, ok := args[key]
+	if !ok {
+		return nil
+	}
+	switch typed := value.(type) {
+	case bool:
+		return &typed
+	case string:
+		switch strings.TrimSpace(strings.ToLower(typed)) {
+		case "true", "1", "yes":
+			v := true
+			return &v
+		case "false", "0", "no":
+			v := false
+			return &v
+		}
+	}
+	return nil
+}
+
+func mcpIntArg(args map[string]interface{}, key string) int {
+	value, ok := args[key]
+	if !ok {
+		return 0
+	}
+	switch typed := value.(type) {
+	case int:
+		return typed
+	case int64:
+		return int(typed)
+	case float64:
+		return int(typed)
+	case json.Number:
+		i, _ := typed.Int64()
+		return int(i)
+	default:
+		return 0
+	}
 }

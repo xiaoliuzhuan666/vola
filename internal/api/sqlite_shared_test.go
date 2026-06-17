@@ -50,13 +50,14 @@ type fakeGitHubTokenState struct {
 
 func newTestHTTPServer(t *testing.T, gitOpts ...localgitsync.Option) (*httptest.Server, *sqlitestorage.Store, string, string, string) {
 	cfg := &config.Config{
-		JWTSecret:            testJWTSecret,
-		VaultMasterKey:       strings.Repeat("0", 64),
-		CORSOrigins:          []string{"http://localhost:3000"},
-		RateLimit:            100,
-		MaxBodySize:          10 * 1024 * 1024,
-		PublicBaseURL:        "http://127.0.0.1:0",
-		EnableSystemSettings: true,
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           strings.Repeat("0", 64),
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		PublicBaseURL:            "http://127.0.0.1:0",
+		EnableSystemSettings:     true,
+		EnablePublicRegistration: true,
 	}
 	return newTestHTTPServerWithConfig(t, cfg, gitOpts...)
 }
@@ -316,10 +317,11 @@ func TestPublicConfigUsesLocalModeInsteadOfStorageBackend(t *testing.T) {
 		Storage:      "postgres",
 		LocalOwnerID: uuid.New(),
 		Config: &config.Config{
-			CORSOrigins:          []string{"http://localhost:3000"},
-			RateLimit:            100,
-			MaxBodySize:          10 * 1024 * 1024,
-			EnableSystemSettings: true,
+			CORSOrigins:              []string{"http://localhost:3000"},
+			RateLimit:                100,
+			MaxBodySize:              10 * 1024 * 1024,
+			EnableSystemSettings:     true,
+			EnablePublicRegistration: true,
 		},
 	})
 	ts := httptest.NewServer(s.Router)
@@ -335,7 +337,7 @@ func TestPublicConfigUsesLocalModeInsteadOfStorageBackend(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
-	for _, expected := range []string{`"storage":"postgres"`, `"local_mode":true`, `"system_settings_enabled":true`, `"git_mirror_manual_sync_cooldown_seconds":0`} {
+	for _, expected := range []string{`"storage":"postgres"`, `"local_mode":true`, `"system_settings_enabled":true`, `"public_registration_enabled":true`, `"git_mirror_manual_sync_cooldown_seconds":0`} {
 		if !bytes.Contains(payload.Data, []byte(expected)) {
 			t.Fatalf("expected %q in config payload: %s", expected, string(payload.Data))
 		}
@@ -411,6 +413,34 @@ func TestPublicConfigExposesBillingFlagWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestPublicRegistrationDisabledBlocksRegister(t *testing.T) {
+	cfg := &config.Config{
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           strings.Repeat("0", 64),
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		PublicBaseURL:            "https://vola.example.com",
+		EnablePublicRegistration: false,
+	}
+	ts, _, _ := newHostedTestHTTPServerWithConfig(t, cfg)
+
+	resp, err := http.Post(ts.URL+"/api/auth/register", "application/json", bytes.NewReader([]byte(`{
+		"email":"blocked@example.com",
+		"password":"blockedpass22",
+		"display_name":"Blocked User",
+		"slug":"blocked-user"
+	}`)))
+	if err != nil {
+		t.Fatalf("POST /api/auth/register: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("register status = %d body=%s", resp.StatusCode, string(body))
+	}
+}
+
 func TestSQLiteSharedServerOpsStatusReportsBackupReadiness(t *testing.T) {
 	ts, _, adminToken, readBundleToken, _ := newTestHTTPServer(t)
 
@@ -434,6 +464,193 @@ func TestSQLiteSharedServerOpsStatusReportsBackupReadiness(t *testing.T) {
 		if !bytes.Contains(ops.Data, []byte(expected)) {
 			t.Fatalf("expected %q in ops status payload: %s", expected, string(ops.Data))
 		}
+	}
+}
+
+func TestSQLiteSharedServerOpsInstanceStatusAggregatesBackupReadiness(t *testing.T) {
+	ts, store, adminToken, readBundleToken, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+
+	status, denied := doJSON(t, http.MethodGet, ts.URL+"/api/ops/instance-status", readBundleToken, nil)
+	if status != http.StatusForbidden || denied.OK {
+		t.Fatalf("read bundle token should not read ops instance status: status=%d body=%+v", status, denied)
+	}
+
+	status, created := doJSON(t, http.MethodPost, ts.URL+"/api/admin/users", adminToken, []byte(`{
+		"email": "backup-user@example.com",
+		"password": "password-123",
+		"display_name": "Backup User",
+		"slug": "backup-user"
+	}`))
+	if status != http.StatusCreated || !created.OK {
+		t.Fatalf("POST /api/admin/users failed: status=%d body=%+v", status, created)
+	}
+	var createdPayload struct {
+		User models.AdminUserAccount `json:"user"`
+	}
+	if err := json.Unmarshal(created.Data, &createdPayload); err != nil {
+		t.Fatalf("decode created user: %v", err)
+	}
+	now := time.Now().UTC().Add(-time.Minute)
+	if err := store.UpsertActiveLocalGitMirror(ctx, models.LocalGitMirror{
+		UserID:            createdPayload.User.ID,
+		RootPath:          filepath.Join(t.TempDir(), "git-mirror"),
+		IsActive:          true,
+		ExecutionMode:     localgitsync.ExecutionModeLocal,
+		SyncState:         localgitsync.SyncStateIdle,
+		AutoCommitEnabled: true,
+		AutoPushEnabled:   true,
+		AuthMode:          localgitsync.AuthModeLocalCredentials,
+		RemoteName:        localgitsync.DefaultRemoteName,
+		RemoteURL:         "https://github.com/example/vola-backup.git",
+		RemoteBranch:      localgitsync.DefaultRemoteBranch,
+		LastSyncedAt:      &now,
+		LastPushAt:        &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}); err != nil {
+		t.Fatalf("UpsertActiveLocalGitMirror: %v", err)
+	}
+	targetID := uuid.New()
+	if err := store.UpsertBackupTarget(ctx, backups.Target{
+		ID:                      targetID,
+		UserID:                  createdPayload.User.ID,
+		Kind:                    backups.KindS3,
+		Name:                    "Instance S3",
+		Enabled:                 true,
+		SecretConfigured:        true,
+		LastBackupAt:            &now,
+		LastBackupObject:        "vola/test-instance.zip",
+		RetentionKeepLast:       7,
+		RetentionKeepDays:       0,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+		AutoBackupEnabled:       true,
+		AutoBackupIntervalHours: 24,
+	}); err != nil {
+		t.Fatalf("UpsertBackupTarget: %v", err)
+	}
+	if err := store.InsertBackupRun(ctx, backups.Run{
+		ID:          uuid.New(),
+		UserID:      createdPayload.User.ID,
+		TargetID:    targetID,
+		TargetName:  "Instance S3",
+		TargetKind:  backups.KindS3,
+		Trigger:     backups.RunTriggerManual,
+		Status:      backups.RunStatusSuccess,
+		ObjectName:  "vola/test-instance.zip",
+		SizeBytes:   1234,
+		StartedAt:   now,
+		CompletedAt: &now,
+		DurationMs:  12,
+		CreatedAt:   now,
+	}); err != nil {
+		t.Fatalf("InsertBackupRun: %v", err)
+	}
+
+	status, instance := doJSON(t, http.MethodGet, ts.URL+"/api/ops/instance-status", adminToken, nil)
+	if status != http.StatusOK || !instance.OK {
+		t.Fatalf("GET /api/ops/instance-status failed: status=%d body=%+v", status, instance)
+	}
+	for _, expected := range []string{
+		`"status":"ok"`,
+		`"users_total":2`,
+		`"users_with_git_backup":1`,
+		`"users_with_external_backup":1`,
+		`"users_with_remote_backup_artifact":1`,
+		`"latest_external_backup_object":"vola/test-instance.zip"`,
+		`"user_slug":"backup-user"`,
+		`"id":"instance_remote_backup_artifact"`,
+	} {
+		if !bytes.Contains(instance.Data, []byte(expected)) {
+			t.Fatalf("expected %q in ops instance status: %s", expected, string(instance.Data))
+		}
+	}
+}
+
+func TestInstanceAdminAPIsRejectNonOwnerAdminToken(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+
+	status, created := doJSON(t, http.MethodPost, ts.URL+"/api/admin/users", adminToken, []byte(`{
+		"email": "regular-admin@example.com",
+		"password": "password-123",
+		"display_name": "Regular Admin",
+		"slug": "regular-admin"
+	}`))
+	if status != http.StatusCreated || !created.OK {
+		t.Fatalf("POST /api/admin/users failed: status=%d body=%+v", status, created)
+	}
+	var createdPayload struct {
+		User models.AdminUserAccount `json:"user"`
+	}
+	if err := json.Unmarshal(created.Data, &createdPayload); err != nil {
+		t.Fatalf("decode created user: %v", err)
+	}
+	userAdmin, err := store.CreateToken(ctx, createdPayload.User.ID, "regular-admin-token", []string{models.ScopeAdmin}, models.TrustLevelFull, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateToken regular admin: %v", err)
+	}
+
+	status, ownStatus := doJSON(t, http.MethodGet, ts.URL+"/api/ops/status", userAdmin.Token, nil)
+	if status != http.StatusOK || !ownStatus.OK {
+		t.Fatalf("user admin token should read own ops status: status=%d body=%+v", status, ownStatus)
+	}
+
+	status, instanceStatus := doJSON(t, http.MethodGet, ts.URL+"/api/ops/instance-status", userAdmin.Token, nil)
+	if status != http.StatusForbidden || instanceStatus.OK {
+		t.Fatalf("user admin token should not read instance ops status: status=%d body=%+v", status, instanceStatus)
+	}
+
+	status, users := doJSON(t, http.MethodGet, ts.URL+"/api/admin/users", userAdmin.Token, nil)
+	if status != http.StatusForbidden || users.OK {
+		t.Fatalf("user admin token should not list instance users: status=%d body=%+v", status, users)
+	}
+
+	status, login := doAuthJSON(t, http.MethodPost, ts.URL+"/api/auth/login", []byte(`{
+		"email": "regular-admin@example.com",
+		"password": "password-123"
+	}`))
+	if status != http.StatusOK {
+		t.Fatalf("login regular admin failed: status=%d body=%+v", status, login)
+	}
+	status, jwtUsers := doJSON(t, http.MethodGet, ts.URL+"/api/admin/users", login.AccessToken, nil)
+	if status != http.StatusForbidden || jwtUsers.OK {
+		t.Fatalf("regular JWT session should not list instance users: status=%d body=%+v", status, jwtUsers)
+	}
+}
+
+func TestHostedInstanceAdminAPIsAllowConfiguredAdminUser(t *testing.T) {
+	cfg := &config.Config{
+		JWTSecret:            testJWTSecret,
+		VaultMasterKey:       strings.Repeat("0", 64),
+		CORSOrigins:          []string{"http://localhost:3000"},
+		RateLimit:            100,
+		MaxBodySize:          10 * 1024 * 1024,
+		PublicBaseURL:        "http://127.0.0.1:0",
+		EnableSystemSettings: true,
+	}
+	ts, store, adminToken := newHostedTestHTTPServerWithConfig(t, cfg)
+	ctx := context.Background()
+
+	status, denied := doJSON(t, http.MethodGet, ts.URL+"/api/admin/users", adminToken, nil)
+	if status != http.StatusForbidden || denied.OK {
+		t.Fatalf("hosted admin token should not list users before instance admin config: status=%d body=%+v", status, denied)
+	}
+
+	owner, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	cfg.InstanceAdminUserIDs = []uuid.UUID{owner.ID}
+
+	status, users := doJSON(t, http.MethodGet, ts.URL+"/api/admin/users", adminToken, nil)
+	if status != http.StatusOK || !users.OK {
+		t.Fatalf("configured hosted instance admin should list users: status=%d body=%+v", status, users)
+	}
+	status, instanceStatus := doJSON(t, http.MethodGet, ts.URL+"/api/ops/instance-status", adminToken, nil)
+	if status != http.StatusOK || !instanceStatus.OK {
+		t.Fatalf("configured hosted instance admin should read instance ops status: status=%d body=%+v", status, instanceStatus)
 	}
 }
 
@@ -1232,13 +1449,14 @@ func TestSQLiteSharedServerRegisterLoginRefresh(t *testing.T) {
 
 func TestHostedSharedServerRegisterLoginRefresh(t *testing.T) {
 	cfg := &config.Config{
-		JWTSecret:           testJWTSecret,
-		VaultMasterKey:      strings.Repeat("0", 64),
-		CORSOrigins:         []string{"http://localhost:3000"},
-		RateLimit:           100,
-		MaxBodySize:         10 * 1024 * 1024,
-		PublicBaseURL:       "http://127.0.0.1:0",
-		GitMirrorHostedRoot: filepath.Join(t.TempDir(), "hosted-root"),
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           strings.Repeat("0", 64),
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		PublicBaseURL:            "http://127.0.0.1:0",
+		EnablePublicRegistration: true,
+		GitMirrorHostedRoot:      filepath.Join(t.TempDir(), "hosted-root"),
 	}
 	ts, _, _ := newHostedTestHTTPServerWithConfig(t, cfg)
 
@@ -1432,6 +1650,172 @@ func TestSQLiteSharedServerWebDashboardEndpoints(t *testing.T) {
 	status, conflicts := doJSON(t, http.MethodGet, ts.URL+"/api/memory/conflicts", adminToken, nil)
 	if status != http.StatusOK || !conflicts.OK || !bytes.Contains(conflicts.Data, []byte(`"conflicts":[]`)) {
 		t.Fatalf("unexpected conflicts payload: status=%d body=%+v", status, conflicts)
+	}
+}
+
+func TestSQLiteSharedProjectMaterialsContextPackAndRepositoryExport(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	userID, err := store.FirstUserID(ctx)
+	if err != nil {
+		t.Fatalf("FirstUserID: %v", err)
+	}
+	if _, err := store.CreateProject(ctx, userID, "ai-dev"); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/projects/ai-dev/backend-api.md", "# Backend API\n\nPOST /orders creates orders.", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "file",
+		MinTrustLevel: models.TrustLevelWork,
+	}); err != nil {
+		t.Fatalf("WriteEntry source doc: %v", err)
+	}
+
+	status, copied := doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/materials/copy", adminToken, []byte(`{
+		"source_path":"/projects/ai-dev/backend-api.md",
+		"repository_path":"docs/ai-context/materials/backend-api.md",
+		"tags":["backend","api"]
+	}`))
+	if status != http.StatusCreated || !copied.OK {
+		t.Fatalf("copy material failed: status=%d body=%+v", status, copied)
+	}
+	for _, expected := range []string{`"title":"Backend API"`, `"source_path":"/projects/ai-dev/backend-api.md"`, `"repository_path":"docs/ai-context/materials/backend-api.md"`} {
+		if !bytes.Contains(copied.Data, []byte(expected)) {
+			t.Fatalf("expected %q in copied material: %s", expected, string(copied.Data))
+		}
+	}
+
+	status, pack := doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/context-packs", adminToken, []byte(`{
+		"title":"Backend handoff",
+		"purpose":"Codex reads this before backend integration",
+		"repository_dir":"docs/ai-context/context-packs"
+	}`))
+	if status != http.StatusCreated || !pack.OK {
+		t.Fatalf("build context pack failed: status=%d body=%+v", status, pack)
+	}
+	for _, expected := range []string{`"title":"Backend handoff"`, `POST /orders creates orders.`, `"repository_path":"docs/ai-context/context-packs/backend-handoff.md"`} {
+		if !bytes.Contains(pack.Data, []byte(expected)) {
+			t.Fatalf("expected %q in context pack: %s", expected, string(pack.Data))
+		}
+	}
+
+	status, exported := doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/repository-export", adminToken, []byte(`{"repository_dir":"docs/ai-context"}`))
+	if status != http.StatusOK || !exported.OK {
+		t.Fatalf("build repository export failed: status=%d body=%+v", status, exported)
+	}
+	for _, expected := range []string{`"path":"docs/ai-context/README.md"`, `"path":"docs/ai-context/materials/backend-api.md"`, `"path":"docs/ai-context/context-packs/backend-handoff.md"`} {
+		if !bytes.Contains(exported.Data, []byte(expected)) {
+			t.Fatalf("expected %q in repository export: %s", expected, string(exported.Data))
+		}
+	}
+
+	repoRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatalf("mkdir repo root: %v", err)
+	}
+	applyBody := fmt.Sprintf(`{"repository_root":%q,"repository_dir":"docs/ai-context","overwrite":true}`, repoRoot)
+	status, applied := doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/repository-export/apply", adminToken, []byte(applyBody))
+	if status != http.StatusOK || !applied.OK {
+		t.Fatalf("apply repository export failed: status=%d body=%+v", status, applied)
+	}
+	expectedFiles := []string{
+		filepath.Join(repoRoot, "docs", "ai-context", "README.md"),
+		filepath.Join(repoRoot, "docs", "ai-context", "materials", "backend-api.md"),
+		filepath.Join(repoRoot, "docs", "ai-context", "context-packs", "backend-handoff.md"),
+	}
+	for _, target := range expectedFiles {
+		data, err := os.ReadFile(target)
+		if err != nil {
+			t.Fatalf("expected applied file %s: %v", target, err)
+		}
+		if !bytes.Contains(data, []byte("Backend API")) && filepath.Base(target) != "README.md" {
+			t.Fatalf("expected backend content in %s: %s", target, string(data))
+		}
+	}
+
+	if err := os.WriteFile(filepath.Join(repoRoot, "docs", "ai-context", "materials", "backend-api.md"), []byte("manual\n"), 0o644); err != nil {
+		t.Fatalf("write manual file: %v", err)
+	}
+	noOverwriteBody := fmt.Sprintf(`{"repository_root":%q,"repository_dir":"docs/ai-context","overwrite":false}`, repoRoot)
+	status, applied = doJSON(t, http.MethodPost, ts.URL+"/api/projects/ai-dev/repository-export/apply", adminToken, []byte(noOverwriteBody))
+	if status != http.StatusOK || !applied.OK {
+		t.Fatalf("apply repository export without overwrite failed: status=%d body=%+v", status, applied)
+	}
+	data, err := os.ReadFile(filepath.Join(repoRoot, "docs", "ai-context", "materials", "backend-api.md"))
+	if err != nil {
+		t.Fatalf("read manual file: %v", err)
+	}
+	if string(data) != "manual\n" {
+		t.Fatalf("expected manual file to stay unchanged, got %q", string(data))
+	}
+}
+
+func TestSQLiteSharedProjectRepositoryExportApplyRejectsUnsafeTarget(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	userID, err := store.FirstUserID(ctx)
+	if err != nil {
+		t.Fatalf("FirstUserID: %v", err)
+	}
+	if _, err := store.CreateProject(ctx, userID, "unsafe-export"); err != nil {
+		t.Fatalf("CreateProject: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/projects/unsafe-export/source.md", "# Source\n\nKeep me in repo.", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "file",
+		MinTrustLevel: models.TrustLevelWork,
+	}); err != nil {
+		t.Fatalf("WriteEntry source doc: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, userID, "/projects/unsafe-export/materials/malicious.md", "# Malicious\n\nDo not leave repo.", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "project_material",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata: map[string]interface{}{
+			"project":         "unsafe-export",
+			"title":           "Malicious",
+			"repository_path": "../escape.md",
+		},
+	}); err != nil {
+		t.Fatalf("WriteEntry malicious material: %v", err)
+	}
+	repoRoot := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repoRoot, 0o755); err != nil {
+		t.Fatalf("mkdir repo root: %v", err)
+	}
+	body := fmt.Sprintf(`{"repository_root":%q,"repository_dir":"docs/ai-context"}`, repoRoot)
+	status, applied := doJSON(t, http.MethodPost, ts.URL+"/api/projects/unsafe-export/repository-export/apply", adminToken, []byte(body))
+	if status != http.StatusOK || !applied.OK {
+		t.Fatalf("apply repository export failed: status=%d body=%+v", status, applied)
+	}
+	if bytes.Contains(applied.Data, []byte(`"target_path":"`+filepath.Dir(repoRoot))) {
+		t.Fatalf("unsafe target leaked outside repo: %s", string(applied.Data))
+	}
+	if !bytes.Contains(applied.Data, []byte(`"status":"error"`)) {
+		t.Fatalf("expected unsafe file to be reported as error: %s", string(applied.Data))
+	}
+
+	symlinkRoot := filepath.Join(t.TempDir(), "repo-symlink")
+	if err := os.MkdirAll(symlinkRoot, 0o755); err != nil {
+		t.Fatalf("mkdir symlink root: %v", err)
+	}
+	outside := filepath.Join(t.TempDir(), "outside")
+	if err := os.MkdirAll(outside, 0o755); err != nil {
+		t.Fatalf("mkdir outside: %v", err)
+	}
+	if err := os.Symlink(outside, filepath.Join(symlinkRoot, "docs")); err != nil {
+		t.Skipf("symlink unsupported: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outside, "ai-context")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("outside dir exists before symlink safety check: %v", err)
+	}
+	body = fmt.Sprintf(`{"repository_root":%q,"repository_dir":"docs/ai-context"}`, symlinkRoot)
+	status, applied = doJSON(t, http.MethodPost, ts.URL+"/api/projects/unsafe-export/repository-export/apply", adminToken, []byte(body))
+	if status != http.StatusOK || !applied.OK {
+		t.Fatalf("apply repository export through symlink failed: status=%d body=%+v", status, applied)
+	}
+	if !bytes.Contains(applied.Data, []byte(`symlink directory`)) {
+		t.Fatalf("expected symlink directory error: %s", string(applied.Data))
+	}
+	if _, err := os.Stat(filepath.Join(outside, "ai-context")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("wrote outside repo through symlink: %v", err)
 	}
 }
 
@@ -1654,6 +2038,55 @@ func TestSQLiteSharedServerLocalConfigRejectsInvalidJSON(t *testing.T) {
 	}
 	if failed.OK {
 		t.Fatalf("expected invalid config update to fail: %+v", failed)
+	}
+}
+
+func TestSQLiteSharedServerWorkspaceActiveUpdate(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+
+	ts, _, adminToken, _, _ := newTestHTTPServer(t)
+
+	// Update active team to team-xyz
+	body, err := json.Marshal(map[string]string{"active_team_id": "team-xyz"})
+	if err != nil {
+		t.Fatalf("Marshal body: %v", err)
+	}
+	status, res := doJSON(t, http.MethodPut, ts.URL+"/api/local/workspace/active", adminToken, body)
+	if status != http.StatusOK || !res.OK {
+		t.Fatalf("PUT /api/local/workspace/active failed: status=%d body=%+v", status, res)
+	}
+
+	// Read and verify persisted config.json
+	_, cfg, err := runtimecfg.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	profileName := cfg.CurrentProfile
+	if profileName == "" {
+		profileName = "default"
+	}
+	if cfg.Profiles[profileName].ActiveTeamID != "team-xyz" {
+		t.Errorf("expected active_team_id to be 'team-xyz', got %q", cfg.Profiles[profileName].ActiveTeamID)
+	}
+
+	// Update active team to empty (back to personal)
+	body2, err := json.Marshal(map[string]string{"active_team_id": ""})
+	if err != nil {
+		t.Fatalf("Marshal body: %v", err)
+	}
+	status2, res2 := doJSON(t, http.MethodPut, ts.URL+"/api/local/workspace/active", adminToken, body2)
+	if status2 != http.StatusOK || !res2.OK {
+		t.Fatalf("PUT /api/local/workspace/active failed: status=%d body=%+v", status2, res2)
+	}
+
+	// Verify it was cleared
+	_, cfg2, err := runtimecfg.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg2.Profiles[profileName].ActiveTeamID != "" {
+		t.Errorf("expected active_team_id to be cleared, got %q", cfg2.Profiles[profileName].ActiveTeamID)
 	}
 }
 
@@ -4175,5 +4608,125 @@ func TestAgentScratchAndEphemeralTokenEndpoints(t *testing.T) {
 		if !bytes.Contains(uploadToken.Data, []byte(expected)) {
 			t.Fatalf("expected %q in skills upload token response: %s", expected, string(uploadToken.Data))
 		}
+	}
+}
+
+func TestSseTriggeredSkillSilentAutoSync(t *testing.T) {
+	// 1. 初始化临时的 config.json 路径和 HOME 环境变量
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+	t.Setenv("HOME", tempDir)
+
+	// 2. 初始化完整的后台基础设施
+	ctx := context.Background()
+	store, err := sqlitestorage.Open(filepath.Join(tempDir, "local.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+
+	fileTreeSvc := services.NewFileTreeServiceWithRepo(sqlitestorage.NewFileTreeRepo(store))
+	teamSvc := services.NewTeamServiceWithRepo(sqlitestorage.NewTeamRepo(store))
+
+	// 3. 构造极简 Server 实例
+	s := &Server{
+		LocalOwnerID:    user.ID,
+		TeamService:     teamSvc,
+		FileTreeService: fileTreeSvc,
+	}
+
+	// 4. 创建一个团队，并把用户加入进去成为 Owner 角色
+	team, err := teamSvc.Create(ctx, user.ID, models.CreateTeamRequest{
+		Name: "Test SSE Sync Team",
+		Slug: "sse-sync-team",
+	})
+	if err != nil {
+		t.Fatalf("CreateTeam: %v", err)
+	}
+
+	// 5. 模拟团队 Skills 的目录结构并写入一个 Skill 资产包
+	teamSkillDir := fmt.Sprintf("/skills/teams/%s/skills/my-test-skill", team.ID)
+	_, err = store.WriteEntry(ctx, team.HubUserID, teamSkillDir+"/SKILL.md", "# My Cool Skill\n", "text/markdown", models.FileTreeWriteOptions{Kind: "skill_file"})
+	if err != nil {
+		t.Fatalf("Write team skill: %v", err)
+	}
+
+	// 6. 初始化订阅文件，指定将该团队 Skill 同步到本地
+	personalSkillDir := "/skills/personal-copy"
+	subDoc := teamSkillSubscriptionsDocument{
+		Version: "vola.team-skill-subscriptions/v1",
+		Subscriptions: []teamSkillSubscription{
+			{
+				TeamID:     team.ID.String(),
+				SourcePath: teamSkillDir,
+				TargetPath: personalSkillDir,
+			},
+		},
+	}
+	subDocData, _ := json.Marshal(subDoc)
+	_, err = store.WriteEntry(ctx, user.ID, "/settings/team-skill-subscriptions.json", string(subDocData), "application/json", models.FileTreeWriteOptions{})
+	if err != nil {
+		t.Fatalf("Write subscriptions: %v", err)
+	}
+
+	// 6.5. 初始化派发关系文件，说明将该团队技能分配给 claude-code
+	assignDoc := skillAssignmentsDocument{
+		Version: "vola.skill-assignments/v1",
+		Assignments: []skillAgentAssignment{
+			{
+				AgentID:    "claude-code",
+				SkillPaths: []string{teamSkillDir},
+			},
+		},
+	}
+	assignDocData, _ := json.Marshal(assignDoc)
+	_, err = store.WriteEntry(ctx, team.HubUserID, skillAssignmentsPath, string(assignDocData), "application/json", models.FileTreeWriteOptions{})
+	if err != nil {
+		t.Fatalf("Write assignments: %v", err)
+	}
+
+	// 7. 模拟当前有本地连接的配置（必须是支持自动更新的 claude-code）
+	cliConf := &runtimecfg.CLIConfig{
+		Version:        1,
+		CurrentProfile: "default",
+		Profiles: map[string]runtimecfg.SyncProfile{
+			"default": {
+				ActiveTeamID: team.ID.String(),
+			},
+		},
+		Local: runtimecfg.LocalConfig{
+			Connections: map[string]runtimecfg.LocalConnection{
+				"claude-code": {
+					Transport: "http",
+				},
+			},
+		},
+	}
+	cliConfBytes, _ := json.Marshal(cliConf)
+	_ = os.WriteFile(configPath, cliConfBytes, 0644)
+
+	// 8. 手动调用 s.handleSseEvent，发送 skill_update 消息
+	s.handleSseEvent(ctx, team.ID.String(), "skill_update")
+
+	// 9. 因为 handleSseEvent 中的自动同步是异步的，我们在测试中等待它执行完成
+	time.Sleep(2500 * time.Millisecond)
+
+	// 10. 验证本地物理目标目录里，是否已经自动生成了同步后的 SKILL.md
+	// 本地路径是 root + rel => ~/.claude/skills + sse-sync-team--teams--{team_id}--skills--my-test-skill
+	normalizedSkillDirName := "sse-sync-team--teams-" + team.ID.String() + "-skills-my-test-skill"
+	expectedPhysicalPath := filepath.Join(tempDir, ".claude", "skills", normalizedSkillDirName, "SKILL.md")
+
+	content, err := os.ReadFile(expectedPhysicalPath)
+	if err != nil {
+		t.Fatalf("Auto sync failed: physical local file not found: %v", err)
+	}
+	if string(content) != "# My Cool Skill\n" {
+		t.Errorf("expected auto synced content '# My Cool Skill\n', got %q", string(content))
 	}
 }

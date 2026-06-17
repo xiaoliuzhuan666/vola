@@ -32,6 +32,10 @@ func (s *Server) handleAuthProviderStart(w http.ResponseWriter, r *http.Request)
 		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "invalid request body")
 		return
 	}
+	if req.Action == models.AuthProviderActionSignup && !s.publicRegistrationEnabled() {
+		respondForbidden(w, "public registration is disabled; ask an instance administrator to create the account")
+		return
+	}
 	callbackURL := s.baseURL(r) + "/api/auth/providers/" + url.PathEscape(providerKey) + "/callback"
 	redirectURL := s.normalizeAuthRedirectURL(r, req.RedirectURL)
 	resp, err := s.ExternalAuthService.Start(r.Context(), providerKey, callbackURL, redirectURL, req.Action)

@@ -1,11 +1,15 @@
 import { useState } from 'react'
+import { installCliTools, isTauri, type CliToolsInstallResult } from '../api'
 import { useI18n } from '../i18n'
 
-type CopyKey = 'login' | 'daily' | 'import' | 'backup'
+type CopyKey = 'login' | 'daily' | 'import' | 'backup' | 'install' | 'source'
 
+const installCommand = `cd /path/to/Vola
+./tools/install-vola.sh`
 const loginCommand = `neu login --api-base https://your-vola.example`
 
 const dailyCommands = `neu status
+neu connect codex
 neu platform ls
 neu connect claude
 neu browse`
@@ -54,6 +58,9 @@ function CommandBlock({
 export default function CommandLineToolsPage() {
   const { tx } = useI18n()
   const [copied, setCopied] = useState<CopyKey | ''>('')
+  const [installing, setInstalling] = useState(false)
+  const [installResult, setInstallResult] = useState<CliToolsInstallResult | null>(null)
+  const [installError, setInstallError] = useState('')
 
   const copyCommand = async (key: CopyKey, command: string) => {
     try {
@@ -62,6 +69,19 @@ export default function CommandLineToolsPage() {
       window.setTimeout(() => setCopied((current) => current === key ? '' : current), 1500)
     } catch {
       setCopied('')
+    }
+  }
+
+  const handleInstall = async () => {
+    setInstalling(true)
+    setInstallError('')
+    try {
+      const result = await installCliTools()
+      setInstallResult(result)
+    } catch (err: any) {
+      setInstallError(err?.message || tx('安装失败', 'Install failed'))
+    } finally {
+      setInstalling(false)
     }
   }
 
@@ -80,6 +100,60 @@ export default function CommandLineToolsPage() {
         </div>
       </section>
 
+      <section className="materials-panel cli-install-panel">
+        <div className="cli-install-copy">
+          <div>
+            <h3 className="card-title">{tx('先安装 neu 命令', 'Install the neu command first')}</h3>
+            <p className="materials-section-copy">
+              {tx(
+                '安装后终端才能识别 neu。桌面版可以直接安装到 ~/.local/bin，并同时保留 vola、vol、neudrive 和 xlzdrive 兼容入口。',
+                'After installation, Terminal can recognize neu. The desktop app installs it into ~/.local/bin and also keeps vola, vol, neudrive, and xlzdrive aliases.',
+              )}
+            </p>
+          </div>
+          <div className="cli-install-actions">
+            {isTauri ? (
+              <button className="btn btn-primary" type="button" disabled={installing} onClick={handleInstall}>
+                {installing ? tx('安装中...', 'Installing...') : tx('一键安装到本机', 'Install locally')}
+              </button>
+            ) : (
+              <button className="btn btn-primary" type="button" onClick={() => copyCommand('install', installCommand)}>
+                {copied === 'install' ? tx('已复制', 'Copied') : tx('复制安装命令', 'Copy install command')}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {installResult && (
+          <div className="alert alert-success cli-install-result">
+            <strong>{tx('已安装 neu。', 'neu is installed.')}</strong>
+            <span>{tx(`安装目录：${installResult.install_dir}`, `Install directory: ${installResult.install_dir}`)}</span>
+            {installResult.shell_reload_command && (
+              <span>
+                {tx('当前终端如仍提示 command not found，执行：', 'If the current terminal still says command not found, run:')}
+                <code>{installResult.shell_reload_command}</code>
+                <button className="btn btn-sm" type="button" onClick={() => copyCommand('source', installResult.shell_reload_command || '')}>
+                  {copied === 'source' ? tx('已复制', 'Copied') : tx('复制', 'Copy')}
+                </button>
+              </span>
+            )}
+          </div>
+        )}
+
+        {installError && <div className="alert alert-error">{installError}</div>}
+
+        {!isTauri && (
+          <CommandBlock
+            title={tx('源码安装', 'Install from source')}
+            description={tx('在项目目录运行安装脚本，会构建前端和本地命令。', 'Run this from the project checkout. It builds the frontend and local commands.')}
+            command={installCommand}
+            copyKey="install"
+            copied={copied}
+            onCopy={copyCommand}
+          />
+        )}
+      </section>
+
       <section className="materials-panel cli-command-panel">
         <div className="cli-command-panel-head">
           <div>
@@ -89,8 +163,8 @@ export default function CommandLineToolsPage() {
             </p>
             <p className="materials-section-copy">
               {tx(
-                '推荐使用 neu；vola、vol、neudrive 和 xlzdrive 仅作为兼容入口保留给已有脚本。',
-                'Use neu for new work. vola, vol, neudrive, and xlzdrive are compatibility aliases for existing scripts.',
+                '推荐优先连接 Codex；团队已经在用 Claude Code 时，再选 Claude Code。vola、vol、neudrive 和 xlzdrive 只作为兼容入口保留。',
+                'Connect Codex first. Choose Claude Code when the team already uses it. vola, vol, neudrive, and xlzdrive remain compatibility aliases.',
               )}
             </p>
           </div>

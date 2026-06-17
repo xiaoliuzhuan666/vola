@@ -1,4 +1,4 @@
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import type { DragEvent, KeyboardEvent, MouseEvent, ReactNode } from 'react'
 
 export type MaterialsTileSelectOptions = {
   multi: boolean
@@ -25,6 +25,9 @@ type MaterialsTileProps = {
   onMenuToggle?: () => void
   onSelect?: (options: MaterialsTileSelectOptions) => void
   onOpen?: () => void
+  draggable?: boolean
+  onDragStart?: (event: DragEvent<HTMLDivElement>) => void
+  onContextMenu?: (event: MouseEvent<HTMLDivElement>) => void
   children?: ReactNode
 }
 
@@ -53,6 +56,9 @@ export default function MaterialsTile({
   onMenuToggle,
   onSelect,
   onOpen,
+  draggable,
+  onDragStart,
+  onContextMenu,
   children,
 }: MaterialsTileProps) {
   const interactive = Boolean(onSelect || onOpen)
@@ -108,6 +114,9 @@ export default function MaterialsTile({
       onClick={interactive ? handleClick : undefined}
       onDoubleClick={onOpen}
       onKeyDown={interactive ? handleKeyDown : undefined}
+      draggable={draggable}
+      onDragStart={onDragStart}
+      onContextMenu={onContextMenu}
     >
       <div className="materials-tile-top">
         <span className={`materials-tile-icon ${iconClassName}`} />

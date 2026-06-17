@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { Link } from 'react-router-dom'
 import { api, type FileNode } from '../api'
 import { useI18n, type AppLocale } from '../i18n'
 import { dataFileEditorRoute, formatDateTime, sourceLabel } from '../pages/data/DataShared'
+import ResourceActionMenu, { type ResourceActionMenuItem } from './ResourceActionMenu'
 
 interface GitHubTreeListProps {
   rootPath?: string
@@ -17,6 +18,8 @@ interface GitHubTreeListProps {
   loadNode?: (path: string) => Promise<FileNode>
   fileRoute?: (path: string) => string
   onPathChange?: (path: string) => void
+  onFileDragStart?: (entry: FileNode, event: DragEvent<HTMLElement>) => void
+  fileMenuItems?: (entry: FileNode) => ResourceActionMenuItem[]
 }
 
 const rootPath = '/'
@@ -69,6 +72,12 @@ function formatBytes(value?: number) {
   return `${mib.toFixed(mib >= 10 ? 0 : 1)} MiB`
 }
 
+function isMissingTreeError(err: any) {
+  const status = Number(err?.status || err?.code)
+  const message = `${err?.message || err || ''}`.toLowerCase()
+  return status === 404 || message.includes('not found') || message.includes('file not found')
+}
+
 export default function GitHubTreeList({
   rootPath: rawRootPath = rootPath,
   rootLabel,
@@ -82,6 +91,8 @@ export default function GitHubTreeList({
   loadNode,
   fileRoute,
   onPathChange,
+  onFileDragStart,
+  fileMenuItems,
 }: GitHubTreeListProps) {
   const { locale, tx } = useI18n()
   const normalizedRootPath = normalizePath(rawRootPath)
@@ -89,7 +100,9 @@ export default function GitHubTreeList({
   const [node, setNode] = useState<FileNode | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [openMenuPath, setOpenMenuPath] = useState('')
   const currentPath = normalizePath(path || internalPath)
+  const displayRootLabel = rootLabel || (normalizedRootPath === rootPath ? tx('根目录', 'Root') : normalizedRootPath.replace(/^\/+/, ''))
 
   useEffect(() => {
     if (path) return
@@ -105,7 +118,18 @@ export default function GitHubTreeList({
         const next = await (loadNode ? loadNode(currentPath) : api.getTree(currentPath))
         if (!cancelled) setNode(next)
       } catch (err: any) {
-        if (!cancelled) setError(err?.message || tx('加载文件失败', 'Failed to load files'))
+        if (!cancelled) {
+          if (currentPath === normalizedRootPath && isMissingTreeError(err)) {
+            setNode({
+              path: normalizedRootPath,
+              name: displayRootLabel,
+              is_dir: true,
+              children: [],
+            })
+          } else {
+            setError(err?.message || tx('加载文件失败', 'Failed to load files'))
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -114,7 +138,7 @@ export default function GitHubTreeList({
     return () => {
       cancelled = true
     }
-  }, [currentPath, loadNode, tx])
+  }, [currentPath, displayRootLabel, loadNode, normalizedRootPath, tx])
 
   const entries = useMemo(() => {
     const children = node?.children || []
@@ -128,11 +152,11 @@ export default function GitHubTreeList({
     const normalized = normalizePath(nextPath)
     if (!path) setInternalPath(normalized)
     onPathChange?.(normalized)
+    setOpenMenuPath('')
   }
 
   const currentRelativeParts = relativeParts(normalizedRootPath, currentPath)
   const showParent = currentPath !== normalizedRootPath
-  const displayRootLabel = rootLabel || (normalizedRootPath === rootPath ? tx('根目录', 'Root') : normalizedRootPath.replace(/^\/+/, ''))
 
   return (
     <section className={`dashboard-file-panel github-tree-list ${className}`.trim()}>
@@ -173,6 +197,30 @@ export default function GitHubTreeList({
         {entries.map((entry) => {
           const nextPath = normalizePath(entry.path || `${currentPath.replace(/\/+$/, '')}/${entry.name}`)
           const source = entry.source || entry.metadata?.source || entry.bundle_context?.source || 'system'
+          const menuItems = fileMenuItems?.(entry) || []
+          const menu = menuItems.length > 0 ? (
+            <span className="dashboard-file-menu-wrap" onClick={(event) => event.preventDefault()}>
+              <button
+                type="button"
+                className="materials-tile-menu-button"
+                aria-label={tx(`打开 ${entry.name} 的工具菜单`, `Open tools menu for ${entry.name}`)}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  setOpenMenuPath((value) => (value === nextPath ? '' : nextPath))
+                }}
+              >
+                ⋮
+              </button>
+              {openMenuPath === nextPath ? (
+                <span className="dashboard-file-menu-panel" onClick={(event) => event.stopPropagation()}>
+                  <ResourceActionMenu items={menuItems} />
+                </span>
+              ) : null}
+            </span>
+          ) : (
+            <span />
+          )
           if (entry.is_dir) {
             return (
               <button key={nextPath} className="dashboard-file-row" onClick={() => setPath(nextPath)}>
@@ -181,16 +229,29 @@ export default function GitHubTreeList({
                 <span className="dashboard-file-kind">{fileTypeLabel(entry, locale)}</span>
                 <span className="dashboard-file-source">{sourceLabel(String(source), locale)}</span>
                 <span className="dashboard-file-updated">{formatDateTime(entry.updated_at || entry.created_at, locale)}</span>
+                {menu}
               </button>
             )
           }
           return (
-            <Link key={nextPath} to={fileRoute ? fileRoute(nextPath) : dataFileEditorRoute(nextPath)} className="dashboard-file-row">
+            <Link
+              key={nextPath}
+              to={fileRoute ? fileRoute(nextPath) : dataFileEditorRoute(nextPath)}
+              className="dashboard-file-row"
+              draggable={Boolean(onFileDragStart)}
+              onDragStart={(event) => onFileDragStart?.(entry, event)}
+              onContextMenu={(event) => {
+                if (menuItems.length === 0) return
+                event.preventDefault()
+                setOpenMenuPath(nextPath)
+              }}
+            >
               <span className="dashboard-file-icon">•</span>
               <span className="dashboard-file-name">{entry.name}</span>
               <span className="dashboard-file-kind">{fileTypeLabel(entry, locale)} · {formatBytes(entry.size || entry.content?.length)}</span>
               <span className="dashboard-file-source">{sourceLabel(String(source), locale)}</span>
               <span className="dashboard-file-updated">{formatDateTime(entry.updated_at || entry.created_at, locale)}</span>
+              {menu}
             </Link>
           )
         })}

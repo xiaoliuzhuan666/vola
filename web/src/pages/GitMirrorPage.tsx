@@ -9,6 +9,7 @@ import {
   type BackupTargetKind,
   type GitMirrorGitHubTestResult,
   type GitMirrorSettings,
+  type OpsInstanceStatus,
   type OpsStatus,
   type PublicConfig,
   type SaveBackupTargetRequest,
@@ -157,6 +158,7 @@ export default function GitMirrorPage() {
   const [restoreApplying, setRestoreApplying] = useState(false)
   const [restoreError, setRestoreError] = useState('')
   const [opsStatus, setOpsStatus] = useState<OpsStatus | null>(null)
+  const [opsInstanceStatus, setOpsInstanceStatus] = useState<OpsInstanceStatus | null>(null)
   const [syncRetryUntil, setSyncRetryUntil] = useState(0)
   const [nowTick, setNowTick] = useState(Date.now())
   const [isDragging, setIsDragging] = useState(false)
@@ -165,12 +167,13 @@ export default function GitMirrorPage() {
     setBusy(true)
     setError('')
     try {
-      const [settings, config, targets, runs, ops] = await Promise.all([
+      const [settings, config, targets, runs, ops, instanceOps] = await Promise.all([
         api.getGitMirror(),
         api.getPublicConfig().catch(() => ({} as PublicConfig)),
         api.listBackupTargets().catch(() => [] as BackupTarget[]),
         api.listBackupRuns(20).catch(() => [] as BackupRun[]),
         api.getOpsStatus().catch(() => null as OpsStatus | null),
+        api.getOpsInstanceStatus().catch(() => null as OpsInstanceStatus | null),
       ])
       const nextExecutionMode = settings.execution_mode || config.git_mirror_execution_mode || 'hosted'
       setMirror(settings)
@@ -187,6 +190,7 @@ export default function GitMirrorPage() {
       setBackupTargets(targets)
       setBackupRuns(runs)
       setOpsStatus(ops)
+      setOpsInstanceStatus(instanceOps)
     } catch (err: any) {
       setError(err.message || tx('加载 GitHub Backup 失败', 'Failed to load GitHub Backup'))
     } finally {
@@ -321,15 +325,53 @@ export default function GitMirrorPage() {
     : opsStatus?.status === 'critical'
       ? tx('有同步或备份错误', 'Sync or backup error')
       : tx('备份还需要配置或执行', 'Backup needs setup or a first run')
-  const latestOpsBackupLabel = opsStatus?.backup.last_successful_backup_at
-    ? formatDateTime(opsStatus.backup.last_successful_backup_at, locale)
+  const opsInstanceStatusLabel = opsInstanceStatus?.status === 'ok'
+    ? tx('实例备份状态正常', 'Instance backup status OK')
+    : opsInstanceStatus?.status === 'critical'
+      ? tx('实例里有同步或备份错误', 'Instance has a sync or backup error')
+      : tx('实例备份还需要配置或执行', 'Instance backup needs setup or a first run')
+  const latestOpsBackupLabel = opsInstanceStatus?.latest_external_backup_at
+    ? formatDateTime(opsInstanceStatus.latest_external_backup_at, locale)
+    : opsStatus?.backup.last_successful_backup_at
+      ? formatDateTime(opsStatus.backup.last_successful_backup_at, locale)
     : tx('还没有外部上传记录', 'No external upload record yet')
-  const latestGitOpsLabel = opsStatus?.git_mirror.last_push_at
+  const latestGitOpsLabel = opsInstanceStatus?.latest_git_push_at
+    ? formatDateTime(opsInstanceStatus.latest_git_push_at, locale)
+    : opsStatus?.git_mirror.last_push_at
     ? formatDateTime(opsStatus.git_mirror.last_push_at, locale)
     : opsStatus?.git_mirror.last_synced_at
       ? formatDateTime(opsStatus.git_mirror.last_synced_at, locale)
       : tx('还没有 Git 同步记录', 'No Git sync record yet')
   const latestFailedBackupRun = backupRuns.find((run) => run.status === 'failed')
+  const githubBackupReady = !!remoteRepoURL && selectedAuthCanSync && !mirror?.remote_conflict
+  const backupFocusTone = mirror?.remote_conflict
+    ? 'warn'
+    : githubBackupReady
+      ? 'good'
+      : 'warn'
+  const backupFocusTitle = mirror?.remote_conflict
+    ? tx('远端仓库需要确认', 'Remote repository needs review')
+    : githubBackupReady
+      ? tx('GitHub 备份已经可用', 'GitHub Backup is ready')
+      : tx('先完成 GitHub 备份', 'Set up GitHub Backup first')
+  const backupFocusCopy = mirror?.remote_conflict
+    ? tx('远端仓库出现 Vola 之外的新提交。请在下方 GitHub 备份目标里确认处理方式。', 'The remote repository has commits outside Vola. Review the GitHub backup destination below before syncing.')
+    : githubBackupReady
+      ? tx('你可以立即同步当前资料；需要离开服务器的 zip 备份包时，再添加 WebDAV 或 COS/S3 目标。', 'You can sync now. Add WebDAV or S3-compatible archive backup targets when you need off-server zip archives.')
+      : authMode === 'github_app_user'
+        ? tx('推荐使用 GitHub App：连接 GitHub，创建私有备份仓库，然后立即同步。', 'Recommended path: connect GitHub, create a private backup repository, then sync.')
+        : tx('填写备份仓库和认证信息后，Vola 会把资料写入 GitHub 版本历史。', 'After repository and credentials are saved, Vola writes your data into GitHub version history.')
+  const githubStepValue = remoteRepoURL
+    ? tx('仓库已配置', 'Repository set')
+    : authMode === 'github_app_user' && mirror?.github_app_user_connected
+      ? tx('GitHub 已连接', 'GitHub connected')
+      : tx('等待配置', 'Waiting for setup')
+  const archiveStepValue = backupTargets.length > 0
+    ? tx(`${backupTargets.length} 个目标`, `${backupTargets.length} target${backupTargets.length === 1 ? '' : 's'}`)
+    : tx('可选', 'Optional')
+  const recoveryStepValue = restorePreview
+    ? tx('已有预览结果', 'Preview ready')
+    : tx('从 zip 备份包恢复', 'Restore from zip archive')
 
   const setInlineMessage = (nextMessage: string) => {
     setMessage(nextMessage)
@@ -343,8 +385,12 @@ export default function GitMirrorPage() {
   }
 
   const refreshOpsStatus = async () => {
-    const next = await api.getOpsStatus().catch(() => null as OpsStatus | null)
+    const [next, instanceNext] = await Promise.all([
+      api.getOpsStatus().catch(() => null as OpsStatus | null),
+      api.getOpsInstanceStatus().catch(() => null as OpsInstanceStatus | null),
+    ])
     setOpsStatus(next)
+    setOpsInstanceStatus(instanceNext)
   }
 
   const refreshBackupRuns = async () => {
@@ -795,16 +841,37 @@ export default function GitMirrorPage() {
               : <>{tx('外部目标最近上传：', 'External target uploads: ')}{externalTargetsWithBackup > 0 ? tx(`${externalTargetsWithBackup} 个已有记录`, `${externalTargetsWithBackup} recorded`) : tx('还没有上传记录', 'No upload record yet')}</>}
           </div>
         </div>
-        {opsStatus && (
+        {(opsInstanceStatus || opsStatus) && (
           <div className="data-sync-status-card">
             <div className="data-record-title">{tx('生产状态', 'Production status')}</div>
-            <div className="data-record-secondary">{opsStatusLabel}</div>
+            <div className="data-record-secondary">{opsInstanceStatus ? opsInstanceStatusLabel : opsStatusLabel}</div>
+            {opsInstanceStatus && (
+              <div className="data-record-secondary">
+                {tx(
+                  `实例用户：${opsInstanceStatus.users_with_remote_backup_artifact}/${opsInstanceStatus.users_total} 个已有远端备份记录`,
+                  `Instance users: ${opsInstanceStatus.users_with_remote_backup_artifact}/${opsInstanceStatus.users_total} have remote backup records`,
+                )}
+              </div>
+            )}
             <div className="data-record-secondary">
               {tx('Git 最近记录：', 'Latest Git record: ')}{latestGitOpsLabel}
             </div>
             <div className="data-record-secondary">
-              {tx('外部目标：', 'External targets: ')}{opsStatus.backup.enabled_targets}/{opsStatus.backup.targets_configured} · {latestOpsBackupLabel}
+              {opsInstanceStatus
+                ? tx(
+                    `外部备份用户：${opsInstanceStatus.users_with_external_backup}/${opsInstanceStatus.users_total} · ${latestOpsBackupLabel}`,
+                    `External backup users: ${opsInstanceStatus.users_with_external_backup}/${opsInstanceStatus.users_total} · ${latestOpsBackupLabel}`,
+                  )
+                : <>{tx('外部目标：', 'External targets: ')}{opsStatus?.backup.enabled_targets}/{opsStatus?.backup.targets_configured} · {latestOpsBackupLabel}</>}
             </div>
+            {opsInstanceStatus && opsStatus && opsStatus.status !== opsInstanceStatus.status && (
+              <div className="data-record-secondary">
+                {tx(
+                  `当前用户状态：${opsStatus.status}`,
+                  `Current user status: ${opsStatus.status}`,
+                )}
+              </div>
+            )}
           </div>
         )}
         <div className="data-sync-status-card">
@@ -837,12 +904,76 @@ export default function GitMirrorPage() {
     return null
   }
 
-  const renderSyncActions = () => syncAvailable && (
-    <div className="data-sync-actions data-sync-actions-compact" style={{ marginTop: 16 }}>
-      <button className="btn btn-primary" type="button" disabled={syncDisabled} onClick={() => void handleSync(false)}>
-        {working ? tx('处理中...', 'Working...') : retrySeconds > 0 ? tx(`请稍候 ${retrySeconds}s`, `Wait ${retrySeconds}s`) : tx('立即同步', 'Sync now')}
-      </button>
-    </div>
+  const renderPrimaryFocusAction = () => {
+    if (mirror?.remote_conflict) {
+      return (
+        <a className="btn btn-primary" href="#github-backup">
+          {tx('查看 GitHub 备份目标', 'Review GitHub destination')}
+        </a>
+      )
+    }
+    if (githubBackupReady) {
+      return (
+        <button className="btn btn-primary" type="button" disabled={syncDisabled} onClick={() => void handleSync(false)}>
+          {working ? tx('处理中...', 'Working...') : retrySeconds > 0 ? tx(`请稍候 ${retrySeconds}s`, `Wait ${retrySeconds}s`) : tx('立即同步', 'Sync now')}
+        </button>
+      )
+    }
+    if (authMode === 'github_app_user' && !mirror?.github_app_user_connected) {
+      return (
+        <button className="btn btn-primary" type="button" disabled={working} onClick={handleConnectGitHubApp}>
+          {working ? tx('连接中...', 'Connecting...') : tx('连接 GitHub', 'Connect GitHub')}
+        </button>
+      )
+    }
+    if (authMode === 'github_app_user' && mirror?.github_app_user_connected && !remoteRepoURL) {
+      return (
+        <button className="btn btn-primary" type="button" disabled={working} onClick={handleCreateDefaultBackupRepo}>
+          {working ? tx('创建中...', 'Creating...') : tx('创建私有备份仓库', 'Create private backup repo')}
+        </button>
+      )
+    }
+    return (
+      <a className="btn btn-primary" href="#github-backup">
+        {tx('填写备份仓库', 'Enter backup repository')}
+      </a>
+    )
+  }
+
+  const renderBackupFocus = () => (
+    <section className={`git-backup-focus-panel is-${backupFocusTone}`} aria-label={tx('备份重点', 'Backup focus')}>
+      <div className="git-backup-focus-copy">
+        <span>{tx('备份状态', 'Backup status')}</span>
+        <h2>{backupFocusTitle}</h2>
+        <p>{backupFocusCopy}</p>
+        <div className="git-backup-focus-actions">
+          {renderPrimaryFocusAction()}
+          <a className="btn" href="#external-backup">
+            {backupTargets.length > 0 ? tx('查看外部备份包', 'View archive backups') : tx('配置外部备份包', 'Set archive backup')}
+          </a>
+          <a className="btn" href="#restore-preview">
+            {tx('恢复预览', 'Restore preview')}
+          </a>
+        </div>
+      </div>
+      <div className="git-backup-focus-status">
+        <div className="git-backup-status-item">
+          <span>GitHub</span>
+          <strong>{githubStepValue}</strong>
+          <small>{remoteRepoURL ? latestBackupLabel : tx('推荐先完成', 'Recommended first')}</small>
+        </div>
+        <div className="git-backup-status-item">
+          <span>{tx('外部备份包', 'Archive backups')}</span>
+          <strong>{archiveStepValue}</strong>
+          <small>{latestOpsBackupLabel}</small>
+        </div>
+        <div className="git-backup-status-item">
+          <span>{tx('恢复', 'Recovery')}</span>
+          <strong>{recoveryStepValue}</strong>
+          <small>{tx('不会自动覆盖，先预览再应用', 'Preview before applying changes')}</small>
+        </div>
+      </div>
+    </section>
   )
 
   const renderRemoteConflict = () => mirror?.remote_conflict && (
@@ -1103,7 +1234,7 @@ export default function GitMirrorPage() {
   )
 
   const renderExternalBackupTargets = () => (
-    <div className="materials-panel data-sync-card">
+    <div id="external-backup" className="materials-panel data-sync-card">
       <div className="card-header">
         <h3 className="card-title">{tx('外部备份目标', 'External backup targets')}</h3>
       </div>
@@ -1393,7 +1524,7 @@ export default function GitMirrorPage() {
         </div>
       )}
 
-      <div className="data-sync-token-box" style={{ marginTop: 16 }}>
+      <div id="restore-preview" className="data-sync-token-box" style={{ marginTop: 16 }}>
         <div className="data-record-title">{tx('恢复预览', 'Restore preview')}</div>
         <div className="data-sync-settings-grid" style={{ marginTop: 12 }}>
           <div className="form-group data-sync-settings-span-wide">
@@ -1514,9 +1645,9 @@ export default function GitMirrorPage() {
 
   return (
     <div className="page materials-page">
-      {renderStorageOverview()}
+      {renderBackupFocus()}
 
-      <div className="materials-panel data-sync-card">
+      <div id="github-backup" className="materials-panel data-sync-card">
         <div className="card-header">
           <h3 className="card-title">{tx('GitHub 备份目标', 'GitHub backup destination')}</h3>
         </div>
@@ -1528,7 +1659,6 @@ export default function GitMirrorPage() {
         {renderRemoteConflict()}
 
         {renderLocalAuthControls()}
-        {renderSyncActions()}
 
         {authMode === 'github_app_user' && mirror?.github_app_user_connected && (
           <div className="data-sync-actions data-sync-actions-compact" style={{ marginTop: 16 }}>
@@ -1539,6 +1669,7 @@ export default function GitMirrorPage() {
         )}
       </div>
 
+      {renderStorageOverview()}
       {renderExternalBackupTargets()}
     </div>
   )

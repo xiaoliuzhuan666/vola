@@ -29,6 +29,38 @@ type opsStatusResponse struct {
 	Docs        []opsDocRef        `json:"docs"`
 }
 
+type opsInstanceStatusResponse struct {
+	Status                        string                 `json:"status"`
+	GeneratedAt                   string                 `json:"generated_at"`
+	Storage                       string                 `json:"storage,omitempty"`
+	LocalMode                     bool                   `json:"local_mode"`
+	PublicURL                     string                 `json:"public_url,omitempty"`
+	UsersTotal                    int                    `json:"users_total"`
+	UsersWithGitBackup            int                    `json:"users_with_git_backup"`
+	UsersWithExternalBackup       int                    `json:"users_with_external_backup"`
+	UsersWithRemoteBackupArtifact int                    `json:"users_with_remote_backup_artifact"`
+	UsersWithCriticalBackupStatus int                    `json:"users_with_critical_backup_status"`
+	LatestGitPushAt               string                 `json:"latest_git_push_at,omitempty"`
+	LatestExternalBackupAt        string                 `json:"latest_external_backup_at,omitempty"`
+	LatestExternalBackupObject    string                 `json:"latest_external_backup_object,omitempty"`
+	Subjects                      []opsInstanceUserState `json:"subjects"`
+	Checks                        []opsCheck             `json:"checks"`
+	Docs                          []opsDocRef            `json:"docs"`
+}
+
+type opsInstanceUserState struct {
+	UserID            uuid.UUID          `json:"user_id"`
+	UserSlug          string             `json:"user_slug"`
+	DisplayName       string             `json:"display_name,omitempty"`
+	Status            string             `json:"status"`
+	GitMirror         opsGitMirrorStatus `json:"git_mirror"`
+	Backup            opsBackupStatus    `json:"backup"`
+	Checks            []opsCheck         `json:"checks"`
+	HasGitBackup      bool               `json:"has_git_backup"`
+	HasExternalBackup bool               `json:"has_external_backup"`
+	HasRemoteArtifact bool               `json:"has_remote_artifact"`
+}
+
 type opsCheck struct {
 	ID      string `json:"id"`
 	Status  string `json:"status"`
@@ -119,6 +151,14 @@ func (s *Server) handleOpsStatus(w http.ResponseWriter, r *http.Request) {
 	respondOK(w, status)
 }
 
+func (s *Server) handleOpsInstanceStatus(w http.ResponseWriter, r *http.Request) {
+	if !s.requireInstanceAdminAccess(w, r) {
+		return
+	}
+	status := s.buildOpsInstanceStatus(r.Context())
+	respondOK(w, status)
+}
+
 func (s *Server) buildOpsStatus(ctx context.Context, userID uuid.UUID) opsStatusResponse {
 	checks := []opsCheck{{
 		ID:      "server",
@@ -144,13 +184,174 @@ func (s *Server) buildOpsStatus(ctx context.Context, userID uuid.UUID) opsStatus
 		GitMirror:   gitMirror,
 		Backup:      backup,
 		Checks:      checks,
-		Docs: []opsDocRef{
-			{Title: "Deployment reliability", Path: "docs/deployment-reliability.zh-CN.md"},
-			{Title: "Account storage and mobile sync", Path: "docs/account-storage-mobile-sync.zh-CN.md"},
-			{Title: "Production deploy", Path: "deploy/prod/README.md"},
-			{Title: "GitHub backup", Path: "docs/github-backup.zh-CN.md"},
-		},
+		Docs:        opsStatusDocs(),
 	}
+}
+
+func (s *Server) buildOpsInstanceStatus(ctx context.Context) opsInstanceStatusResponse {
+	checks := []opsCheck{{
+		ID:      "server",
+		Status:  opsStatusOK,
+		Message: "HTTP service is responding.",
+	}}
+	publicURL := ""
+	if s != nil && s.Config != nil {
+		publicURL = s.Config.PublicBaseURL
+	}
+	response := opsInstanceStatusResponse{
+		GeneratedAt: time.Now().UTC().Format(time.RFC3339),
+		Storage:     s.Storage,
+		LocalMode:   s.isLocalMode(),
+		PublicURL:   publicURL,
+		Subjects:    []opsInstanceUserState{},
+		Docs:        opsStatusDocs(),
+	}
+	if s == nil || s.UserService == nil {
+		response.Checks = append(checks, opsCheck{
+			ID:      "instance_users",
+			Status:  opsStatusCritical,
+			Message: "User service is not configured; instance backup status cannot be aggregated.",
+		})
+		response.Status = worstOpsStatus(response.Checks)
+		return response
+	}
+	fallbackQuotaBytes := int64(0)
+	if s.Config != nil {
+		fallbackQuotaBytes = s.Config.UserStorageQuotaBytes
+	}
+	accounts, err := s.UserService.ListAccounts(ctx, fallbackQuotaBytes)
+	if err != nil {
+		response.Checks = append(checks, opsCheck{
+			ID:      "instance_users",
+			Status:  opsStatusCritical,
+			Message: "User accounts cannot be loaded for instance backup status.",
+			Action:  err.Error(),
+		})
+		response.Status = worstOpsStatus(response.Checks)
+		return response
+	}
+	response.UsersTotal = len(accounts)
+	if len(accounts) == 0 {
+		response.Checks = append(checks, opsCheck{
+			ID:      "instance_users",
+			Status:  opsStatusWarning,
+			Message: "No user accounts exist yet.",
+		})
+		response.Status = worstOpsStatus(response.Checks)
+		return response
+	}
+
+	for _, account := range accounts {
+		userChecks := []opsCheck{{
+			ID:      "server",
+			Status:  opsStatusOK,
+			Message: "HTTP service is responding.",
+		}}
+		gitMirror, gitChecks := s.buildOpsGitMirrorStatus(ctx, account.ID)
+		backup, backupChecks := s.buildOpsBackupStatus(ctx, account.ID)
+		userChecks = append(userChecks, gitChecks...)
+		userChecks = append(userChecks, backupChecks...)
+		userChecks = append(userChecks, buildRemoteBackupArtifactCheck(gitMirror, backup))
+		userStatus := worstOpsStatus(userChecks)
+		hasGitBackup := gitMirrorHasRecordedBackup(gitMirror)
+		hasExternalBackup := externalBackupHasRecordedArtifact(backup)
+		hasRemoteArtifact := hasGitBackup || hasExternalBackup
+
+		if hasGitBackup {
+			response.UsersWithGitBackup++
+			if gitMirror.LastPushAt > response.LatestGitPushAt {
+				response.LatestGitPushAt = gitMirror.LastPushAt
+			}
+		}
+		if hasExternalBackup {
+			response.UsersWithExternalBackup++
+			if backup.LastSuccessfulBackupAt > response.LatestExternalBackupAt {
+				response.LatestExternalBackupAt = backup.LastSuccessfulBackupAt
+				response.LatestExternalBackupObject = backup.LastBackupObject
+			}
+		}
+		if hasRemoteArtifact {
+			response.UsersWithRemoteBackupArtifact++
+		}
+		if userStatus == opsStatusCritical {
+			response.UsersWithCriticalBackupStatus++
+		}
+
+		response.Subjects = append(response.Subjects, opsInstanceUserState{
+			UserID:            account.ID,
+			UserSlug:          account.Slug,
+			DisplayName:       account.DisplayName,
+			Status:            userStatus,
+			GitMirror:         gitMirror,
+			Backup:            backup,
+			Checks:            userChecks,
+			HasGitBackup:      hasGitBackup,
+			HasExternalBackup: hasExternalBackup,
+			HasRemoteArtifact: hasRemoteArtifact,
+		})
+	}
+
+	checks = append(checks, opsCheck{
+		ID:      "instance_users",
+		Status:  opsStatusOK,
+		Message: "User accounts were loaded for instance backup status.",
+	})
+	if response.UsersWithCriticalBackupStatus > 0 {
+		checks = append(checks, opsCheck{
+			ID:      "instance_backup_errors",
+			Status:  opsStatusCritical,
+			Message: "At least one user has a critical GitHub Backup or external backup status.",
+			Action:  "Review the subjects list for the affected user.",
+		})
+	} else {
+		checks = append(checks, opsCheck{
+			ID:      "instance_backup_errors",
+			Status:  opsStatusOK,
+			Message: "No user has a critical GitHub Backup or external backup status.",
+		})
+	}
+	if response.UsersWithGitBackup > 0 {
+		checks = append(checks, opsCheck{
+			ID:      "instance_git_mirror_remote",
+			Status:  opsStatusOK,
+			Message: "At least one user has a recorded GitHub Backup sync.",
+		})
+	} else {
+		checks = append(checks, opsCheck{
+			ID:      "instance_git_mirror_remote",
+			Status:  opsStatusWarning,
+			Message: "No user has a recorded GitHub Backup sync.",
+		})
+	}
+	if response.UsersWithExternalBackup > 0 {
+		checks = append(checks, opsCheck{
+			ID:      "instance_external_backup_targets",
+			Status:  opsStatusOK,
+			Message: "At least one user has a recorded external backup upload.",
+		})
+	} else {
+		checks = append(checks, opsCheck{
+			ID:      "instance_external_backup_targets",
+			Status:  opsStatusWarning,
+			Message: "No user has a recorded external backup upload.",
+		})
+	}
+	if response.UsersWithRemoteBackupArtifact > 0 {
+		checks = append(checks, opsCheck{
+			ID:      "instance_remote_backup_artifact",
+			Status:  opsStatusOK,
+			Message: "At least one user has a recorded remote backup artifact.",
+		})
+	} else {
+		checks = append(checks, opsCheck{
+			ID:      "instance_remote_backup_artifact",
+			Status:  opsStatusWarning,
+			Message: "No user has a recorded remote backup artifact.",
+		})
+	}
+	response.Checks = checks
+	response.Status = worstOpsStatus(checks)
+	return response
 }
 
 func (s *Server) buildOpsGitMirrorStatus(ctx context.Context, userID uuid.UUID) (opsGitMirrorStatus, []opsCheck) {
@@ -392,8 +593,8 @@ func (s *Server) buildOpsBackupStatus(ctx context.Context, userID uuid.UUID) (op
 }
 
 func buildRemoteBackupArtifactCheck(git opsGitMirrorStatus, backup opsBackupStatus) opsCheck {
-	gitHasBackup := git.RemoteURL != "" && (git.LastPushAt != "" || git.LastSyncedAt != "") && git.LastError == "" && git.LastPushError == "" && !git.RemoteConflict
-	externalHasBackup := backup.TargetsWithLastBackup > 0 && backup.LastError == ""
+	gitHasBackup := gitMirrorHasRecordedBackup(git)
+	externalHasBackup := externalBackupHasRecordedArtifact(backup)
 	if gitHasBackup || externalHasBackup {
 		return opsCheck{
 			ID:      "remote_backup_artifact",
@@ -412,6 +613,23 @@ func buildRemoteBackupArtifactCheck(git opsGitMirrorStatus, backup opsBackupStat
 		ID:      "remote_backup_artifact",
 		Status:  opsStatusWarning,
 		Message: "No remote backup destination has been set up.",
+	}
+}
+
+func gitMirrorHasRecordedBackup(git opsGitMirrorStatus) bool {
+	return git.RemoteURL != "" && (git.LastPushAt != "" || git.LastSyncedAt != "") && git.LastError == "" && git.LastPushError == "" && !git.RemoteConflict
+}
+
+func externalBackupHasRecordedArtifact(backup opsBackupStatus) bool {
+	return backup.TargetsWithLastBackup > 0 && backup.LastError == ""
+}
+
+func opsStatusDocs() []opsDocRef {
+	return []opsDocRef{
+		{Title: "Deployment reliability", Path: "docs/deployment-reliability.zh-CN.md"},
+		{Title: "Account storage and mobile sync", Path: "docs/account-storage-mobile-sync.zh-CN.md"},
+		{Title: "Production deploy", Path: "deploy/prod/README.md"},
+		{Title: "GitHub backup", Path: "docs/github-backup.zh-CN.md"},
 	}
 }
 

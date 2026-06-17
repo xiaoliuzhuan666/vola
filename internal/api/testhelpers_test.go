@@ -159,6 +159,7 @@ func (s *Server) setupTestRoutes(store *inMemoryTokenStore) {
 
 		// File tree
 		r.Get("/api/tree/archive", s.handleTreeDownloadZip)
+		r.Get("/api/tree/snapshot", s.handleTreeSnapshot)
 		r.Get("/api/tree/*", s.handleTreeRead)
 		r.Put("/api/tree/*", s.handleTreeWrite)
 		r.Delete("/api/tree/*", s.handleTreeDelete)
@@ -178,6 +179,14 @@ func (s *Server) setupTestRoutes(store *inMemoryTokenStore) {
 		r.Get("/api/projects", s.handleListProjects)
 		r.Post("/api/projects", s.handleCreateProject)
 		r.Get("/api/projects/{name}", s.handleGetProject)
+		r.Get("/api/projects/{name}/materials", s.handleListProjectMaterials)
+		r.Post("/api/projects/{name}/materials", s.handleSaveProjectMaterial)
+		r.Post("/api/projects/{name}/materials/copy", s.handleCopyProjectMaterial)
+		r.Get("/api/projects/{name}/context-packs", s.handleListProjectContextPacks)
+		r.Post("/api/projects/{name}/context-packs", s.handleBuildProjectContextPack)
+		r.Get("/api/projects/{name}/context-packs/{pack}", s.handleReadProjectContextPack)
+		r.Post("/api/projects/{name}/repository-export", s.handleBuildProjectRepositoryExport)
+		r.Post("/api/projects/{name}/repository-export/apply", s.handleApplyProjectRepositoryExport)
 		r.Post("/api/projects/{name}/log", s.handleAppendProjectLog)
 
 		// Inbox

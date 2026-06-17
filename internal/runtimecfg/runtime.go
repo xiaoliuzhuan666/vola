@@ -38,6 +38,7 @@ type SyncProfile struct {
 	UpdatedAt    string   `json:"updated_at,omitempty"`
 	Source       string   `json:"source,omitempty"`
 	AuthMode     string   `json:"auth_mode,omitempty"`
+	ActiveTeamID string   `json:"active_team_id,omitempty"`
 }
 
 type LocalConnection struct {
@@ -193,7 +194,7 @@ func LoadConfig(path string) (string, *CLIConfig, error) {
 		},
 	}
 	data, err := readFileWithLegacyFallback(path, legacyPath)
-	
+
 	var unmarshalErr error
 	if err == nil {
 		unmarshalErr = json.Unmarshal(data, cfg)
@@ -247,7 +248,7 @@ func LoadRawConfig(path string) (string, string, error) {
 		legacyPath = legacyDarwinConfigPath()
 	}
 	data, err := readFileWithLegacyFallback(path, legacyPath)
-	
+
 	var checkErr error
 	if err == nil {
 		var dummy map[string]any

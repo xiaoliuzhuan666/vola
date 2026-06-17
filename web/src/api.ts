@@ -12,7 +12,8 @@ function detectTauriRuntime() {
   if (typeof window === "undefined") return false;
   const protocol = window.location?.protocol || "";
   const hostname = window.location?.hostname || "";
-  return !!(window as any).__TAURI_INTERNALS__ || protocol === "tauri:" || hostname === "tauri.localhost";
+  const runtime = window as any;
+  return !!runtime.__TAURI__ || !!runtime.__TAURI_INTERNALS__ || protocol === "tauri:" || hostname === "tauri.localhost";
 }
 
 export const isTauri = detectTauriRuntime();
@@ -23,6 +24,16 @@ type TauriInvoke = <T>(command: string, args?: Record<string, unknown>) => Promi
 type AuthStorageKey = "token" | "refresh_token";
 let memoryAccessToken = "";
 let localOwnerTokenPromise: Promise<string | null> | null = null;
+
+export interface CliToolsInstallResult {
+  source_path: string;
+  install_dir: string;
+  commands: string[];
+  command_paths: string[];
+  path_updated: boolean;
+  rc_file?: string | null;
+  shell_reload_command?: string | null;
+}
 
 function sanitizeAuthValue(value?: string | null) {
   if (!value) return null;
@@ -75,6 +86,15 @@ function getGlobalTauriInvoke(): TauriInvoke | null {
   if (typeof window === "undefined") return null;
   const tauri = (window as any).__TAURI__;
   return tauri?.core?.invoke || tauri?.invoke || null;
+}
+
+export async function installCliTools(): Promise<CliToolsInstallResult> {
+  if (!isTauri) {
+    throw new Error("CLI installer is only available in the Vola desktop app.");
+  }
+  const globalInvoke = getGlobalTauriInvoke();
+  const invoke = globalInvoke || (await import('@tauri-apps/api/core')).invoke;
+  return invoke<CliToolsInstallResult>("install_cli_tools");
 }
 
 async function resolveTauriApiBase() {
@@ -280,6 +300,7 @@ export interface PublicConfig {
   github_app_enabled?: boolean;
   github_app_slug?: string;
   billing_enabled?: boolean;
+  public_registration_enabled?: boolean;
   storage?: string;
   local_mode?: boolean;
   system_settings_enabled?: boolean;
@@ -394,6 +415,116 @@ export interface LocalLibraryImportResponse {
   paths: string[];
   stats: LocalLibraryStats;
   warnings?: string[];
+}
+
+export interface ProjectMaterialInput {
+  title: string;
+  slug?: string;
+  content: string;
+  source_path?: string;
+  source_url?: string;
+  source_type?: string;
+  description?: string;
+  tags?: string[];
+  source_updated_at?: string;
+  repository_path?: string;
+}
+
+export interface ProjectMaterial {
+  project: string;
+  title: string;
+  slug: string;
+  path: string;
+  content?: string;
+  source_path?: string;
+  source_url?: string;
+  source_type?: string;
+  description?: string;
+  tags?: string[];
+  source_updated_at?: string;
+  repository_path?: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectMaterialCopyInput {
+  source_path: string;
+  title?: string;
+  slug?: string;
+  source_url?: string;
+  description?: string;
+  tags?: string[];
+  repository_path?: string;
+  source_updated_at?: string;
+}
+
+export interface ProjectContextPackInput {
+  title: string;
+  slug?: string;
+  purpose?: string;
+  material_paths?: string[];
+  include_context?: boolean;
+  include_recent_logs?: boolean;
+  recent_log_limit?: number;
+  repository_dir?: string;
+  repository_filename?: string;
+}
+
+export interface ProjectContextPack {
+  project: string;
+  title: string;
+  slug: string;
+  path: string;
+  content?: string;
+  purpose?: string;
+  material_paths?: string[];
+  repository_path?: string;
+  metadata?: Record<string, any>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRepositoryExportInput {
+  repository_dir?: string;
+  material_paths?: string[];
+  pack_paths?: string[];
+  include_index?: boolean;
+}
+
+export interface ProjectRepositoryExportApplyInput extends ProjectRepositoryExportInput {
+  repository_root: string;
+  overwrite?: boolean;
+}
+
+export interface ProjectRepositoryExportFile {
+  path: string;
+  content: string;
+  source?: string;
+}
+
+export interface ProjectRepositoryExportApplyFile {
+  path: string;
+  target_path: string;
+  source?: string;
+  status: "written" | "skipped" | "error";
+  bytes_written?: number;
+  message?: string;
+}
+
+export interface ProjectRepositoryExport {
+  project: string;
+  repository_dir: string;
+  files: ProjectRepositoryExportFile[];
+  generated_at: string;
+}
+
+export interface ProjectRepositoryExportApplyResult {
+  project: string;
+  repository_root: string;
+  repository_dir: string;
+  files: ProjectRepositoryExportApplyFile[];
+  generated_at: string;
 }
 
 export function normalizeDashboardStats(stats?: Partial<DashboardStats> | null): DashboardStats {
@@ -807,6 +938,22 @@ export interface LocalSkillSyncResponse {
   blocked?: boolean;
 }
 
+export interface LocalPlatformConnectionRefreshResponse {
+  platform: string;
+  name: string;
+  refreshed: boolean;
+  connection: {
+    transport?: string;
+    config_path?: string;
+    entrypoint_type?: string;
+    entrypoint_path?: string;
+    managed_paths?: string[];
+    chat_usage?: string[];
+    connected_at?: string;
+    last_platform_url?: string;
+  };
+}
+
 export interface SkillConversionRequest {
   source_path: string;
   source_platform?: "claude-code" | "codex";
@@ -920,6 +1067,8 @@ export interface TeamSkillPublication {
   skill_path: string;
   status: "draft" | "published" | "archived" | string;
   visibility: "private" | "team" | string;
+  version?: string;
+  release_note?: string;
   note?: string;
   review_status?: "requested" | "approved" | "changes_requested" | string;
   review_note?: string;
@@ -941,6 +1090,40 @@ export interface TeamSkillPublicationsResponse {
   storage_path: string;
   updated_at?: string;
   publications: TeamSkillPublication[];
+}
+
+export interface LocalToolStatusPlatform {
+  id: string;
+  name: string;
+  installed: boolean;
+  connected: boolean;
+  config_path?: string;
+  entrypoint_installed: boolean;
+  entrypoint_path?: string;
+  auto_sync_supported: boolean;
+  export_supported: boolean;
+  sync_mode: string;
+  status_label: string;
+  next_action: string;
+  reasons?: string[];
+  chat_usage?: string[];
+}
+
+export interface LocalToolResourceRecommendation {
+  id: string;
+  title: string;
+  category: string;
+  preview_only: boolean;
+  description: string;
+  steps?: string[];
+  platforms?: string[];
+}
+
+export interface LocalToolStatusResponse {
+  version: string;
+  generated_at: string;
+  platforms: LocalToolStatusPlatform[];
+  resource_recommendations: LocalToolResourceRecommendation[];
 }
 
 export interface TeamSkillSubscriptionStatus {
@@ -1273,6 +1456,38 @@ export interface OpsStatus {
   public_url?: string;
   git_mirror: OpsGitMirrorStatus;
   backup: OpsBackupStatus;
+  checks: OpsCheck[];
+  docs: Array<{ title: string; path: string }>;
+}
+
+export interface OpsInstanceUserState {
+  user_id: string;
+  user_slug: string;
+  display_name?: string;
+  status: OpsStatusLevel;
+  git_mirror: OpsGitMirrorStatus;
+  backup: OpsBackupStatus;
+  checks: OpsCheck[];
+  has_git_backup: boolean;
+  has_external_backup: boolean;
+  has_remote_artifact: boolean;
+}
+
+export interface OpsInstanceStatus {
+  status: OpsStatusLevel;
+  generated_at: string;
+  storage?: string;
+  local_mode: boolean;
+  public_url?: string;
+  users_total: number;
+  users_with_git_backup: number;
+  users_with_external_backup: number;
+  users_with_remote_backup_artifact: number;
+  users_with_critical_backup_status: number;
+  latest_git_push_at?: string;
+  latest_external_backup_at?: string;
+  latest_external_backup_object?: string;
+  subjects: OpsInstanceUserState[];
   checks: OpsCheck[];
   docs: Array<{ title: string; path: string }>;
 }
@@ -1653,6 +1868,9 @@ export const api = {
   getLocalMcpHealth: (): Promise<Record<string, { status: "online" | "offline"; latency_ms: number; last_check: string }>> =>
     request<Record<string, { status: "online" | "offline"; latency_ms: number; last_check: string }>>("/local/mcp/health"),
 
+  getLocalToolsStatus: (): Promise<LocalToolStatusResponse> =>
+    request<LocalToolStatusResponse>("/local/tools/status"),
+
   getSessions: (): Promise<Session[]> => request<Session[]>("/auth/sessions"),
 
   revokeSession: (id: string): Promise<void> =>
@@ -1718,6 +1936,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ client_id: clientId }),
     }),
+  refreshLocalPlatformConnection: (platform: string): Promise<LocalPlatformConnectionRefreshResponse> =>
+    request("/local/platform/connection/refresh", {
+      method: "POST",
+      body: JSON.stringify({ platform }),
+    }),
 
   // Connections
   getConnections: () =>
@@ -1761,22 +1984,53 @@ export const api = {
   // Projects
   getProjects: () =>
     request<{ projects: any[] }>("/projects").then((r) => r.projects),
-  getProject: (name: string) => request<any>(`/projects/${name}`),
+  getProject: (name: string) => request<any>(`/projects/${encodeURIComponent(name)}`),
   createProject: (name: string) =>
     request<any>("/projects", {
       method: "POST",
       body: JSON.stringify({ name }),
     }),
   archiveProject: (name: string) =>
-    request<any>(`/projects/${name}/archive`, { method: "PUT" }),
+    request<any>(`/projects/${encodeURIComponent(name)}/archive`, { method: "PUT" }),
   appendProjectLog: (
     name: string,
     data: { source: string; action: string; summary: string; tags?: string[] },
   ) =>
-    request<any>(`/projects/${name}/log`, {
+    request<any>(`/projects/${encodeURIComponent(name)}/log`, {
       method: "POST",
       body: JSON.stringify(data),
     }),
+  getProjectMaterials: (name: string) =>
+    request<{ materials: ProjectMaterial[] }>(`/projects/${encodeURIComponent(name)}/materials`).then((r) => r.materials || []),
+  saveProjectMaterial: (name: string, data: ProjectMaterialInput) =>
+    request<ProjectMaterial>(`/projects/${encodeURIComponent(name)}/materials`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  copyProjectMaterial: (name: string, data: ProjectMaterialCopyInput) =>
+    request<ProjectMaterial>(`/projects/${encodeURIComponent(name)}/materials/copy`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  getProjectContextPacks: (name: string) =>
+    request<{ context_packs: ProjectContextPack[] }>(`/projects/${encodeURIComponent(name)}/context-packs`).then((r) => r.context_packs || []),
+  buildProjectContextPack: (name: string, data: ProjectContextPackInput) =>
+    request<ProjectContextPack>(`/projects/${encodeURIComponent(name)}/context-packs`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+  readProjectContextPack: (name: string, pack: string) =>
+    request<{ context_pack: ProjectContextPack }>(`/projects/${encodeURIComponent(name)}/context-packs/${encodeURIComponent(pack)}`).then((r) => r.context_pack),
+  buildProjectRepositoryExport: (name: string, data?: ProjectRepositoryExportInput) =>
+    request<{ repository_export: ProjectRepositoryExport }>(`/projects/${encodeURIComponent(name)}/repository-export`, {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }).then((r) => r.repository_export),
+  applyProjectRepositoryExport: (name: string, data: ProjectRepositoryExportApplyInput) =>
+    request<{ repository_export_apply: ProjectRepositoryExportApplyResult }>(`/projects/${encodeURIComponent(name)}/repository-export/apply`, {
+      method: "POST",
+      body: JSON.stringify(data),
+    }).then((r) => r.repository_export_apply),
   scanLocalLibrary: (data?: LocalLibraryScanRequest) =>
     request<LocalLibraryScanResponse>("/local/library/scan", {
       method: "POST",
@@ -1889,6 +2143,8 @@ export const api = {
     skill_path: string;
     status: string;
     visibility: string;
+    version?: string;
+    release_note?: string;
     note?: string;
   }) =>
     request<TeamSkillPublicationsResponse>(`/teams/${encodeURIComponent(teamID)}/skill-publications`, {
@@ -2411,6 +2667,12 @@ export const api = {
       body: JSON.stringify(req),
     }),
 
+  updateLocalActiveWorkspace: (req: { active_team_id: string }): Promise<void> =>
+    request<void>("/local/workspace/active", {
+      method: "PUT",
+      body: JSON.stringify(req),
+    }),
+
   getLocalGitMirror: (): Promise<GitMirrorSettings> =>
     request<GitMirrorSettings>("/local/git-mirror"),
 
@@ -2533,6 +2795,9 @@ export const api = {
 
   getOpsStatus: (): Promise<OpsStatus> =>
     request<OpsStatus>("/ops/status"),
+
+  getOpsInstanceStatus: (): Promise<OpsInstanceStatus> =>
+    request<OpsInstanceStatus>("/ops/instance-status"),
 
   testGitMirrorGitHubTokenGeneric: (
     req: GitMirrorGitHubTestRequest,

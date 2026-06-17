@@ -23,6 +23,7 @@ test-results/
 web/test-results/
 
 # Local release verification artifacts
+release-packages/
 .playwright-mcp/
 .playwright-cli/
 console-stage4*.txt
