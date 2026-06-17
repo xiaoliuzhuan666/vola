@@ -398,9 +398,25 @@ GitHub Release 资产：
 
 发布完成后回填：
 
-- 提交：待回填
+- 提交：`122949166bd0daae29aa5a07968e777c493d596d`
 - tag：`v0.1.11`
-- Release workflow run：待回填
-- Actions 页面：待回填
-- Release 页面：待回填
-- workflow 结果：待回填
+- Release workflow run：`27704806347`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27704806347`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.11`
+- workflow 结果：通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.11_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.11_x64.dmg`
+- `linux-x86_64-vola_0.1.11_amd64.AppImage`
+- `windows-x86_64-vola_0.1.11_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.11`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
