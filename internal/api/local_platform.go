@@ -49,6 +49,8 @@ type localPlatformSkillsArchiveRequest struct {
 	ArchivePath string `json:"archive_path"`
 }
 
+const localPlatformProfileContentLimitBytes = 64 * 1024
+
 func (s *Server) ensureLocalPlatformMode(w http.ResponseWriter) bool {
 	if s.isLocalMode() {
 		return true
@@ -385,13 +387,9 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 	source := "agent:" + platform
 
 	if content := renderAgentProfileRules(platform, payload.ProfileRules); strings.TrimSpace(content) != "" {
-		category := platform + "-agent"
-		if err := s.MemoryService.UpsertProfile(ctx, userID, category, content, source); err != nil {
+		if err := s.importAgentProfileRules(ctx, userID, platform, source, content, payload.ProfileRules, result); err != nil {
 			return nil, err
 		}
-		result.ProfileCategories++
-		result.Imported++
-		result.Paths = append(result.Paths, hubpath.ProfilePath(category))
 	}
 
 	for _, item := range payload.MemoryItems {
@@ -527,6 +525,78 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 
 	sort.Strings(result.Paths)
 	return result, nil
+}
+
+func (s *Server) importAgentProfileRules(ctx context.Context, userID uuid.UUID, platform, source, content string, rules []sqlitestorage.AgentProfileRule, result *sqlitestorage.AgentImportResult) error {
+	category := platform + "-agent"
+	profilePath := hubpath.ProfilePath(category)
+	if len(content) <= localPlatformProfileContentLimitBytes {
+		if err := s.MemoryService.UpsertProfile(ctx, userID, category, content, source); err != nil {
+			return err
+		}
+		result.ProfileCategories++
+		result.Imported++
+		result.Paths = append(result.Paths, profilePath)
+		return nil
+	}
+
+	archivePath := filepath.ToSlash(filepath.Join("/platforms", platform, "agent", "profile-rules.md"))
+	if _, err := s.FileTreeService.WriteEntry(ctx, userID, archivePath, content+"\n", "text/markdown", models.FileTreeWriteOptions{
+		Kind:          "file",
+		MinTrustLevel: models.TrustLevelWork,
+		Metadata: map[string]interface{}{
+			"source_platform":  platform,
+			"capture_mode":     "agent",
+			"exactness":        "reference",
+			"import_kind":      "agent_profile_rules_archive",
+			"profile_category": category,
+			"original_bytes":   len(content),
+		},
+	}); err != nil {
+		return err
+	}
+
+	summary := renderArchivedAgentProfileRulesSummary(platform, archivePath, len(content), rules)
+	if err := s.MemoryService.UpsertProfile(ctx, userID, category, summary, source); err != nil {
+		return err
+	}
+
+	result.ProfileCategories++
+	result.Artifacts++
+	result.Imported++
+	result.Archived++
+	result.Paths = append(result.Paths, profilePath, archivePath)
+	return nil
+}
+
+func renderArchivedAgentProfileRulesSummary(platform, archivePath string, originalBytes int, rules []sqlitestorage.AgentProfileRule) string {
+	lines := []string{
+		fmt.Sprintf("# %s agent-derived profile rules", platform),
+		"",
+		"The imported profile rules were larger than a single profile memory entry, so Vola preserved the exact content as a platform archive.",
+		"",
+		fmt.Sprintf("- Full archive: `%s`", archivePath),
+		fmt.Sprintf("- Original size: %d bytes", originalBytes),
+	}
+	if len(rules) > 0 {
+		lines = append(lines, "- Imported rule groups:")
+		for index, rule := range rules {
+			if index >= 12 {
+				lines = append(lines, fmt.Sprintf("  - ...and %d more", len(rules)-index))
+				break
+			}
+			title := strings.TrimSpace(rule.Title)
+			if title == "" {
+				title = "Rule"
+			}
+			source := ""
+			if len(rule.SourcePaths) > 0 {
+				source = " — " + strings.Join(rule.SourcePaths, ", ")
+			}
+			lines = append(lines, "  - "+title+source)
+		}
+	}
+	return strings.TrimSpace(strings.Join(lines, "\n"))
 }
 
 func (s *Server) writeLocalAgentArtifact(ctx context.Context, userID uuid.UUID, platform, filename string, payload any) (string, error) {

@@ -136,6 +136,59 @@ func TestImportAgentExportClaudeConversationWritesCanonicalArchive(t *testing.T)
 	}
 }
 
+func TestImportAgentExportArchivesLargeProfileRules(t *testing.T) {
+	ctx := context.Background()
+	store, err := Open(filepath.Join(t.TempDir(), "local.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	client := &Client{store: store, userID: user.ID}
+
+	content := strings.Repeat("Keep this imported profile rule for archive handling.\n", 1400)
+	result, err := client.ImportAgentExport(ctx, "codex", AgentExportPayload{
+		ProfileRules: []AgentProfileRule{
+			{
+				Title:       "Large AGENTS.md",
+				Content:     content,
+				Exactness:   "exact",
+				SourcePaths: []string{"~/.codex/AGENTS.md"},
+				Confidence:  1,
+			},
+		},
+	})
+	if err != nil {
+		t.Fatalf("ImportAgentExport: %v", err)
+	}
+	if result.ProfileCategories != 1 || result.Artifacts != 1 || result.Archived != 1 {
+		t.Fatalf("unexpected result counts: %+v", result)
+	}
+
+	profilePath := "/memory/profile/codex-agent.md"
+	archivePath := "/platforms/codex/agent/profile-rules.md"
+	profile, err := store.Read(ctx, user.ID, profilePath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read profile: %v", err)
+	}
+	if len(profile.Content) >= agentProfileContentLimitBytes ||
+		!strings.Contains(profile.Content, "Full archive: `"+archivePath+"`") {
+		t.Fatalf("unexpected profile summary: %s", profile.Content)
+	}
+	archive, err := store.Read(ctx, user.ID, archivePath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read archive: %v", err)
+	}
+	if !strings.Contains(archive.Content, "Keep this imported profile rule") ||
+		len(archive.Content) <= agentProfileContentLimitBytes {
+		t.Fatalf("archive did not preserve large profile rules")
+	}
+}
+
 func TestImportAgentExportClaudeConversationPreservesStructuredParts(t *testing.T) {
 	ctx := context.Background()
 	store, err := Open(filepath.Join(t.TempDir(), "local.db"))

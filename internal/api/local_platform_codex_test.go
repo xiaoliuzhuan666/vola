@@ -110,6 +110,83 @@ func TestSQLiteSharedServerLocalPlatformImportCodex(t *testing.T) {
 	}
 }
 
+func TestSQLiteSharedServerLocalPlatformImportCodexArchivesLargeProfileRules(t *testing.T) {
+	home := createCodexDashboardFixture(t)
+	longAgents := "# Large Codex Instructions\n\n" + strings.Repeat("Preserve this imported Codex instruction line for archival import checks.\n", 1200)
+	writeClaudeDashboardFixtureFile(t, filepath.Join(home, ".codex", "AGENTS.md"), longAgents)
+	t.Setenv("HOME", home)
+
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+
+	body, err := json.Marshal(localPlatformDashboardRequest{
+		Platform: "codex",
+		Mode:     "agent",
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	status, env := doJSON(t, http.MethodPost, ts.URL+"/api/local/platform/import", adminToken, body)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("dashboard import failed: status=%d env=%+v", status, env)
+	}
+
+	var resp localPlatformDashboardImportResponse
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if resp.Agent == nil {
+		t.Fatalf("expected agent result, got %+v", resp)
+	}
+	if resp.Agent.ProfileCategories != 1 {
+		t.Fatalf("ProfileCategories = %d, want 1 in %+v", resp.Agent.ProfileCategories, resp.Agent)
+	}
+
+	profilePath := hubpath.ProfilePath("codex-agent")
+	archivePath := "/platforms/codex/agent/profile-rules.md"
+	for _, target := range []string{profilePath, archivePath} {
+		found := false
+		for _, importedPath := range resp.Agent.Paths {
+			if importedPath == target {
+				found = true
+				break
+			}
+		}
+		if !found {
+			t.Fatalf("expected path %s in import result paths: %+v", target, resp.Agent.Paths)
+		}
+	}
+
+	profile, err := store.Read(ctx, user.ID, profilePath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read profile: %v", err)
+	}
+	if !strings.Contains(profile.Content, "Full archive: `"+archivePath+"`") ||
+		!strings.Contains(profile.Content, "Original size:") {
+		t.Fatalf("profile summary should point to archived profile rules, got: %s", profile.Content)
+	}
+	if len(profile.Content) >= localPlatformProfileContentLimitBytes {
+		t.Fatalf("profile summary is still too large: %d bytes", len(profile.Content))
+	}
+
+	archive, err := store.Read(ctx, user.ID, archivePath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read archived profile rules: %v", err)
+	}
+	if !strings.Contains(archive.Content, "Large Codex Instructions") ||
+		!strings.Contains(archive.Content, "Preserve this imported Codex instruction line") {
+		t.Fatalf("archived profile rules did not preserve source content")
+	}
+	if len(archive.Content) <= localPlatformProfileContentLimitBytes {
+		t.Fatalf("archive content should exercise large profile handling, got %d bytes", len(archive.Content))
+	}
+}
+
 func TestSQLiteSharedServerLocalCodexConsole(t *testing.T) {
 	home := createCodexDashboardFixture(t)
 	t.Setenv("HOME", home)
