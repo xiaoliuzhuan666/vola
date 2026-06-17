@@ -1,6 +1,6 @@
 # Agent 数据 Hub 相似产品调研与优化建议
 
-更新日期：2026-06-15
+更新日期：2026-06-17
 
 ## 调研范围
 
@@ -21,6 +21,10 @@ Vola 更适合被理解为个人 Agent 数据 Hub：
 
 > 把 Claude、ChatGPT、Codex、Cursor 等 AI 工具接到同一份个人长期上下文。
 
+最新核心原则见 `docs/core-principles.zh-CN.md`：
+
+> Vola 是给个人和小团队用的 Agent 资料中心：把 profile、memory、projects、skills、MCP、prompt 和 playbook 放在一个私有 Hub 里，再安全同步到 Codex、Claude Code 等本机工具。
+
 ## 相似产品分组
 
 | 类别 | 代表产品 | 他们解决的问题 | 对 Vola 的启发 |
@@ -30,6 +34,84 @@ Vola 更适合被理解为个人 Agent 数据 Hub：
 | 浏览器 / 桌面控制 | [Agentify Desktop](https://github.com/agentify-sh/desktop)、[QuickDesk](https://github.com/barry-ran/QuickDesk)、[Windows-MCP](https://github.com/CursorTouch/Windows-MCP) | 让 agent 控制已登录网页会话或桌面应用 | 这类产品负责“让 agent 做动作”。Vola 更应该负责动作之后留下的资料、记录、记忆和可复用 skill |
 | Agent 工作台 | [OpenHands](https://github.com/OpenHands/OpenHands)、[Cline](https://github.com/cline/cline)、[Roo Code](https://github.com/RooCodeInc/Roo-Code)、[Archon](https://github.com/coleam00/Archon)、[Hermes Studio](https://github.com/JPeetz/Hermes-Studio) | 任务执行、代码修改、终端、审批、多 agent 协作、运行记录 | Vola 应服务这些 agent，而不是把自己做成另一个执行平台 |
 | 多 Agent 配置 / Skill 分发 | [gaal](https://getgaal.com/)、[skill-depot](https://github.com/Ruhal-Doshi/skill-depot)、[Arcweld](https://arcweld.ai/) | 用统一配置或 workspace 管理多个 AI 工具的 rules、skills、MCP、文件和共享上下文 | 这组最接近 Vola。Vola 需要把导入、转换、权限、备份、审计和迁移讲清楚，和“写配置文件”拉开距离 |
+
+## 2026-06-17 补充：cc-switch、SkillHub 与 Vola 的差异
+
+本次补充聚焦用户近期提到的 cc-switch、SkillHub、SkillHub MCP 等项目。
+
+| 项目 | 主要定位 | 值得关注的能力 | 和 Vola 的区别 |
+| --- | --- | --- | --- |
+| [cc-switch](https://github.com/farion1231/cc-switch) | 多 AI 编程工具的桌面管理器，覆盖 Claude Code、Claude Desktop、Codex、Gemini CLI、OpenCode、OpenClaw、Hermes 等 | provider presets、本地代理、热切换、MCP / Skills 管理、system tray、使用量和成本统计、配置备份与跨设备同步 | cc-switch 重点管理工具配置、模型 provider、代理和切换体验。Vola 重点管理 Agent 资料资产：profile、memory、projects、skills、MCP、prompt、playbook，以及它们如何安全进入本机工具 |
+| [SkillHub.club](https://www.skillhub.club/) / [SkillHub Desktop](https://github.com/skillhub-club/skillhub-desktop) | 面向 Agent Skill 的公开发现、安装和桌面管理 | Skill 搜索、目录浏览、一键安装、多工具同步、集合、AI 辅助创建和改写、命令面板 | SkillHub 更像公开 Skill 目录和桌面安装器。Vola 不以公开市场为主，而是保存个人和小团队的私有资料、团队经验、权限和备份 |
+| [iflytek SkillHub](https://github.com/iflytek/skillhub) | 面向组织内部的自托管企业 Skill registry | 发布与版本、namespace、角色、review、全局推广、audit log、CLI、对象存储 | iflytek SkillHub 是企业级私有 registry。Vola 的 Team Library 当前只服务小团队资料共享，不承诺企业治理平台能力 |
+| [skillhub-club/mcp-server](https://github.com/skillhub-club/mcp-server) | 通过 MCP 搜索、发现、安装 SkillHub 里的 Agent Skills | 让 Agent 通过 MCP 获取 Skill 发现和安装能力 | 它把外部 Skill 目录暴露给 Agent。Vola 的 MCP 重点是读写用户自己的 Hub 资料和团队资产 |
+| [artuntan/skillhub-mcp](https://github.com/artuntan/skillhub-mcp) | AI 资源推荐 MCP server | 推荐 skills、tools、agents、rules、MCP servers 等资源 | 它更像外部资源推荐器。Vola 可以借鉴“按问题推荐资源”，但安装和同步仍要经过用户确认和安全路径 |
+
+这些项目说明市场已经把几个方向分开了：
+
+- provider / 模型 / 代理管理会继续由 cc-switch 这类工具做深；
+- 公开 Skill 发现会由 SkillHub.club 这类目录型产品推进；
+- 企业 Skill registry 会有 namespace、review、audit 和合规要求；
+- MCP server 可以成为资源发现入口；
+- Vola 更适合守住个人和小团队的私有 Agent 资料中心定位。
+
+## 可以吸收到 Vola 的做法
+
+| 来源 | 可吸收做法 | Vola 中的产品形态 |
+| --- | --- | --- |
+| cc-switch | 首次启动自动检测本机工具，展示每个工具的配置状态 | 连接页显示 Codex、Claude Code、Cursor、Gemini CLI 的可用状态、配置路径和最近一次同步结果 |
+| cc-switch | 配置修改前有备份和状态提示 | 继续坚持 `SafeUpdateMcpConfig`、配置锁、同步预览、冲突提示和 Vola 管理标记 |
+| cc-switch | system tray 和快速切换降低日常操作成本 | 桌面版可以把“打开 Hub”“刷新 Codex”“刷新 Claude Code”“查看同步状态”放进常驻入口 |
+| SkillHub.club / Desktop | Skill 搜索、标签、集合和命令面板 | Vola 可为个人和团队 Skill 增加标签、集合、推荐目录和搜索排序 |
+| SkillHub.club / Desktop | 一条命令或一个按钮安装 Skill | Team Library 中保留“安装到个人空间”“同步到 Codex / Claude Code”的直接入口 |
+| SkillHub.club | Skill Stack / 套装概念 | Vola 可提供小团队入门资料包，例如“研发团队评审包”“客服知识包”“发布流程包”，内容放在私有 Hub 内 |
+| iflytek SkillHub | 发布状态、版本、tag、namespace | Team Library 可继续强化 `draft`、`published`、`archived`、版本说明、负责人和更新提醒 |
+| iflytek SkillHub | CLI-first 和安装说明清楚 | `neu` 可以提供更短的引导命令，例如检测、连接、测试、同步四个状态放在同一条状态输出里 |
+| SkillHub MCP | 通过 MCP 做资源推荐 | Vola 可以增加“推荐可导入资源”视图，但只生成预览和说明，不自动安装第三方 MCP server |
+
+## 降低使用成本的产品建议
+
+这些建议不要求改变 Vola 的安全边界，适合排进后续迭代：
+
+1. **首页只推荐一个主路径**
+
+   新用户默认看到“连接 Codex”，旁边给出“连接 Claude Code”。Cursor 和 Gemini CLI 作为导出型平台展示，不放在同等优先级。
+
+2. **连接后直接给测试指令**
+
+   成功连接后显示一条可复制的句子：`请读取我的 Vola profile、skills 和最近项目上下文，并告诉我已经能访问哪些资料。`
+
+3. **把状态拆成用户能理解的几项**
+
+   页面和 CLI 分别显示：`neu` 是否安装、Hub 是否运行、账号是否登录、Codex / Claude Code 是否已连接、团队 Skill / MCP 是否有待同步。
+
+4. **团队资产路径可视化**
+
+   Team Library 显示“团队 Skill / MCP -> 个人空间或本机配置 -> Codex / Claude Code”这条路径。成员不需要知道背后是否重新执行了 `neu connect codex` 或 `neu connect claude`。
+
+5. **导出型平台明确提示**
+
+   Cursor 和 Gemini CLI 卡片直接显示“可导出，不自动改配置”，并提供导出包、说明文件和目标路径建议。
+
+6. **空状态给模板**
+
+   空团队资料库默认给 `/team/mcp`、`/team/prompts`、`/team/playbooks`、`/skills/<name>` 的模板。用户不用自己设计目录。
+
+7. **同步前后都有可读结果**
+
+   同步前显示新增、更新、冲突；同步后显示写入了哪里、哪些内容没有处理、下一步在 Codex / Claude Code 里如何验证。
+
+8. **保留高级入口，但视觉降级**
+
+   GitHub Backup、外部备份、Skill 转换、Codex Console、MCP Gateway 等能力仍保留，但首次使用优先完成连接和测试。
+
+9. **用角色化资料包帮助起步**
+
+   小团队可从“研发团队评审包”“发布流程包”“客户支持知识包”开始，再按自己的团队经验改。资料包仍保存到私有 Hub，不变成公开市场。
+
+10. **所有自动动作都能解释**
+
+   凡是写本机目录或配置的动作，都要说明目标平台、目标路径、是否由 Vola 管理、遇到冲突时为什么停下。
 
 ## 需要借鉴的地方
 
@@ -152,6 +234,12 @@ Vola 更适合被理解为个人 Agent 数据 Hub：
 - [gaal](https://getgaal.com/)
 - [skill-depot](https://github.com/Ruhal-Doshi/skill-depot)
 - [Arcweld](https://arcweld.ai/)
+- [cc-switch](https://github.com/farion1231/cc-switch)
+- [SkillHub.club](https://www.skillhub.club/)
+- [SkillHub Desktop](https://github.com/skillhub-club/skillhub-desktop)
+- [iflytek SkillHub](https://github.com/iflytek/skillhub)
+- [SkillHub MCP Server](https://github.com/skillhub-club/mcp-server)
+- [skillhub-mcp](https://github.com/artuntan/skillhub-mcp)
 
 ### 相关公开资料
 

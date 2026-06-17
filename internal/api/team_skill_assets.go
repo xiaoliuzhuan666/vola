@@ -34,6 +34,8 @@ type teamSkillPublication struct {
 	SkillPath             string `json:"skill_path"`
 	Status                string `json:"status"`
 	Visibility            string `json:"visibility"`
+	Version               string `json:"version,omitempty"`
+	ReleaseNote           string `json:"release_note,omitempty"`
 	Note                  string `json:"note,omitempty"`
 	ReviewStatus          string `json:"review_status,omitempty"`
 	ReviewNote            string `json:"review_note,omitempty"`
@@ -64,10 +66,12 @@ type teamSkillPublicationsResponse struct {
 }
 
 type teamSkillPublicationSaveRequest struct {
-	SkillPath  string `json:"skill_path"`
-	Status     string `json:"status"`
-	Visibility string `json:"visibility"`
-	Note       string `json:"note,omitempty"`
+	SkillPath   string `json:"skill_path"`
+	Status      string `json:"status"`
+	Visibility  string `json:"visibility"`
+	Version     string `json:"version,omitempty"`
+	ReleaseNote string `json:"release_note,omitempty"`
+	Note        string `json:"note,omitempty"`
 }
 
 type teamSkillReviewEvent struct {
@@ -263,10 +267,12 @@ func (s *Server) handleTeamSkillPublicationSave(w http.ResponseWriter, r *http.R
 		return
 	}
 	publication := normalizeTeamSkillPublication(teamSkillPublication{
-		SkillPath:  req.SkillPath,
-		Status:     req.Status,
-		Visibility: req.Visibility,
-		Note:       strings.TrimSpace(req.Note),
+		SkillPath:   req.SkillPath,
+		Status:      req.Status,
+		Visibility:  req.Visibility,
+		Version:     req.Version,
+		ReleaseNote: req.ReleaseNote,
+		Note:        strings.TrimSpace(req.Note),
 	})
 	if publication.SkillPath == "" || publication.SkillPath == "/skills" {
 		respondValidationError(w, "skill_path", "skill_path must point to one skill under /skills")
@@ -571,6 +577,8 @@ func (s *Server) handleTeamSkillReviewResolve(w http.ResponseWriter, r *http.Req
 			publication.ReviewRequestedAt = current.ReviewRequestedAt
 			publication.ReviewRequestedBy = current.ReviewRequestedBy
 			publication.ReviewRequestedByRole = current.ReviewRequestedByRole
+			publication.Version = current.Version
+			publication.ReleaseNote = current.ReleaseNote
 			if publication.Note == "" {
 				publication.Note = current.Note
 			}
@@ -916,6 +924,8 @@ func normalizeTeamSkillPublication(item teamSkillPublication) teamSkillPublicati
 	default:
 		item.Visibility = "private"
 	}
+	item.Version = strings.TrimSpace(item.Version)
+	item.ReleaseNote = strings.TrimSpace(item.ReleaseNote)
 	item.Note = strings.TrimSpace(item.Note)
 	item.ReviewStatus = normalizeTeamReviewStatus(item.ReviewStatus)
 	item.ReviewNote = strings.TrimSpace(item.ReviewNote)
@@ -956,6 +966,12 @@ func upsertTeamSkillPublication(doc teamSkillPublicationsDocument, item teamSkil
 			}
 			if item.ArchivedAt == "" {
 				item.ArchivedAt = current.ArchivedAt
+			}
+			if item.Version == "" {
+				item.Version = current.Version
+			}
+			if item.ReleaseNote == "" {
+				item.ReleaseNote = current.ReleaseNote
 			}
 			if item.ReviewStatus == "" {
 				item.ReviewStatus = current.ReviewStatus

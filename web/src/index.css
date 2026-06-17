@@ -11950,17 +11950,14 @@ button.data-summary-card {
 }
 
 .public-brand::before {
-  content: "X";
+  content: "";
   display: inline-grid;
   place-items: center;
   width: 26px;
   height: 26px;
   border: 1px solid rgba(18, 25, 45, 0.16);
   border-radius: 8px;
-  background: linear-gradient(135deg, #12192d, #126c84);
-  color: #fff;
-  font-size: 14px;
-  font-weight: 900;
+  background: url("/vola-mark.svg") center / cover no-repeat;
 }
 
 .public-nav-links {
@@ -14260,18 +14257,15 @@ body {
 }
 
 .public-brand::before {
-  content: "X";
+  content: "";
   display: inline-flex;
   align-items: center;
   justify-content: center;
   width: 34px;
   height: 34px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #172033 0%, #126c84 58%, #c84f3b 100%);
-  color: #fff;
-  font-size: 16px;
-  font-weight: 900;
-  line-height: 1;
+  background: url("/vola-mark.svg") center / cover no-repeat;
+  box-shadow: 0 8px 16px rgba(38, 105, 145, 0.14);
 }
 
 .public-nav-links {
@@ -14540,10 +14534,8 @@ body {
   width: 30px;
   height: 30px;
   border-radius: 8px;
-  background: linear-gradient(135deg, #172033 0%, #126c84 58%, #c84f3b 100%);
-  color: #ffffff;
-  font-size: 14px;
-  font-weight: 900;
+  background: url("/vola-mark.svg") center / cover no-repeat;
+  box-shadow: 0 8px 16px rgba(38, 105, 145, 0.14);
 }
 
 .sidebar-brand-logo {
@@ -15453,7 +15445,7 @@ body {
 .public-brand::before,
 .sidebar-brand-mark {
   border-radius: 8px;
-  background: linear-gradient(135deg, var(--xlz-ink) 0%, var(--xlz-blue) 56%, var(--xlz-coral) 100%);
+  background: url("/vola-mark.svg") center / cover no-repeat;
 }
 
 .public-nav-links {
@@ -16039,7 +16031,8 @@ body {
 
 .public-brand::before,
 .sidebar-brand-mark {
-  background: linear-gradient(135deg, #3b3fb6 0%, #6f62f1 55%, #45b5ee 100%);
+  background: url("/vola-mark.svg") center / cover no-repeat;
+  box-shadow: 0 8px 16px rgba(38, 105, 145, 0.14);
 }
 
 .public-nav-links {
@@ -16189,6 +16182,14 @@ body {
   gap: 10px;
   margin: 0 2px 18px;
   color: #252b4a;
+}
+
+.hub-sidebar-brand-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 8px;
+  display: block;
+  box-shadow: 0 8px 16px rgba(38, 105, 145, 0.14);
 }
 
 .hub-sidebar-brand span {
@@ -17188,12 +17189,7 @@ input:checked + .toggle-slider:before {
   width: 48px;
   height: 48px;
   border-radius: 12px;
-  background: linear-gradient(135deg, #12192d, #126c84);
-  color: #fff;
-  font-size: 24px;
-  font-weight: 900;
-  display: grid;
-  place-items: center;
+  background: url("/vola-mark.svg") center / cover no-repeat;
   margin-bottom: 12px;
   box-shadow: 0 8px 16px rgba(18, 108, 132, 0.24);
 }
@@ -17229,6 +17225,19 @@ input:checked + .toggle-slider:before {
   line-height: 1.6;
   text-align: center;
   margin-bottom: 28px;
+}
+
+.local-welcome-sync-note {
+  display: grid;
+  gap: 8px;
+  margin: -12px 0 24px;
+  padding: 12px;
+  border: 1px solid rgba(65, 77, 136, 0.12);
+  border-radius: 12px;
+  background: rgba(248, 250, 252, 0.82);
+  color: #506074;
+  font-size: 12px;
+  line-height: 1.45;
 }
 
 .local-welcome-divider {
@@ -17443,6 +17452,224 @@ input:checked + .toggle-slider:before {
   background: rgba(99, 102, 241, 0.1);
   color: #6366f1;
   border: 1px solid rgba(99, 102, 241, 0.2);
+}
+.materials-tile-pill.skill-tag-pill {
+  background: rgba(45, 130, 220, 0.08);
+  color: #2563eb;
+  border: 1px solid rgba(45, 130, 220, 0.16);
+}
+.local-tool-status-panel {
+  margin-top: 16px;
+}
+.local-tool-status-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 12px;
+}
+.local-tool-status-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  border: 1px solid rgba(78, 92, 148, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.74);
+  padding: 14px;
+}
+.local-tool-status-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+.local-tool-status-card-head strong {
+  color: var(--materials-title);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.local-tool-status-card p {
+  margin: 0;
+  color: var(--materials-copy);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.local-tool-status-card code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  border-radius: 8px;
+  background: rgba(18, 25, 45, 0.05);
+  padding: 6px 8px;
+  color: #27335f;
+  font-size: 11px;
+}
+.local-tool-status-line {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.local-tool-status-line span {
+  color: #27335f;
+  font-size: 13px;
+  font-weight: 750;
+}
+.local-tool-status-line small {
+  color: var(--materials-copy);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.local-tool-status-notes {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--materials-copy);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.resource-recommendation-grid,
+.skill-pack-grid,
+.skill-collection-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+}
+.resource-recommendation-card,
+.skill-pack-card,
+.skill-collection-card {
+  min-width: 0;
+  border: 1px solid rgba(78, 92, 148, 0.12);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.74);
+  padding: 14px;
+}
+.resource-recommendation-card p,
+.skill-pack-card p {
+  margin: 8px 0 0;
+  color: var(--materials-copy);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.resource-recommendation-card ol {
+  margin: 10px 0 0;
+  padding-left: 18px;
+  color: var(--materials-copy);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.resource-recommendation-platforms,
+.skill-pack-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+.resource-recommendation-platforms span,
+.skill-pack-tags span {
+  border-radius: 999px;
+  border: 1px solid rgba(78, 92, 148, 0.12);
+  background: rgba(248, 250, 252, 0.9);
+  color: #4b587f;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 750;
+}
+.skill-tag-cloud {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+.skill-tag-cloud button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid rgba(78, 92, 148, 0.12);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.78);
+  color: #4b587f;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 750;
+  cursor: pointer;
+}
+.skill-tag-cloud button.is-active {
+  border-color: rgba(45, 130, 220, 0.26);
+  background: rgba(45, 130, 220, 0.1);
+  color: #1d4ed8;
+}
+.skill-tag-cloud button span {
+  color: #64748b;
+  font-size: 11px;
+}
+.skill-collection-grid {
+  margin-bottom: 14px;
+}
+.skill-collection-card {
+  text-align: left;
+  cursor: pointer;
+}
+.skill-collection-card strong,
+.skill-pack-card strong {
+  display: block;
+  color: var(--materials-title);
+  font-size: 14px;
+  line-height: 1.35;
+}
+.skill-collection-card span {
+  display: block;
+  margin-top: 6px;
+  color: var(--materials-copy);
+  font-size: 12px;
+}
+.skill-pack-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 12px;
+}
+.skill-pack-footer small {
+  color: var(--materials-copy);
+  font-size: 12px;
+}
+.team-skill-card-version {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}
+.team-skill-card-version span {
+  border-radius: 999px;
+  background: rgba(16, 185, 129, 0.1);
+  color: #047857;
+  padding: 3px 8px;
+  font-size: 11px;
+  font-weight: 850;
+}
+.team-skill-card-version small {
+  color: var(--materials-copy);
+  font-size: 12px;
+  line-height: 1.4;
+}
+.team-skill-publication-meta,
+.team-skill-publication-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.team-skill-publication-copy {
+  flex-direction: column;
+  margin-top: 12px;
+}
+.team-skill-publication-copy span {
+  color: var(--materials-copy);
+  font-size: 12px;
+  line-height: 1.45;
+}
+.team-skill-version-pill {
+  background: rgba(16, 185, 129, 0.1);
+  color: #047857;
+  border-color: rgba(16, 185, 129, 0.2);
 }
 .team-skill-share-panel {
   display: flex;
@@ -17841,6 +18068,9 @@ input:checked + .toggle-slider:before {
   .mcp-recommended-route,
   .mcp-advanced-panel summary,
   .mcp-connection-note,
+  .local-tool-status-card-head,
+  .skill-pack-footer,
+  .team-skill-share-panel,
   .sandbox-header {
     align-items: stretch;
     flex-direction: column;
@@ -17854,6 +18084,17 @@ input:checked + .toggle-slider:before {
   .mcp-advanced-panel summary small,
   .sandbox-header > span {
     text-align: left;
+  }
+
+  .resource-recommendation-grid,
+  .skill-pack-grid,
+  .skill-collection-grid,
+  .local-tool-status-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .team-skill-share-stats {
+    justify-content: flex-start;
   }
 }
 

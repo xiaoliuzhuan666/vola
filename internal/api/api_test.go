@@ -130,6 +130,31 @@ func TestTreeSyntheticConversationBundleGetsBundleContext(t *testing.T) {
 	}
 }
 
+func TestTreeSnapshotMissingPathReturnsEmptySnapshot(t *testing.T) {
+	fileTree := services.NewFileTreeServiceWithRepo(stubFileTreeRepo{})
+	ts, _ := newTestServerWithFileTree(fileTree)
+	defer ts.Close()
+
+	resp, err := authGet(ts, "/api/tree/snapshot?path=%2Fsettings")
+	if err != nil {
+		t.Fatalf("GET missing tree snapshot: %v", err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("expected 200, got %d", resp.StatusCode)
+	}
+	body := parseJSON(resp)
+	if got := body["path"]; got != "/settings" {
+		t.Fatalf("path = %v, want /settings", got)
+	}
+	entries, ok := body["entries"].([]interface{})
+	if !ok {
+		t.Fatalf("entries = %T, want array", body["entries"])
+	}
+	if len(entries) != 0 {
+		t.Fatalf("entries length = %d, want 0", len(entries))
+	}
+}
+
 // ---------------------------------------------------------------------------
 // 2. Auth flow
 // ---------------------------------------------------------------------------

@@ -57,7 +57,7 @@ export default function LocalWelcomePage() {
       <div className="local-welcome-card">
         {/* Logo / Lockup */}
         <div className="local-welcome-header">
-          <div className="local-welcome-logo">X</div>
+          <img className="local-welcome-logo" src="/vola-mark.svg" alt="" aria-hidden="true" />
           <h2>{PRODUCT_NAME}</h2>
           <span className="badge-desktop">{tx('本地单机版', 'Local Edition')}</span>
         </div>
@@ -76,6 +76,10 @@ export default function LocalWelcomePage() {
                 'Vola is running securely on your machine. All your files, AI skills, and context are stored locally, 100% private, and available completely offline.'
               )}
             </p>
+            <div className="local-welcome-sync-note">
+              <span>{tx('Codex / Claude Code 可自动同步团队 Skill 和 MCP。', 'Codex / Claude Code can auto-sync team Skills and MCP.')}</span>
+              <span>{tx('Cursor / Gemini CLI 使用导出包或手工整理。', 'Cursor / Gemini CLI use exports or manual setup.')}</span>
+            </div>
 
             <button
               className="btn btn-primary btn-block btn-lg btn-glow"

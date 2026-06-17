@@ -674,7 +674,6 @@ function App() {
     location.pathname.startsWith('/settings/developer') ||
     location.pathname.startsWith('/cli') ||
     location.pathname.startsWith('/codex-console') ||
-    location.pathname.startsWith('/mcp-hub') ||
     location.pathname.startsWith('/settings/security')
   const isSyncLoginRoute = location.pathname === '/sync/login'
   const isLegacySyncLoginRoute =
@@ -760,6 +759,13 @@ function App() {
             <span>{tx('团队资料', 'Team Library')}</span>
           </NavLink>
 
+          {localMode && (
+            <NavLink to="/mcp-hub" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+              <NavIcon name="mcp" />
+              <span>{tx('本机同步', 'Local Sync')}</span>
+            </NavLink>
+          )}
+
           {showGitHubBackup && (
             <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
               <NavIcon name="backup" />
@@ -785,11 +791,6 @@ function App() {
                 {localMode && !desktopConsoleHome && (
                   <NavLink to="/codex-console" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
                     Codex Console
-                  </NavLink>
-                )}
-                {localMode && (
-                  <NavLink to="/mcp-hub" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
-                    {tx('MCP 控制中心', 'MCP Hub')}
                   </NavLink>
                 )}
                 {systemSettingsEnabled && (

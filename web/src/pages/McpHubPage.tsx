@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, type LocalToolStatusResponse } from '../api'
 import { useI18n } from '../i18n'
 
 interface MCPClientStatus {
@@ -30,6 +30,16 @@ function localPlatformLabel(platform: string) {
   return platform
 }
 
+const localToolPlatformOrder = ['codex', 'claude-code', 'cursor-agent', 'gemini-cli']
+
+function localToolPlatformLabel(platform: string) {
+  if (platform === 'codex') return 'Codex'
+  if (platform === 'claude-code') return 'Claude Code'
+  if (platform === 'cursor-agent') return 'Cursor'
+  if (platform === 'gemini-cli') return 'Gemini CLI'
+  return platform
+}
+
 export default function McpHubPage() {
   const { tx } = useI18n()
 
@@ -55,10 +65,35 @@ export default function McpHubPage() {
   // Messages
   const [message, setMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null)
   const [platformRefreshBusy, setPlatformRefreshBusy] = useState('')
+  const [localToolsStatus, setLocalToolsStatus] = useState<LocalToolStatusResponse | null>(null)
+  const [localToolsLoading, setLocalToolsLoading] = useState(true)
 
   const showMessage = (text: string, type: 'success' | 'error' = 'success') => {
     setMessage({ text, type })
     window.setTimeout(() => setMessage(null), 4000)
+  }
+
+  const loadLocalToolsStatus = () => {
+    setLocalToolsLoading(true)
+    return api.getLocalToolsStatus()
+      .then((result) => setLocalToolsStatus(result))
+      .catch((e) => {
+        console.error('Failed to load local tools status:', e)
+        setLocalToolsStatus(null)
+      })
+      .finally(() => setLocalToolsLoading(false))
+  }
+
+  const localToolPlatformMap = (localToolsStatus?.platforms || []).reduce<Record<string, LocalToolStatusResponse['platforms'][number]>>((acc, item) => {
+    acc[item.id] = item
+    return acc
+  }, {})
+
+  const localToolSyncModeLabel = (platform: LocalToolStatusResponse['platforms'][number]) => {
+    if (platform.auto_sync_supported) return tx('可自动同步', 'Auto sync')
+    if (platform.id === 'gemini-cli') return tx('手工处理', 'Manual')
+    if (platform.export_supported) return tx('只导出', 'Export only')
+    return tx('未支持', 'Unsupported')
   }
 
   const handleRefreshLocalPlatform = async (platform: 'codex' | 'claude-code') => {
@@ -70,6 +105,7 @@ export default function McpHubPage() {
         `${result.name || localPlatformLabel(result.platform)} 已刷新，本地配置会包含已发布的团队 MCP。`,
         `${result.name || localPlatformLabel(result.platform)} refreshed; the local config includes published team MCPs.`,
       ))
+      void loadLocalToolsStatus()
     } catch (e: any) {
       showMessage(tx('刷新失败：', 'Refresh failed: ') + (e.message || e), 'error')
     } finally {
@@ -94,10 +130,18 @@ export default function McpHubPage() {
   const loadConfig = async () => {
     setConfigLoading(true)
     try {
+      const snapshot = await api.getTreeSnapshot('/settings')
+      const configExists = (snapshot.entries || []).some((entry) => entry.path === '/settings/mcp-servers.json' && !entry.is_dir)
+      if (!configExists) {
+        setConfig({ version: '1.0.0', servers: [] })
+        return
+      }
       const res = await api.getTree('/settings/mcp-servers.json')
       if (res && res.content) {
         const parsed = JSON.parse(res.content) as MCPServersConfig
         setConfig(parsed)
+      } else {
+        setConfig({ version: '1.0.0', servers: [] })
       }
     } catch (e: any) {
       // 404 is expected when config doesn't exist yet
@@ -114,6 +158,7 @@ export default function McpHubPage() {
   useEffect(() => {
     void loadClients()
     void loadConfig()
+    void loadLocalToolsStatus()
   }, [])
 
   // Save current config state to FileTree
@@ -353,7 +398,92 @@ export default function McpHubPage() {
             </button>
           </div>
         </div>
+        <div className="local-tool-status-panel">
+          {localToolsLoading ? (
+            <div className="local-tool-status-card">
+              <div className="local-tool-status-card-head">
+                <strong>{tx('正在检测本机工具', 'Checking local tools')}</strong>
+                <span className="materials-tile-pill">{tx('检测中', 'Checking')}</span>
+              </div>
+              <p>{tx('Vola 正在读取 Codex、Claude Code、Cursor 和 Gemini CLI 的连接状态。', 'Vola is reading Codex, Claude Code, Cursor, and Gemini CLI connection status.')}</p>
+            </div>
+          ) : (
+            <div className="local-tool-status-grid">
+              {localToolPlatformOrder.map((platformID) => {
+                const platform = localToolPlatformMap[platformID]
+                if (!platform) {
+                  return (
+                    <div key={platformID} className="local-tool-status-card">
+                      <div className="local-tool-status-card-head">
+                        <strong>{localToolPlatformLabel(platformID)}</strong>
+                        <span className="materials-tile-pill team-skill-publication-pill is-draft">{tx('未检测', 'Unknown')}</span>
+                      </div>
+                      <p>{tx('当前环境没有返回这个工具的状态。', 'No status was returned for this tool in the current environment.')}</p>
+                    </div>
+                  )
+                }
+                return (
+                  <div key={platform.id} className="local-tool-status-card">
+                    <div className="local-tool-status-card-head">
+                      <strong>{platform.name || localToolPlatformLabel(platform.id)}</strong>
+                      <span className={`materials-tile-pill ${platform.auto_sync_supported ? 'team-skill-publication-pill is-published' : 'team-skill-publication-pill is-draft'}`}>
+                        {localToolSyncModeLabel(platform)}
+                      </span>
+                    </div>
+                    <div className="local-tool-status-line">
+                      <span>{platform.status_label}</span>
+                      <small>{platform.next_action}</small>
+                    </div>
+                    {platform.config_path ? <code>{platform.config_path}</code> : null}
+                    {platform.entrypoint_path ? <code>{platform.entrypoint_path}</code> : null}
+                    {platform.reasons?.length ? (
+                      <ul className="local-tool-status-notes">
+                        {platform.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                      </ul>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
       </section>
+
+      {localToolsStatus?.resource_recommendations?.length ? (
+        <section className="materials-panel">
+          <div className="materials-panel-head">
+            <div>
+              <h3 className="card-title">{tx('资源推荐预览', 'Resource Recommendations')}</h3>
+              <p className="materials-section-copy">
+                {tx('这些只是团队可参考的 Skill、MCP 和资料组织建议。Vola 不会在这里安装第三方 MCP server。', 'These are preview-only ideas for skills, MCP, and resource organization. Vola does not install third-party MCP servers here.')}
+              </p>
+            </div>
+          </div>
+          <div className="resource-recommendation-grid">
+            {localToolsStatus.resource_recommendations.map((item) => (
+              <div className="resource-recommendation-card" key={item.id}>
+                <div className="local-tool-status-card-head">
+                  <strong>{item.title}</strong>
+                  <span className="materials-tile-pill">{item.preview_only ? tx('仅预览', 'Preview only') : item.category}</span>
+                </div>
+                <p>{item.description}</p>
+                {item.platforms?.length ? (
+                  <div className="resource-recommendation-platforms">
+                    {item.platforms.map((platform) => (
+                      <span key={platform}>{localToolPlatformLabel(platform)}</span>
+                    ))}
+                  </div>
+                ) : null}
+                {item.steps?.length ? (
+                  <ol>
+                    {item.steps.map((step) => <li key={step}>{step}</li>)}
+                  </ol>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {/* Part 1: Local Client Integration */}
       <section className="materials-panel">
@@ -441,8 +571,8 @@ export default function McpHubPage() {
             <h3 className="card-title">{tx('第三方 MCP 服务装配', 'Third-party MCP Servers')}</h3>
             <p className="materials-section-copy">
               {tx(
-                '添加外部 StdIO 协议的 MCP 进程。开启后，Vola 后端将自动维护其运行状态，并将所有 Tools 前缀隔离后聚合代理。',
-                'Assemble external Stdio-based MCP processes. When enabled, Vola automatically spawns and manages them, proxying all tools with namespace isolation.'
+                '这里管理你已经确认要启用的外部 Stdio MCP 配置。保存配置不代表安装依赖；第三方 server 需要成员自己安装并确认权限范围。',
+                'Manage external Stdio MCP configurations you have already chosen to enable. Saving a config does not install dependencies; members install third-party servers themselves and confirm access scope.'
               )}
             </p>
           </div>

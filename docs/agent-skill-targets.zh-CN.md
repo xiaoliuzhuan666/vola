@@ -63,6 +63,8 @@
 - Codex 和 Claude Code 的团队 MCP 可通过本机同步入口刷新到当前机器的客户端配置。
 - Cursor 和 Gemini CLI 只做导出预览或导出包，不自动写本机配置。
 - 同名但不是 Vola 管理的本机目录不会被覆盖。
+- Team Library 和 MCP Hub 会显示每个平台的状态、同步模式、配置路径和下一步动作；状态接口为 `GET /api/local/tools/status`。
+- 团队 Skill 可以带版本号、发布说明、标签、发布状态和审查状态；这些信息只影响展示和同步判断，不绕过本机写入规则。
 
 ## 当前验证证据
 

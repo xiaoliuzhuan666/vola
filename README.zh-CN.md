@@ -16,6 +16,8 @@
 
 Vola 给每个人一个 Agent 数据 Hub。Claude、ChatGPT、Codex、Cursor、Copilot、飞书、Kimi、智谱等 Agent 可以通过这个 Hub 读取被授权的 profile、memory、projects、conversations、skills 和 vault 资料，减少在每个平台重复维护上下文。
 
+项目核心原则：**Vola 是给个人和小团队用的 Agent 资料中心：把 profile、memory、projects、skills、MCP、prompt 和 playbook 放在一个私有 Hub 里，再安全同步到 Codex、Claude Code 等本机工具。** 详细说明见 [Vola 核心原则](docs/core-principles.zh-CN.md)。
+
 你可以自己部署 Vola，运行属于自己的 Hub。我也提供了一个已经部署好的版本，可以直接在 [https://www.vola.ai](https://www.vola.ai) 体验。使用兑换码 `VIVO50` 可以获得三个月免费服务；三个月到期后，你可以选择继续续费、继续使用可用的托管方案，或者切换到自己部署的版本。
 
 **你的 profile、memory、projects、skills 和私密资料跟着人走，不跟平台走。**
@@ -146,6 +148,7 @@ neu login
 先看这些：
 
 - [接入说明](docs/setup.zh-CN.md)
+- [Vola 核心原则](docs/core-principles.zh-CN.md)
 - [GitHub Backup 指南](docs/github-backup.zh-CN.md)
 - [小范围上线测试清单](docs/launch-test-checklist.zh-CN.md)
 - [CLI 使用手册](docs/cli.zh-CN.md)
@@ -163,6 +166,7 @@ neu login
 
 - [Token 管理](docs/setup.zh-CN.md#token-management)
 - [团队 AI 资料库](docs/team-ai-library.zh-CN.md)
+- [相似产品调研与优化建议](docs/agent-data-hub-competitor-research.zh-CN.md)
 - [Bundle Sync 指南](docs/sync.md)
 - [SDK / HTTP API](docs/reference.zh-CN.md#sdk)
 - [产品设计文档](docs/design.md)

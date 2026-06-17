@@ -957,6 +957,8 @@ export interface TeamSkillPublication {
   skill_path: string;
   status: "draft" | "published" | "archived" | string;
   visibility: "private" | "team" | string;
+  version?: string;
+  release_note?: string;
   note?: string;
   review_status?: "requested" | "approved" | "changes_requested" | string;
   review_note?: string;
@@ -978,6 +980,40 @@ export interface TeamSkillPublicationsResponse {
   storage_path: string;
   updated_at?: string;
   publications: TeamSkillPublication[];
+}
+
+export interface LocalToolStatusPlatform {
+  id: string;
+  name: string;
+  installed: boolean;
+  connected: boolean;
+  config_path?: string;
+  entrypoint_installed: boolean;
+  entrypoint_path?: string;
+  auto_sync_supported: boolean;
+  export_supported: boolean;
+  sync_mode: string;
+  status_label: string;
+  next_action: string;
+  reasons?: string[];
+  chat_usage?: string[];
+}
+
+export interface LocalToolResourceRecommendation {
+  id: string;
+  title: string;
+  category: string;
+  preview_only: boolean;
+  description: string;
+  steps?: string[];
+  platforms?: string[];
+}
+
+export interface LocalToolStatusResponse {
+  version: string;
+  generated_at: string;
+  platforms: LocalToolStatusPlatform[];
+  resource_recommendations: LocalToolResourceRecommendation[];
 }
 
 export interface TeamSkillSubscriptionStatus {
@@ -1722,6 +1758,9 @@ export const api = {
   getLocalMcpHealth: (): Promise<Record<string, { status: "online" | "offline"; latency_ms: number; last_check: string }>> =>
     request<Record<string, { status: "online" | "offline"; latency_ms: number; last_check: string }>>("/local/mcp/health"),
 
+  getLocalToolsStatus: (): Promise<LocalToolStatusResponse> =>
+    request<LocalToolStatusResponse>("/local/tools/status"),
+
   getSessions: (): Promise<Session[]> => request<Session[]>("/auth/sessions"),
 
   revokeSession: (id: string): Promise<void> =>
@@ -1963,6 +2002,8 @@ export const api = {
     skill_path: string;
     status: string;
     visibility: string;
+    version?: string;
+    release_note?: string;
     note?: string;
   }) =>
     request<TeamSkillPublicationsResponse>(`/teams/${encodeURIComponent(teamID)}/skill-publications`, {
