@@ -149,7 +149,7 @@ func TestVolarcPathSandboxing(t *testing.T) {
 	}
 
 	tempDir := t.TempDir()
-	
+
 	// Create symlink `.volarc` pointing to system sensitive path /etc/hosts
 	err = os.Symlink("/etc/hosts", filepath.Join(tempDir, ".volarc"))
 	if err != nil {
@@ -169,5 +169,3 @@ func TestVolarcPathSandboxing(t *testing.T) {
 		t.Errorf("expected loadLocalVolarc to reject symlink pointing to system sensitive paths, got: %v", tags)
 	}
 }
-
-

@@ -245,11 +245,11 @@ func TestTeamSkillRollbackZipSlipPrevention(t *testing.T) {
 	// Create a malicious zip file containing path traversal
 	var zipBuf bytes.Buffer
 	zw := zip.NewWriter(&zipBuf)
-	
+
 	// Valid file
 	w, _ := zw.Create("SKILL.md")
 	_, _ = w.Write([]byte("valid skill file"))
-	
+
 	// Malicious file 1: relative traversal
 	w, _ = zw.Create("../malicious.txt")
 	_, _ = w.Write([]byte("malicious content"))

@@ -3,6 +3,7 @@ package sqlite
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"path/filepath"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/agi-bar/vola/internal/hubpath"
 	"github.com/agi-bar/vola/internal/models"
+	"github.com/agi-bar/vola/internal/services"
 )
 
 func (c *Client) importCodexInventory(ctx context.Context, platform string, inventory CodexInventory, result *AgentImportResult) error {
@@ -45,6 +47,10 @@ func (c *Client) importCodexBundle(ctx context.Context, platform string, bundle 
 		}
 		target := filepath.ToSlash(filepath.Join("/skills", bundleName, relPath))
 		if err := c.writeClaudeFileRecord(ctx, target, platform, file, "skill_file", models.TrustLevelWork); err != nil {
+			if isStorageQuotaExceeded(err) {
+				result.Blocked++
+				continue
+			}
 			return err
 		}
 		result.Paths = append(result.Paths, target)
@@ -70,6 +76,10 @@ func (c *Client) importCodexBundle(ctx context.Context, platform string, bundle 
 				"source_paths":    bundle.SourcePaths,
 			},
 		}); err != nil {
+			if isStorageQuotaExceeded(err) {
+				result.Blocked++
+				return nil
+			}
 			return err
 		}
 		result.Paths = append(result.Paths, target)
@@ -77,6 +87,12 @@ func (c *Client) importCodexBundle(ctx context.Context, platform string, bundle 
 	}
 	manifestPath, err := c.writeBundleSkillManifest(ctx, platform, bundleName, normalizeCodexBundleKind(bundle.Kind), bundle, manifestFiles)
 	if err != nil {
+		if isStorageQuotaExceeded(err) {
+			result.Blocked++
+			result.Bundles++
+			result.Imported++
+			return nil
+		}
 		return err
 	}
 	if manifestPath != "" {
@@ -114,6 +130,10 @@ func (c *Client) importCodexConversations(ctx context.Context, platform string, 
 		transcriptPath := path.Join(rootPath, "conversation.md")
 		conversationPath := path.Join(rootPath, "conversation.json")
 		if err := c.store.EnsureDirectoryWithMetadata(ctx, c.userID, rootPath, ConversationBundleDirectoryMetadata(normalized, transcriptPath, conversationPath), models.TrustLevelWork); err != nil {
+			if isStorageQuotaExceeded(err) {
+				result.Blocked++
+				continue
+			}
 			return err
 		}
 		transcript := renderNormalizedConversationMarkdown(normalized)
@@ -133,6 +153,10 @@ func (c *Client) importCodexConversations(ctx context.Context, platform string, 
 				"storage_mode": "canonical",
 			}),
 		}); err != nil {
+			if isStorageQuotaExceeded(err) {
+				result.Blocked++
+				continue
+			}
 			return err
 		}
 		conversationJSON, err := MarshalNormalizedConversationDocument(normalized, transcriptPath)
@@ -147,6 +171,10 @@ func (c *Client) importCodexConversations(ctx context.Context, platform string, 
 				"storage_mode": "canonical",
 			}),
 		}); err != nil {
+			if isStorageQuotaExceeded(err) {
+				result.Blocked++
+				continue
+			}
 			return err
 		}
 		result.Conversations++
@@ -182,12 +210,20 @@ func (c *Client) importCodexConversations(ctx context.Context, platform string, 
 			"exactness":       "reference",
 		},
 	}); err != nil {
+		if isStorageQuotaExceeded(err) {
+			result.Blocked++
+			return nil
+		}
 		return err
 	}
 	result.Artifacts++
 	result.Archived++
 	result.Paths = append(result.Paths, indexPath)
 	return nil
+}
+
+func isStorageQuotaExceeded(err error) bool {
+	return errors.Is(err, services.ErrStorageQuotaExceeded)
 }
 
 func codexBundleTargetName(bundle ClaudeBundle) string {

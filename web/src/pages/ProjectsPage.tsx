@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
-import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom'
 import {
   api,
   type FileNode,
@@ -7,6 +7,7 @@ import {
   type LocalLibraryMarkdownCandidate,
   type LocalLibraryProjectCandidate,
   type LocalLibraryScanResponse,
+  type LocalPlatformImportSummary,
 } from '../api'
 import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsSectionToolbar from '../components/MaterialsSectionToolbar'
@@ -83,6 +84,8 @@ export default function ProjectsPage() {
   const [localLibraryScanning, setLocalLibraryScanning] = useState(false)
   const [localLibraryImporting, setLocalLibraryImporting] = useState(false)
   const [localLibraryNotice, setLocalLibraryNotice] = useState('')
+  const [codexImport, setCodexImport] = useState<LocalPlatformImportSummary | null>(null)
+  const [codexImporting, setCodexImporting] = useState(false)
   const { activeMenuId, closeMenu, isMenuOpen, toggleMenu } = useResourceCardMenu()
 
   const load = useCallback(async () => {
@@ -210,6 +213,26 @@ export default function ProjectsPage() {
     }
   }
 
+  const handleCodexImport = async () => {
+    setCodexImporting(true)
+    setLocalLibraryNotice('')
+    setError('')
+    try {
+      const response = await api.importLocalPlatform({ platform: 'codex', mode: 'agent' })
+      setCodexImport(response.data)
+      const agent = response.data.agent
+      setLocalLibraryNotice(tx(
+        `Codex 已整理到 Vola：${agent?.profile_categories || 0} 组偏好、${agent?.memory_items || 0} 条记忆、${agent?.projects || 0} 个项目、${agent?.bundles || 0} 个 Skill、${agent?.conversations || 0} 个会话。`,
+        `Codex imported into Vola: ${agent?.profile_categories || 0} profile groups, ${agent?.memory_items || 0} memory items, ${agent?.projects || 0} projects, ${agent?.bundles || 0} skills, ${agent?.conversations || 0} conversations.`,
+      ))
+      await load()
+    } catch (err: any) {
+      setError(err.message || tx('Codex 导入失败', 'Codex import failed'))
+    } finally {
+      setCodexImporting(false)
+    }
+  }
+
   const handleLocalLibraryImport = async () => {
     setLocalLibraryImporting(true)
     setLocalLibraryNotice('')
@@ -264,6 +287,12 @@ export default function ProjectsPage() {
 
   const localMarkdownCategoryLabel = (category: string) => {
     switch (category) {
+      case 'skill':
+        return 'Skill'
+      case 'agent-instructions':
+        return tx('Agent 说明', 'Agent instructions')
+      case 'codex-note':
+        return tx('Codex 资料', 'Codex material')
       case 'general-playbook':
         return tx('通用方案', 'General')
       case 'learning-note':
@@ -608,17 +637,20 @@ export default function ProjectsPage() {
         <div className="materials-panel form-card">
           <div className="materials-section-head">
             <div>
-              <h3 className="materials-section-title">{tx('本地资料发现', 'Local material discovery')}</h3>
+              <h3 className="materials-section-title">{tx('Codex 与本地资料整理', 'Codex and local material')}</h3>
               <p className="materials-section-copy">
-                {tx('扫描桌面、下载、文稿中的项目目录和 Markdown，并导入为 Vola 项目索引。', 'Scan Desktop, Downloads, and Documents for project folders and Markdown, then import them as a Vola project index.')}
+                {tx('把当前机器上的 Codex 配置、skills、会话和项目文档整理到 Vola。索引用来找资料；Codex 导入会放进记忆、项目、技能和会话模块。', 'Organize Codex config, skills, conversations, and project docs from this machine into Vola. The index helps you find material; Codex import places recognized items into memory, projects, skills, and conversations.')}
               </p>
             </div>
             <div className="form-actions">
-              <button className="btn btn-sm materials-toolbar-control" onClick={() => void handleLocalLibraryScan()} disabled={localLibraryScanning || localLibraryImporting}>
-                {localLibraryScanning ? tx('扫描中...', 'Scanning...') : tx('扫描本机目录', 'Scan local folders')}
+              <button className="btn btn-sm materials-toolbar-control" onClick={() => void handleLocalLibraryScan()} disabled={localLibraryScanning || localLibraryImporting || codexImporting}>
+                {localLibraryScanning ? tx('扫描中...', 'Scanning...') : tx('预览资料索引', 'Preview index')}
               </button>
-              <button className="btn btn-sm btn-primary materials-toolbar-control" onClick={() => void handleLocalLibraryImport()} disabled={localLibraryScanning || localLibraryImporting}>
-                {localLibraryImporting ? tx('导入中...', 'Importing...') : tx('导入索引', 'Import index')}
+              <button className="btn btn-sm materials-toolbar-control" onClick={() => void handleLocalLibraryImport()} disabled={localLibraryScanning || localLibraryImporting || codexImporting}>
+                {localLibraryImporting ? tx('生成中...', 'Creating...') : tx('生成项目索引', 'Create project index')}
+              </button>
+              <button className="btn btn-sm btn-primary materials-toolbar-control" onClick={() => void handleCodexImport()} disabled={localLibraryScanning || localLibraryImporting || codexImporting}>
+                {codexImporting ? tx('导入中...', 'Importing...') : tx('导入 Codex 资料', 'Import Codex')}
               </button>
             </div>
           </div>
@@ -679,6 +711,30 @@ export default function ProjectsPage() {
                 <span className="project-bundle-path-label">{tx('索引项目', 'Index project')}</span>
                 <code className="project-bundle-path-value">/projects/{localLibraryImport.project_name}/</code>
               </div>
+              <div className="materials-actions" style={{ marginTop: 12 }}>
+                <button className="btn btn-sm" onClick={() => openProjectBundle(localLibraryImport.project_name)}>{tx('打开索引项目', 'Open index project')}</button>
+              </div>
+            </div>
+          )}
+
+          {codexImport?.agent && (
+            <div className="codex-import-destinations">
+              <Link to="/memory" className="codex-import-destination">
+                <strong>{codexImport.agent.profile_categories + codexImport.agent.memory_items}</strong>
+                <span>{tx('记忆与偏好', 'Memory & profile')}</span>
+              </Link>
+              <Link to="/data/projects" className="codex-import-destination">
+                <strong>{codexImport.agent.projects}</strong>
+                <span>{tx('项目', 'Projects')}</span>
+              </Link>
+              <Link to="/skills" className="codex-import-destination">
+                <strong>{codexImport.agent.bundles}</strong>
+                <span>Skills</span>
+              </Link>
+              <Link to="/data/conversations" className="codex-import-destination">
+                <strong>{codexImport.agent.conversations}</strong>
+                <span>{tx('会话', 'Conversations')}</span>
+              </Link>
             </div>
           )}
         </div>

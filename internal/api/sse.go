@@ -513,7 +513,7 @@ func silentRefreshToken(ctx context.Context, apiBase string, currentToken string
 
 	client := &http.Client{Timeout: 10 * time.Second}
 	url := fmt.Sprintf("%s/api/auth/refresh", strings.TrimRight(apiBase, "/"))
-	
+
 	reqBody, _ := json.Marshal(map[string]string{
 		"refresh_token": profile.RefreshToken,
 	})
@@ -550,4 +550,3 @@ func silentRefreshToken(ctx context.Context, apiBase string, currentToken string
 
 	return refreshResp.AccessToken, nil
 }
-

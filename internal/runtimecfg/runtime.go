@@ -194,7 +194,7 @@ func LoadConfig(path string) (string, *CLIConfig, error) {
 		},
 	}
 	data, err := readFileWithLegacyFallback(path, legacyPath)
-	
+
 	var unmarshalErr error
 	if err == nil {
 		unmarshalErr = json.Unmarshal(data, cfg)
@@ -248,7 +248,7 @@ func LoadRawConfig(path string) (string, string, error) {
 		legacyPath = legacyDarwinConfigPath()
 	}
 	data, err := readFileWithLegacyFallback(path, legacyPath)
-	
+
 	var checkErr error
 	if err == nil {
 		var dummy map[string]any

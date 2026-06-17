@@ -1951,6 +1951,52 @@ a:hover {
   margin-top: 18px;
 }
 
+.materials-page > .materials-panel,
+.materials-page > .dashboard-file-panel,
+.materials-page > .materials-section,
+.memory-page > .dashboard-file-panel,
+.memory-page > .tab-strip,
+.memory-page > .memory-list,
+.memory-page > .card,
+.memory-page > .conflict-list {
+  margin-top: 24px;
+}
+
+.materials-page > .materials-hero + .materials-panel,
+.materials-page > .materials-hero + .dashboard-file-panel,
+.materials-page > .materials-hero + .materials-section {
+  margin-top: 0;
+}
+
+.codex-import-destinations {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.codex-import-destination {
+  display: grid;
+  gap: 4px;
+  padding: 14px;
+  border: 1px solid var(--materials-border);
+  border-radius: 8px;
+  background: #fff;
+  color: var(--color-text);
+}
+
+.codex-import-destination strong {
+  color: var(--materials-title);
+  font-size: 24px;
+  line-height: 1;
+}
+
+.codex-import-destination span {
+  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+}
+
 .skill-assignment-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));

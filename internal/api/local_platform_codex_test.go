@@ -187,6 +187,75 @@ func TestSQLiteSharedServerLocalPlatformImportCodexArchivesLargeProfileRules(t *
 	}
 }
 
+func TestSQLiteSharedServerLocalPlatformImportArchivesLargeMemoryItems(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+
+	payload := sqlitestorage.AgentExportPayload{
+		MemoryItems: []sqlitestorage.AgentMemoryItem{{
+			Title:       "Large memory",
+			Content:     strings.Repeat("Preserve this imported API memory item in the archive.\n", 1800),
+			Exactness:   "exact",
+			SourcePaths: []string{"~/.codex/memory.md"},
+		}},
+	}
+	body, err := json.Marshal(localPlatformImportRequest{
+		Platform:     "codex",
+		AgentPayload: &payload,
+	})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+
+	status, env := doJSON(t, http.MethodPost, ts.URL+"/agent/local/platform/import", adminToken, body)
+	if status != http.StatusOK || !env.OK {
+		t.Fatalf("agent import failed: status=%d env=%+v", status, env)
+	}
+
+	var resp localPlatformImportResponse
+	if err := json.Unmarshal(env.Data, &resp); err != nil {
+		t.Fatalf("Unmarshal response: %v", err)
+	}
+	if resp.Agent == nil || resp.Agent.MemoryItems != 1 || resp.Agent.Artifacts != 1 || resp.Agent.Archived != 1 {
+		t.Fatalf("unexpected agent import response: %+v", resp.Agent)
+	}
+
+	var archivePath string
+	for _, importedPath := range resp.Agent.Paths {
+		if strings.HasPrefix(importedPath, "/platforms/codex/agent/memory/") {
+			archivePath = importedPath
+			break
+		}
+	}
+	if archivePath == "" {
+		t.Fatalf("expected memory archive path in %+v", resp.Agent.Paths)
+	}
+	archive, err := store.Read(ctx, user.ID, archivePath, models.TrustLevelFull)
+	if err != nil {
+		t.Fatalf("Read archive: %v", err)
+	}
+	if !strings.Contains(archive.Content, "Preserve this imported API memory item") ||
+		len(archive.Content) <= localPlatformScratchContentLimitBytes {
+		t.Fatalf("archive did not preserve large memory item")
+	}
+
+	scratch, err := store.GetScratchActive(ctx, user.ID)
+	if err != nil {
+		t.Fatalf("GetScratchActive: %v", err)
+	}
+	if len(scratch) != 1 {
+		t.Fatalf("scratch entries = %d, want 1", len(scratch))
+	}
+	if len(scratch[0].Content) >= localPlatformScratchContentLimitBytes ||
+		!strings.Contains(scratch[0].Content, "Full archive: `"+archivePath+"`") {
+		t.Fatalf("unexpected scratch summary: %s", scratch[0].Content)
+	}
+}
+
 func TestSQLiteSharedServerLocalCodexConsole(t *testing.T) {
 	home := createCodexDashboardFixture(t)
 	t.Setenv("HOME", home)

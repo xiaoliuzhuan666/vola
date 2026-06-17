@@ -9,7 +9,7 @@ import (
 func TestLogMaskingSecurity(t *testing.T) {
 	// Initialize logger to set up ReplaceAttr
 	Init("info", "text")
-	
+
 	// Retrieve the replace attr function from defaultLogger options
 	// To test it directly:
 	opts := &slog.HandlerOptions{

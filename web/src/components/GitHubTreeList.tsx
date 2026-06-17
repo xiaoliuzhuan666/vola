@@ -69,6 +69,12 @@ function formatBytes(value?: number) {
   return `${mib.toFixed(mib >= 10 ? 0 : 1)} MiB`
 }
 
+function isMissingTreeError(err: any) {
+  const status = Number(err?.status || err?.code)
+  const message = `${err?.message || err || ''}`.toLowerCase()
+  return status === 404 || message.includes('not found') || message.includes('file not found')
+}
+
 export default function GitHubTreeList({
   rootPath: rawRootPath = rootPath,
   rootLabel,
@@ -90,6 +96,7 @@ export default function GitHubTreeList({
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const currentPath = normalizePath(path || internalPath)
+  const displayRootLabel = rootLabel || (normalizedRootPath === rootPath ? tx('根目录', 'Root') : normalizedRootPath.replace(/^\/+/, ''))
 
   useEffect(() => {
     if (path) return
@@ -105,7 +112,18 @@ export default function GitHubTreeList({
         const next = await (loadNode ? loadNode(currentPath) : api.getTree(currentPath))
         if (!cancelled) setNode(next)
       } catch (err: any) {
-        if (!cancelled) setError(err?.message || tx('加载文件失败', 'Failed to load files'))
+        if (!cancelled) {
+          if (currentPath === normalizedRootPath && isMissingTreeError(err)) {
+            setNode({
+              path: normalizedRootPath,
+              name: displayRootLabel,
+              is_dir: true,
+              children: [],
+            })
+          } else {
+            setError(err?.message || tx('加载文件失败', 'Failed to load files'))
+          }
+        }
       } finally {
         if (!cancelled) setLoading(false)
       }
@@ -114,7 +132,7 @@ export default function GitHubTreeList({
     return () => {
       cancelled = true
     }
-  }, [currentPath, loadNode, tx])
+  }, [currentPath, displayRootLabel, loadNode, normalizedRootPath, tx])
 
   const entries = useMemo(() => {
     const children = node?.children || []
@@ -132,7 +150,6 @@ export default function GitHubTreeList({
 
   const currentRelativeParts = relativeParts(normalizedRootPath, currentPath)
   const showParent = currentPath !== normalizedRootPath
-  const displayRootLabel = rootLabel || (normalizedRootPath === rootPath ? tx('根目录', 'Root') : normalizedRootPath.replace(/^\/+/, ''))
 
   return (
     <section className={`dashboard-file-panel github-tree-list ${className}`.trim()}>

@@ -364,6 +364,11 @@ func resolveLocalLibraryRoots(roots []string) ([]string, error) {
 			filepath.Join(home, "Desktop"),
 			filepath.Join(home, "Downloads"),
 			filepath.Join(home, "Documents"),
+			filepath.Join(home, ".agents", "skills"),
+			filepath.Join(home, ".codex", "skills"),
+			filepath.Join(home, ".codex", "rules"),
+			filepath.Join(home, ".codex", "memories"),
+			filepath.Join(home, ".codex", "plugins", "cache"),
 		}
 	}
 	seen := map[string]bool{}
@@ -613,6 +618,17 @@ func firstMarkdownParagraphOrText(text string) string {
 
 func classifyLocalMarkdown(pathValue, title, text string) (string, bool) {
 	haystack := strings.ToLower(filepath.ToSlash(pathValue) + " " + title + " " + firstNRunes(text, 2000))
+	base := strings.ToLower(filepath.Base(pathValue))
+	cleanPath := strings.ToLower(filepath.ToSlash(pathValue))
+	if base == "skill.md" {
+		return "skill", true
+	}
+	if base == "agents.md" {
+		return "agent-instructions", true
+	}
+	if strings.Contains(cleanPath, "/.codex/") || strings.Contains(cleanPath, "/.agents/skills/") {
+		return "codex-note", false
+	}
 	genericTerms := []string{
 		"方案", "指南", "规范", "调研", "验收", "部署", "迁移", "备份", "恢复", "排查", "清单",
 		"guide", "playbook", "runbook", "checklist", "best practice", "research", "deployment", "deploy", "docker", "backup", "restore",
@@ -745,7 +761,7 @@ func firstNRunes(text string, limit int) string {
 func renderLocalLibraryContext(scan *localLibraryScanResponse) string {
 	var b strings.Builder
 	b.WriteString("# Local Knowledge Index\n\n")
-	b.WriteString("本地资料索引：记录桌面、下载、文稿中的项目候选和 Markdown 路径，原文件不会被移动或改写。\n\n")
+	b.WriteString("本地资料索引：记录 Codex、项目目录和 Markdown 路径，原文件不会被移动或改写。\n\n")
 	b.WriteString(fmt.Sprintf("- Generated at: %s\n", scan.GeneratedAt))
 	b.WriteString(fmt.Sprintf("- Roots scanned: %d / %d\n", scan.Stats.RootsScanned, scan.Stats.RootsRequested))
 	b.WriteString(fmt.Sprintf("- Project candidates: %d\n", scan.Stats.ProjectsFound))
@@ -769,6 +785,7 @@ func renderLocalLibraryContext(scan *localLibraryScanResponse) string {
 	b.WriteString("- Search this project for a customer name, product name, API name, cloud provider, deployment tool, or error keyword.\n")
 	b.WriteString("- Open `project-index.md` when you need to find a repository or app folder.\n")
 	b.WriteString("- Open `markdown-index.md` when you need a reusable plan, checklist, deployment note, or research record.\n\n")
+	b.WriteString("- `skill`, `agent-instructions`, and `codex-note` rows usually come from Codex or agent configuration paths.\n\n")
 	b.WriteString("## Top Project Candidates\n\n")
 	b.WriteString("| Name | Score | Markdown | Path |\n| --- | ---: | ---: | --- |\n")
 	for _, project := range firstLocalProjects(scan.Projects, 25) {

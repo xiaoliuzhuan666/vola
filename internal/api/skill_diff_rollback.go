@@ -19,8 +19,8 @@ import (
 )
 
 var (
-	MaxRollbackSingleFileSize = int64(20 * 1024 * 1024)       // 20MB
-	MaxRollbackTotalSize      = int64(100 * 1024 * 1024)     // 100MB
+	MaxRollbackSingleFileSize = int64(20 * 1024 * 1024)  // 20MB
+	MaxRollbackTotalSize      = int64(100 * 1024 * 1024) // 100MB
 )
 
 type skillDiffRequest struct {
@@ -238,7 +238,7 @@ func (s *Server) handleSkillSubscriptionsRollback(w http.ResponseWriter, r *http
 		if file.FileInfo().IsDir() {
 			continue
 		}
-		
+
 		// Prevent Zip Slip vulnerability
 		cleanedName := pathpkg.Clean(file.Name)
 		if strings.HasPrefix(cleanedName, "..") || pathpkg.IsAbs(cleanedName) || strings.Contains(cleanedName, "../") {
