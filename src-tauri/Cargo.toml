@@ -1,6 +1,6 @@
 [package]
 name = "vola-desktop"
-version = "0.1.13"
+version = "0.1.14"
 description = "Vola desktop application"
 authors = ["Vola"]
 license = ""

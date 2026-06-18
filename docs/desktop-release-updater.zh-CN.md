@@ -531,3 +531,46 @@ GitHub Release 资产：
 注意：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`、`actions/download-artifact@v4` 和 `softprops/action-gh-release@v2`，未影响本次打包。
+
+## 2026-06-18 v0.1.14 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点是让正式 GitHub Release 使用新的蓝色 Vola icon。
+
+本次更新：
+
+- `web/public/vola-mark.svg`、`web/public/favicon.svg` 和 `web/public/vola-app-icon.png` 换成明亮蓝紫色系。
+- `src-tauri/icons` 重新生成，确保 GitHub Release 的 macOS、Windows、Linux 桌面包使用新版图标。
+- `desktop/icons` 同步生成新版图标，避免另一条本地桌面打包路线继续使用旧资源。
+- 新增 `docs/vola-app-icon-design.zh-CN.md`，记录 icon 视觉方案、配色、资源生成链路和 DMG 验证方法。
+- 桌面版本升到 `0.1.14`。
+
+本地发版前验证：
+
+- `git diff --check`：通过。
+- `npm ci`（`web/`）：通过。第一次执行 `npm --prefix web run build` 因干净 worktree 未安装依赖失败，报 `tsc: command not found`；安装依赖后重试通过。
+- `TAURI_ENV_TARGET_TRIPLE=aarch64-apple-darwin node scripts/tauri-web-command.mjs build`：通过，包含 `npm run typecheck`、`vite build` 和后端 sidecar 生成。
+- `cargo check --manifest-path src-tauri/Cargo.toml`：第一次因干净 worktree 还没有 `src-tauri/bin/vola` 失败，报 `resource path bin/vola doesn't exist`；生成 sidecar 后重试通过。
+- 本机 Tauri macOS app / dmg 构建：`cd src-tauri && ../web/node_modules/.bin/tauri build --bundles app dmg --no-sign` 通过，生成 `Vola.app`、`Vola_0.1.14_aarch64.dmg` 和 updater tar 包。
+- 本地签名检查：`codesign --verify --deep --strict --verbose=2 src-tauri/target/release/bundle/macos/Vola.app` 失败，报 `code has no resources but signature indicates they must be present`。本地构建使用了 `--no-sign`，正式 GitHub Release workflow 使用仓库 secret 完成签名和 updater 签名。
+- 包内信息检查：`CFBundleDisplayName` 为 `Vola`，`CFBundleName` 为 `Vola`，`CFBundleExecutable` 为 `vola-desktop`，版本为 `0.1.14`。
+- 包内图标检查：`Vola.app/Contents/Resources/icon.icns`、DMG 外层 `icon.icns` 与 `src-tauri/icons/icon.icns` 的 SHA-256 一致。
+- DMG 内部检查：挂载 `Vola_0.1.14_aarch64.dmg` 后，`Vola.app/Contents/Resources/icon.icns` 与 `src-tauri/icons/icon.icns` 的 SHA-256 一致，版本为 `0.1.14`。
+- `web/public/vola-app-icon.png` 和 `web/dist/vola-app-icon.png` 的 SHA-256 一致。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.14`。
+
+发布完成后回填：
+
+- 提交：待回填。
+- tag：`v0.1.14`
+- Release workflow run：待回填。
+- Actions 页面：待回填。
+- Release 页面：待回填。
+- workflow 结果：待回填。
+
+GitHub Release 资产：
+
+- 待回填。
+
+`latest.json` 复查：
+
+- 待回填。
