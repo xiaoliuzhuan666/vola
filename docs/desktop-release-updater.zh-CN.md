@@ -560,17 +560,28 @@ GitHub Release 资产：
 
 发布完成后回填：
 
-- 提交：待回填。
+- 提交：`d840149dbcce54bbb519e4ebb0794115ac7982a1`
 - tag：`v0.1.14`
-- Release workflow run：待回填。
-- Actions 页面：待回填。
-- Release 页面：待回填。
-- workflow 结果：待回填。
+- Release workflow run：`27736356747`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27736356747`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.14`
+- workflow 结果：通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
 
 GitHub Release 资产：
 
-- 待回填。
+- `latest.json`
+- `macos-aarch64-Vola.app.tar.gz`
+- `macos-aarch64-Vola_0.1.14_aarch64.dmg`
+- `macos-x86_64-Vola.app.tar.gz`
+- `macos-x86_64-Vola_0.1.14_x64.dmg`
+- `linux-x86_64-Vola_0.1.14_amd64.AppImage`
+- `windows-x86_64-Vola_0.1.14_x64-setup.exe`
 
 `latest.json` 复查：
 
-- 待回填。
+- `version` 为 `0.1.14`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
+- macOS updater URL 已指向 `macos-aarch64-Vola.app.tar.gz` 和 `macos-x86_64-Vola.app.tar.gz`。
+- 下载 `macos-aarch64-Vola_0.1.14_aarch64.dmg` 后，包内 `Vola.app/Contents/Resources/icon.icns` 与 `src-tauri/icons/icon.icns` 的 SHA-256 一致，版本为 `0.1.14`。
+- 下载 `macos-aarch64-Vola.app.tar.gz` 后，包内 `Vola.app/Contents/Resources/icon.icns` 与 `src-tauri/icons/icon.icns` 的 SHA-256 一致，版本为 `0.1.14`。
