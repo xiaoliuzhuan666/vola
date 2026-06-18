@@ -275,9 +275,24 @@ GitHub Release 资产：
 
 发布完成后回填：
 
-- 提交：待回填
+- 提交：`df5d70b2800be1a16289c260f565d9e8a377c077`
 - tag：`v0.1.15`
-- Release workflow run：待回填
-- Actions 页面：待回填
-- Release 页面：待回填
-- workflow 结果：待回填
+- Release workflow run：`27759506584`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27759506584`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.15`
+- workflow 结果：通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
+
+GitHub Release 资产：
+
+- `latest.json`：已上传，`version` 为 `0.1.15`，包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64` 四个平台。
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.15_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.15_x64.dmg`
+- `linux-x86_64-vola_0.1.15_amd64.AppImage`
+- `windows-x86_64-vola_0.1.15_x64-setup.exe`
+
+发布后复查：
+
+- `https://github.com/xiaoliuzhuan666/vola/releases/latest/download/latest.json` 返回 `version: 0.1.15`。
+- 从 GitHub Release 下载 `macos-aarch64-vola_0.1.15_aarch64.dmg` 后挂载检查，包内 `vola.app/Contents/Resources/icon.icns` 的 SHA-256 为 `ca5cfe07ace7a72c75261c45ce3a3cc57d48c56a1c327cda2f84a66249821b6f`，与 `src-tauri/icons/icon.icns` 一致。
