@@ -359,7 +359,7 @@ func (s *Server) handleTeamMcpReviewResolve(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) listTeamMcps(ctx context.Context, team *models.Team) ([]teamMcpAsset, error) {
-	snapshot, err := s.FileTreeService.Snapshot(ctx, team.HubUserID, "/team/mcps", models.TrustLevelFull)
+	snapshot, err := s.FileTreeService.Snapshot(ctx, team.HubUserID, "/team/mcp", models.TrustLevelFull)
 	if err != nil {
 		if errors.Is(err, services.ErrEntryNotFound) {
 			return []teamMcpAsset{}, nil
@@ -367,6 +367,7 @@ func (s *Server) listTeamMcps(ctx context.Context, team *models.Team) ([]teamMcp
 		return nil, err
 	}
 	mcps := make([]teamMcpAsset, 0)
+	seen := map[string]bool{}
 	for _, entry := range snapshot.Entries {
 		if entry.IsDirectory || entry.DeletedAt != nil || pathpkg.Base(entry.Path) != "mcp.vola.json" {
 			continue
@@ -380,7 +381,32 @@ func (s *Server) listTeamMcps(ctx context.Context, team *models.Team) ([]teamMcp
 		if !team.CanManageMembers && !teamMcpVisible(asset) {
 			continue
 		}
+		seen[asset.Slug] = true
 		mcps = append(mcps, asset)
+	}
+	legacySnapshot, legacyErr := s.FileTreeService.Snapshot(ctx, team.HubUserID, "/team/mcps", models.TrustLevelFull)
+	if legacyErr != nil && !errors.Is(legacyErr, services.ErrEntryNotFound) {
+		return nil, legacyErr
+	}
+	if legacyErr == nil {
+		for _, entry := range legacySnapshot.Entries {
+			if entry.IsDirectory || entry.DeletedAt != nil || pathpkg.Base(entry.Path) != "mcp.vola.json" {
+				continue
+			}
+			var asset teamMcpAsset
+			if err := json.Unmarshal([]byte(entry.Content), &asset); err != nil {
+				continue
+			}
+			asset = s.normalizeTeamMcpAsset(asset)
+			if seen[asset.Slug] {
+				continue
+			}
+			asset.Path = entry.Path
+			if !team.CanManageMembers && !teamMcpVisible(asset) {
+				continue
+			}
+			mcps = append(mcps, asset)
+		}
 	}
 	sort.Slice(mcps, func(i, j int) bool { return mcps[i].Slug < mcps[j].Slug })
 	return mcps, nil
@@ -493,11 +519,11 @@ func teamMcpVisible(asset teamMcpAsset) bool {
 }
 
 func teamMcpAssetPath(slug string) string {
-	return "/team/mcps/" + normalizeSlugInput(slug) + "/mcp.vola.json"
+	return "/team/mcp/" + normalizeSlugInput(slug) + "/mcp.vola.json"
 }
 
 func teamMcpReadmePath(slug string) string {
-	return "/team/mcps/" + normalizeSlugInput(slug) + "/README.md"
+	return "/team/mcp/" + normalizeSlugInput(slug) + "/README.md"
 }
 
 func renderTeamMcpReadme(asset teamMcpAsset) string {

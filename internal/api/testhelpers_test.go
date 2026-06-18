@@ -159,6 +159,7 @@ func (s *Server) setupTestRoutes(store *inMemoryTokenStore) {
 
 		// File tree
 		r.Get("/api/tree/archive", s.handleTreeDownloadZip)
+		r.Get("/api/tree/snapshot", s.handleTreeSnapshot)
 		r.Get("/api/tree/*", s.handleTreeRead)
 		r.Put("/api/tree/*", s.handleTreeWrite)
 		r.Delete("/api/tree/*", s.handleTreeDelete)

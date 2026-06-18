@@ -25,7 +25,7 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		respondNotFound(w, "user")
 		return
 	}
-	respondOK(w, map[string]interface{}{
+	payload := map[string]interface{}{
 		"id":           user.ID,
 		"slug":         user.Slug,
 		"display_name": user.DisplayName,
@@ -35,7 +35,16 @@ func (s *Server) handleAuthMe(w http.ResponseWriter, r *http.Request) {
 		"timezone":     user.Timezone,
 		"language":     user.Language,
 		"created_at":   user.CreatedAt,
-	})
+	}
+	if s.UserService != nil {
+		account, err := s.UserService.GetAccount(r.Context(), userID, s.defaultUserStorageQuotaBytes())
+		if err == nil && account != nil {
+			payload["storage_quota_bytes"] = account.StorageQuotaBytes
+			payload["effective_storage_quota_bytes"] = account.EffectiveStorageQuotaBytes
+			payload["storage_used_bytes"] = account.StorageUsedBytes
+		}
+	}
+	respondOK(w, payload)
 }
 
 func (s *Server) handleAuthUpdateMe(w http.ResponseWriter, r *http.Request) {

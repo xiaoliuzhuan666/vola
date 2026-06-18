@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { api, type FileNode, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse, type TeamMcpAsset, type TeamSkillPublication, type TeamSkillSubscriptionStatus } from '../api'
+import { api, type FileNode, type LocalSkillSyncResponse, type LocalToolStatusResponse, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse, type TeamMcpAsset, type TeamSkillPublication, type TeamSkillSubscriptionStatus } from '../api'
 import CustomSelect from '../components/CustomSelect'
 import GitHubTreeList from '../components/GitHubTreeList'
 import MaterialsTile from '../components/MaterialsTile'
@@ -155,6 +155,73 @@ function reviewActionLabel(action: string, locale: string) {
   return '更新草稿'
 }
 
+function syncResponseTotal(response: LocalSkillSyncResponse | null) {
+  if (!response) return { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, blocked: 0, manual: 0 }
+  return response.agents.reduce((acc, agent) => {
+    acc.add += agent.summary.add
+    acc.update += agent.summary.update
+    acc.conflict += agent.summary.conflict
+    acc.removable += agent.summary.removable
+    acc.export += agent.summary.export
+    acc.written += agent.summary.written
+    acc.blocked += agent.summary.blocked || 0
+    acc.manual += agent.summary.manual_required || 0
+    return acc
+  }, { add: 0, update: 0, conflict: 0, removable: 0, export: 0, written: 0, blocked: 0, manual: 0 })
+}
+
+function syncActionClass(action: string) {
+  if (action === 'add') return 'preview-action preview-action-create'
+  if (action === 'update') return 'preview-action preview-action-update'
+  if (action === 'delete') return 'preview-action preview-action-delete'
+  if (action === 'export') return 'preview-action preview-action-update'
+  if (action === 'conflict') return 'preview-action preview-action-conflict'
+  return 'preview-action preview-action-skip'
+}
+
+function syncActionLabel(action: string, tx: (zh: string, en: string) => string) {
+  if (action === 'add') return tx('新增', 'add')
+  if (action === 'update') return tx('更新', 'update')
+  if (action === 'unchanged') return tx('相同', 'same')
+  if (action === 'missing') return tx('本地多出', 'extra')
+  if (action === 'conflict') return tx('冲突', 'conflict')
+  if (action === 'delete') return tx('清理', 'clean')
+  if (action === 'export') return tx('导出', 'export')
+  return action
+}
+
+function syncAgentSummaryText(agent: LocalSkillSyncResponse['agents'][number], tx: (zh: string, en: string) => string) {
+  const summary = agent.summary
+  return tx(
+    `新增 ${summary.add} / 更新 ${summary.update} / 冲突 ${summary.conflict} / 写入 ${summary.written} / 可导出 ${summary.export}`,
+    `add ${summary.add} / update ${summary.update} / conflicts ${summary.conflict} / written ${summary.written} / export ${summary.export}`,
+  )
+}
+
+function publicationStatusLabel(publication: TeamSkillPublication, tx: (zh: string, en: string) => string) {
+  if (publication.status === 'archived') return tx('已归档', 'Archived')
+  if (publication.status === 'published' && publication.visibility === 'team') return tx('已发布', 'Published')
+  return tx('草稿', 'Draft')
+}
+
+function publicationReviewLabel(publication: TeamSkillPublication, tx: (zh: string, en: string) => string) {
+  if (publication.review_status === 'requested') return tx('待审查', 'Review requested')
+  if (publication.review_status === 'approved') return tx('已通过', 'Approved')
+  if (publication.review_status === 'changes_requested') return tx('需修改', 'Changes requested')
+  return ''
+}
+
+function publicationDraftsFromPublications(publications: TeamSkillPublication[]) {
+  return publications.reduce<Record<string, { version: string; release_note: string; note: string }>>((acc, pub) => {
+    acc[pub.skill_path] = {
+      version: pub.version || '',
+      release_note: pub.release_note || '',
+      note: pub.note || '',
+    }
+    return acc
+  }, {})
+}
+
 function formatDateTime(value: string | undefined, locale: string) {
   if (!value) return locale === 'zh-CN' ? '暂无' : 'None'
   const date = new Date(value)
@@ -171,6 +238,17 @@ function normalizeSlugInput(value: string) {
   return value.trim().toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 64)
 }
 
+function teamMemberErrorMessage(err: any, tx: (zh: string, en: string) => string) {
+  const message = `${err?.message || ''}`.trim().toLowerCase()
+  if (message === 'user not found' || message === 'not found: user' || message === 'user') {
+    return tx('没有找到这个用户 slug。请确认对方已经注册云账号，并填写个人资料里的 slug。', 'No user with that slug was found. Make sure the teammate has a cloud account and use their profile slug.')
+  }
+  if (message.includes('already') || message.includes('duplicate')) {
+    return tx('这个成员已经在团队里。', 'This member is already in the team.')
+  }
+  return err?.message || tx('添加成员失败', 'Failed to add member')
+}
+
 export default function TeamLibraryPage() {
   const { locale, tx } = useI18n()
   const [teams, setTeams] = useState<Team[]>([])
@@ -185,6 +263,7 @@ export default function TeamLibraryPage() {
   const [skillUpdateNotificationInfo, setSkillUpdateNotificationInfo] = useState<Pick<TeamSkillUpdateNotificationsResponse, 'storage_path' | 'updated_at' | 'last_checked_at'> | null>(null)
   const [skillReviewHistory, setSkillReviewHistory] = useState<TeamSkillReviewEvent[]>([])
   const [skillPublications, setSkillPublications] = useState<TeamSkillPublication[]>([])
+  const [skillPublicationDrafts, setSkillPublicationDrafts] = useState<Record<string, { version: string; release_note: string; note: string }>>({})
   const [subscriptions, setSubscriptions] = useState<TeamSkillSubscriptionStatus[]>([])
   const [loading, setLoading] = useState(true)
   const [working, setWorking] = useState(false)
@@ -217,6 +296,12 @@ export default function TeamLibraryPage() {
   const [newMcpTags, setNewMcpTags] = useState('')
   const [mcpWorking, setMcpWorking] = useState(false)
   const [mcpHealth, setMcpHealth] = useState<Record<string, { status: 'online' | 'offline'; latency_ms: number }>>({})
+  const [teamSkillSyncPreview, setTeamSkillSyncPreview] = useState<LocalSkillSyncResponse | null>(null)
+  const [teamSkillSyncBusy, setTeamSkillSyncBusy] = useState<'preview' | 'apply' | ''>('')
+  const [teamSkillExportBusy, setTeamSkillExportBusy] = useState('')
+  const [platformRefreshBusy, setPlatformRefreshBusy] = useState('')
+  const [localToolStatus, setLocalToolStatus] = useState<LocalToolStatusResponse | null>(null)
+  const [localToolStatusLoading, setLocalToolStatusLoading] = useState(false)
 
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === selectedTeamID) || teams[0] || null,
@@ -248,9 +333,16 @@ export default function TeamLibraryPage() {
       setSkillUpdateNotificationInfo(null)
       setSkillReviewHistory([])
       setSkillPublications([])
+      setSkillPublicationDrafts({})
       setSubscriptions([])
+      setTeamSkillSyncPreview(null)
+      setTeamSkillSyncBusy('')
+      setTeamSkillExportBusy('')
+      setPlatformRefreshBusy('')
+      setLocalToolStatus(null)
       return
     }
+    setLocalToolStatusLoading(true)
     const [
       teamResult,
       skillsResult,
@@ -298,9 +390,20 @@ export default function TeamLibraryPage() {
       updated_at: notificationsResponse.updated_at,
       last_checked_at: notificationsResponse.last_checked_at,
     } : null)
-    setSkillPublications(publicationsResult.status === 'fulfilled' ? publicationsResult.value.publications || [] : [])
+    const nextSkillPublications = publicationsResult.status === 'fulfilled' ? publicationsResult.value.publications || [] : []
+    setSkillPublications(nextSkillPublications)
+    setSkillPublicationDrafts(publicationDraftsFromPublications(nextSkillPublications))
     setSubscriptions(subscriptionsResult.status === 'fulfilled' ? subscriptionsResult.value.subscriptions || [] : [])
+    loadLocalToolsStatus()
   }, [])
+
+  const loadLocalToolsStatus = () => {
+    setLocalToolStatusLoading(true)
+    return api.getLocalToolsStatus()
+      .then((result) => setLocalToolStatus(result))
+      .catch(() => setLocalToolStatus(null))
+      .finally(() => setLocalToolStatusLoading(false))
+  }
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -366,6 +469,21 @@ export default function TeamLibraryPage() {
     skillReviewHistory.filter((event) => event.action === 'request_review').length
   ), [skillReviewHistory])
 
+  const teamLocalSyncTotal = useMemo(() => syncResponseTotal(teamSkillSyncPreview), [teamSkillSyncPreview])
+  const localToolPlatformMap = useMemo(() => {
+    return (localToolStatus?.platforms || []).reduce<Record<string, LocalToolStatusResponse['platforms'][number]>>((acc, item) => {
+      acc[item.id] = item
+      return acc
+    }, {})
+  }, [localToolStatus])
+  const teamSkillSyncSummary = useMemo(() => {
+    if (!teamSkillSyncPreview) return tx('尚未生成预览。', 'No preview yet.')
+    return tx(
+      `新增 ${teamLocalSyncTotal.add}，更新 ${teamLocalSyncTotal.update}，冲突 ${teamLocalSyncTotal.conflict}，可导出 ${teamLocalSyncTotal.export}。`,
+      `add ${teamLocalSyncTotal.add}, update ${teamLocalSyncTotal.update}, conflicts ${teamLocalSyncTotal.conflict}, export ${teamLocalSyncTotal.export}.`,
+    )
+  }, [teamLocalSyncTotal, teamSkillSyncPreview, tx])
+
   const handleCheckTeamSkillSubscriptions = async () => {
     if (!selectedTeam || sharingWorking) return
     setSharingWorking(true)
@@ -390,6 +508,161 @@ export default function TeamLibraryPage() {
     }
   }
 
+  const handleTeamSkillSync = async (mode: 'preview' | 'apply') => {
+    if (!selectedTeam || teamSkillSyncBusy) return
+    if (mode === 'apply' && teamLocalSyncTotal.blocked > 0) {
+      setError(tx('本地同步里还有阻断项，先看预览再应用。', 'Blocked local sync items need review before applying.'))
+      return
+    }
+    setTeamSkillSyncBusy(mode)
+    setError('')
+    setMessage('')
+    try {
+      const response = mode === 'preview'
+        ? await api.previewLocalSkillSync(selectedTeam.id)
+        : await api.applyLocalSkillSync(selectedTeam.id, teamLocalSyncTotal.manual > 0)
+      setTeamSkillSyncPreview(response)
+      const total = syncResponseTotal(response)
+      setMessage(mode === 'preview'
+        ? tx(`已生成本机预览：新增 ${total.add}，更新 ${total.update}，冲突 ${total.conflict}。`, `Local preview ready: ${total.add} add, ${total.update} update, ${total.conflict} conflicts.`)
+        : tx(`已应用到本机：写入 ${total.written} 个文件。`, `Applied locally: ${total.written} files written.`))
+    } catch (err: any) {
+      setError(err?.message || tx('团队 Skill 本机同步失败', 'Failed to sync team skills locally'))
+    } finally {
+      setTeamSkillSyncBusy('')
+    }
+  }
+
+  const handleTeamSkillExport = async (agentId: string) => {
+    if (!selectedTeam || teamSkillExportBusy) return
+    setTeamSkillExportBusy(agentId)
+    setError('')
+    setMessage('')
+    try {
+      await api.downloadLocalSkillSyncExport(agentId, selectedTeam.id)
+      setMessage(tx('导出包已生成。', 'Export package created.'))
+    } catch (err: any) {
+      setError(err?.message || tx('生成导出包失败', 'Failed to create export package'))
+    } finally {
+      setTeamSkillExportBusy('')
+    }
+  }
+
+  const handleRefreshLocalPlatform = async (platform: 'codex' | 'claude-code') => {
+    if (platformRefreshBusy || !selectedTeam) return
+    setPlatformRefreshBusy(platform)
+    setError('')
+    setMessage('')
+    try {
+      const result = await api.refreshLocalPlatformConnection(platform)
+      setMessage(tx(
+        `${result.name || result.platform} 已刷新本机连接，已发布的团队 MCP 会同步到本机配置。`,
+        `${result.name || result.platform} refreshed locally; published team MCPs were synced to the local config.`,
+      ))
+      void loadLocalToolsStatus()
+    } catch (err: any) {
+      setError(err?.message || tx('刷新本机连接失败', 'Failed to refresh local connection'))
+    } finally {
+      setPlatformRefreshBusy('')
+    }
+  }
+
+  const localToolPlatformOrder = ['codex', 'claude-code', 'cursor-agent', 'gemini-cli']
+  const localToolPlatformLabel = (platform: string) => {
+    if (platform === 'codex') return 'Codex'
+    if (platform === 'claude-code') return 'Claude Code'
+    if (platform === 'cursor-agent') return 'Cursor'
+    if (platform === 'gemini-cli') return 'Gemini CLI'
+    return platform
+  }
+
+  const localToolSyncModeLabel = (platform: LocalToolStatusResponse['platforms'][number]) => {
+    if (platform.auto_sync_supported) return tx('可自动同步', 'Auto sync')
+    if (platform.id === 'gemini-cli') return tx('手工处理', 'Manual')
+    if (platform.export_supported) return tx('只导出', 'Export only')
+    return tx('未支持', 'Unsupported')
+  }
+  const overviewStats = useMemo(() => [
+    {
+      label: tx('成员', 'Members'),
+      value: members.length,
+      detail: selectedTeam ? roleLabel(selectedTeam.role, locale) : tx('未选择', 'No team'),
+    },
+    {
+      label: tx('Skill', 'Skills'),
+      value: childCount(skillsRoot),
+      detail: tx('团队 Skill', 'Team skills'),
+    },
+    {
+      label: 'Agent',
+      value: teamAgents.length,
+      detail: tx('团队配方', 'Team recipes'),
+    },
+    {
+      label: 'MCP',
+      value: teamMcps.length,
+      detail: tx('共享配置', 'Shared configs'),
+    },
+  ], [locale, members.length, selectedTeam, skillsRoot, teamAgents.length, teamMcps.length, tx])
+  const sectionLinks = useMemo(() => [
+    { href: '#team-overview', label: tx('概览', 'Overview') },
+    { href: '#team-assets', label: tx('资产', 'Assets') },
+    { href: '#team-sync', label: tx('同步', 'Sync') },
+    { href: '#team-files', label: tx('文件', 'Files') },
+  ], [tx])
+
+  const publicationSavePayload = (pub: TeamSkillPublication, overrides: Partial<TeamSkillPublication> = {}) => ({
+    skill_path: pub.skill_path,
+    status: overrides.status || pub.status,
+    visibility: overrides.visibility || pub.visibility,
+    version: overrides.version ?? pub.version,
+    release_note: overrides.release_note ?? pub.release_note,
+    note: overrides.note ?? pub.note,
+  })
+
+  const refreshSkillPublications = async () => {
+    if (!selectedTeam) return
+    const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
+    const next = updatedPubs.publications || []
+    setSkillPublications(next)
+    setSkillPublicationDrafts(publicationDraftsFromPublications(next))
+  }
+
+  const updateSkillPublicationDraft = (skillPath: string, key: 'version' | 'release_note' | 'note', value: string) => {
+    setSkillPublicationDrafts((current) => ({
+      ...current,
+      [skillPath]: {
+        version: current[skillPath]?.version || '',
+        release_note: current[skillPath]?.release_note || '',
+        note: current[skillPath]?.note || '',
+        [key]: value,
+      },
+    }))
+  }
+
+  const handleSaveSkillPublicationMeta = async (pub: TeamSkillPublication) => {
+    if (!selectedTeam || sharingWorking) return
+    const draft = skillPublicationDrafts[pub.skill_path] || {
+      version: pub.version || '',
+      release_note: pub.release_note || '',
+      note: pub.note || '',
+    }
+    setSharingWorking(true)
+    setError('')
+    setMessage('')
+    try {
+      const response = await api.saveTeamSkillPublication(selectedTeam.id, publicationSavePayload(pub, draft))
+      const next = response.publications || []
+      setSkillPublications(next)
+      setSkillPublicationDrafts(publicationDraftsFromPublications(next))
+      setMessage(tx('发布信息已保存。', 'Publication details saved.'))
+    } catch (err: any) {
+      setError(err?.message || tx('保存发布信息失败', 'Failed to save publication details'))
+    } finally {
+      setSharingWorking(false)
+    }
+  }
+
   const categories = useMemo(() => {
     return [
       {
@@ -404,7 +677,7 @@ export default function TeamLibraryPage() {
         title: 'MCP',
         subtitle: '/team/mcp',
         desc: tx('内部 MCP server、配置样例、负责人和安全说明。', 'Internal MCP servers, config examples, owners, and security notes.'),
-        count: teamCounts.mcp || 0,
+        count: teamMcps.length,
         icon: 'icon-device',
         action: selectedTeam ? <Link className="btn btn-sm" to={dataFileEditorRoute('/team/mcp/README.md', selectedTeam.id)}>{tx('打开', 'Open')}</Link> : null,
       },
@@ -412,7 +685,7 @@ export default function TeamLibraryPage() {
         title: tx('Agent 配方', 'Agent Recipes'),
         subtitle: '/team/agents',
         desc: tx('团队共用的 Agent 说明、默认 Skill、模型和权限建议。', 'Shared agent instructions, default skills, models, and permission notes.'),
-        count: teamCounts.agents || 0,
+        count: teamAgents.length,
         icon: 'icon-device',
         action: selectedTeam ? <Link className="btn btn-sm" to={dataFileEditorRoute('/team/agents/README.md', selectedTeam.id)}>{tx('打开', 'Open')}</Link> : null,
       },
@@ -433,7 +706,7 @@ export default function TeamLibraryPage() {
         action: selectedTeam ? <Link className="btn btn-sm" to={dataFileEditorRoute('/team/playbooks/README.md', selectedTeam.id)}>{tx('打开', 'Open')}</Link> : null,
       },
     ]
-  }, [locale, selectedTeam, skillsRoot, teamCounts, tx])
+  }, [locale, selectedTeam, skillsRoot, teamAgents.length, teamCounts, teamMcps.length, tx])
 
   const teamTreeLoader = useCallback((path: string) => {
     if (!selectedTeam) return Promise.reject(new Error('team not selected'))
@@ -523,7 +796,7 @@ export default function TeamLibraryPage() {
       setMemberSlug('')
       setMessage(tx('成员已加入团队。', 'Member added to the team.'))
     } catch (err: any) {
-      setError(err?.message || tx('添加成员失败', 'Failed to add member'))
+      setError(teamMemberErrorMessage(err, tx))
     } finally {
       setWorking(false)
     }
@@ -843,7 +1116,32 @@ export default function TeamLibraryPage() {
         </div>
       )}
 
-      <section className="materials-section">
+      <nav className="team-page-nav" aria-label={tx('团队页导航', 'Team page navigation')}>
+        {sectionLinks.map((item) => (
+          <a key={item.href} href={item.href}>{item.label}</a>
+        ))}
+      </nav>
+
+      {selectedTeam && (
+        <section className="team-overview-panel" id="team-overview">
+          <div>
+            <span>{tx('当前团队', 'Current team')}</span>
+            <strong>{selectedTeam.name}</strong>
+            <small>/{selectedTeam.slug}</small>
+          </div>
+          <div className="team-overview-stats">
+            {overviewStats.map((item) => (
+              <div key={item.label} className="team-overview-stat">
+                <span>{item.label}</span>
+                <strong>{item.value}</strong>
+                <small>{item.detail}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
+
+      <section className="materials-section" id="team-setup">
         <div className="materials-section-head">
           <div>
             <h3 className="materials-section-title">{tx('团队', 'Teams')}</h3>
@@ -868,6 +1166,7 @@ export default function TeamLibraryPage() {
             />
           ))}
           <MaterialsTile
+            className="materials-tile-form"
             iconClassName="icon-file"
             title={tx('新团队', 'New team')}
             subtitle={tx('独立资料空间', 'Separate space')}
@@ -911,6 +1210,7 @@ export default function TeamLibraryPage() {
             ))}
             {selectedTeam.can_manage_members && (
               <MaterialsTile
+                className="materials-tile-form"
                 iconClassName="icon-file"
                 title={tx('添加成员', 'Add member')}
                 subtitle={tx('通过用户 slug 添加', 'Add by user slug')}
@@ -937,7 +1237,7 @@ export default function TeamLibraryPage() {
       )}
 
       {selectedTeam && (
-        <section className="materials-section">
+        <section className="materials-section" id="team-assets">
           <div className="materials-section-head">
             <div>
               <h3 className="materials-section-title">{tx('资料类型', 'Library Types')}</h3>
@@ -964,7 +1264,7 @@ export default function TeamLibraryPage() {
       )}
 
       {selectedTeam && (
-        <section className="materials-section">
+        <section className="materials-section" id="team-management">
           <div className="materials-section-head">
             <div>
               <h3 className="materials-section-title">{tx('团队共享管理', 'Team Sharing Management')}</h3>
@@ -1049,6 +1349,160 @@ export default function TeamLibraryPage() {
       )}
 
       {selectedTeam && (
+        <section className="materials-section" id="team-sync">
+          <div className="materials-section-head">
+            <div>
+              <h3 className="materials-section-title">{tx('本机同步入口', 'Local Sync')}</h3>
+              <p className="materials-section-copy">
+                {tx('Codex 和 Claude Code 可直接刷新本机连接；团队 Skill 也可先预览再应用。Cursor 和 Gemini CLI 继续只导出。', 'Codex and Claude Code can refresh local connections directly; team skills can also be previewed before applying. Cursor and Gemini CLI remain export-only.')}
+              </p>
+            </div>
+            <div className="materials-actions">
+              <button className="btn btn-sm" type="button" disabled={Boolean(teamSkillSyncBusy)} onClick={() => { void handleTeamSkillSync('preview') }}>
+                {teamSkillSyncBusy === 'preview' ? tx('预览中...', 'Previewing...') : tx('预览 Skill', 'Preview skills')}
+              </button>
+              <button className="btn btn-sm btn-primary" type="button" disabled={Boolean(teamSkillSyncBusy)} onClick={() => { void handleTeamSkillSync('apply') }}>
+                {teamSkillSyncBusy === 'apply' ? tx('应用中...', 'Applying...') : tx('应用到本机', 'Apply locally')}
+              </button>
+              <button className="btn btn-sm" type="button" disabled={teamSkillExportBusy === 'cursor'} onClick={() => { void handleTeamSkillExport('cursor') }}>
+                {teamSkillExportBusy === 'cursor' ? tx('生成中...', 'Creating...') : tx('导出 Cursor', 'Export Cursor')}
+              </button>
+              <button className="btn btn-sm" type="button" disabled={teamSkillExportBusy === 'gemini-cli'} onClick={() => { void handleTeamSkillExport('gemini-cli') }}>
+                {teamSkillExportBusy === 'gemini-cli' ? tx('生成中...', 'Creating...') : tx('导出 Gemini', 'Export Gemini')}
+              </button>
+            </div>
+          </div>
+
+          <div className="local-tool-status-panel">
+            <div className="local-tool-status-grid">
+              {localToolStatusLoading ? (
+                <div className="local-tool-status-card">
+                  <div className="local-tool-status-card-head">
+                    <strong>{tx('正在检测本机工具', 'Checking local tools')}</strong>
+                    <span className="materials-tile-pill">{tx('检测中', 'Checking')}</span>
+                  </div>
+                  <p>{tx('Vola 正在读取本机连接状态和同步能力。', 'Vola is reading local connection status and sync capabilities.')}</p>
+                </div>
+              ) : localToolPlatformOrder.map((platformID) => {
+                const platform = localToolPlatformMap[platformID]
+                if (!platform) {
+                  return (
+                    <div key={platformID} className="local-tool-status-card">
+                      <div className="local-tool-status-card-head">
+                        <strong>{localToolPlatformLabel(platformID)}</strong>
+                        <span className="materials-tile-pill team-skill-publication-pill is-draft">{tx('未检测', 'Unknown')}</span>
+                      </div>
+                      <p>{tx('当前环境没有返回这个工具的状态。', 'No status was returned for this tool in the current environment.')}</p>
+                    </div>
+                  )
+                }
+                return (
+                  <div key={platform.id} className="local-tool-status-card">
+                    <div className="local-tool-status-card-head">
+                      <strong>{platform.name || localToolPlatformLabel(platform.id)}</strong>
+                      <span className={`materials-tile-pill ${platform.auto_sync_supported ? 'team-skill-publication-pill is-published' : 'team-skill-publication-pill is-draft'}`}>
+                        {localToolSyncModeLabel(platform)}
+                      </span>
+                    </div>
+                    <div className="local-tool-status-line">
+                      <span>{platform.status_label}</span>
+                      <small>{platform.next_action}</small>
+                    </div>
+                    {platform.config_path ? <code>{platform.config_path}</code> : null}
+                    {platform.entrypoint_path ? <code>{platform.entrypoint_path}</code> : null}
+                    {platform.reasons?.length ? (
+                      <ul className="local-tool-status-notes">
+                        {platform.reasons.map((reason) => <li key={reason}>{reason}</li>)}
+                      </ul>
+                    ) : null}
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {teamSkillSyncPreview && (
+            <div className="alert alert-success">{teamSkillSyncSummary}</div>
+          )}
+          {teamSkillSyncPreview && teamLocalSyncTotal.manual > 0 && (
+            <div className="alert alert-warn">
+              {tx(`有 ${teamLocalSyncTotal.manual} 个条目需要人工确认后再应用。`, `${teamLocalSyncTotal.manual} items need manual review before applying.`)}
+            </div>
+          )}
+          {teamSkillSyncPreview && teamLocalSyncTotal.conflict > 0 && (
+            <div className="alert alert-warn">
+              {tx('本机已有同名但未由 Vola 管理的目录，刷新不会覆盖它们。', 'Existing non-Vola-managed local folders will not be overwritten.')}
+            </div>
+          )}
+          <div className="materials-section-copy">
+            {tx('本机同步只会修改当前机器的 Vola 托管目录或客户端配置；如果当前会话没有本机管理权限，系统会拒绝写入。', 'Local sync only changes Vola-managed directories or client config on this machine; without local admin access, the API refuses the write.')}
+          </div>
+
+          {teamSkillSyncPreview && (
+            <div className="data-sync-preview skill-local-sync-preview">
+              <div className="data-sync-preview-sections">
+                {teamSkillSyncPreview.agents.map((agent) => (
+                  <details
+                    key={agent.agent_id}
+                    className="data-sync-preview-section"
+                    open={agent.summary.add > 0 || agent.summary.update > 0 || agent.summary.conflict > 0 || agent.summary.export > 0}
+                  >
+                    <summary className="data-sync-preview-summary">
+                      <span>
+                        <strong>{agent.name}</strong>
+                        <small>{agent.target_root || agent.export_file_name || agent.support_status}</small>
+                      </span>
+                      <span>{syncAgentSummaryText(agent, tx)}</span>
+                    </summary>
+                    {agent.message ? <p className="dashboard-empty-copy">{agent.message}</p> : null}
+                    {agent.auto_apply_reason ? <p className="dashboard-empty-copy">{agent.auto_apply_reason}</p> : null}
+                    {agent.detected_roots?.length ? (
+                      <div className="data-sync-preview-list">
+                        {agent.detected_roots.map((root, index) => (
+                          <div key={`${agent.agent_id}-root-${index}`} className="data-sync-preview-entry">
+                            <span className={root.exists ? 'preview-action preview-action-update' : 'preview-action preview-action-skip'}>
+                              {root.exists ? tx('已发现', 'found') : tx('未发现', 'missing')}
+                            </span>
+                            <span className="skill-local-sync-path">{root.path}</span>
+                            <small>{root.role || root.message || ''}</small>
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+                    {agent.changes.length === 0 ? (
+                      <p className="dashboard-empty-copy">{tx('没有需要处理的变化。', 'No changes to process.')}</p>
+                    ) : (
+                      <div className="data-sync-preview-list">
+                        {agent.changes.filter((change) => change.action !== 'marker').slice(0, 20).map((change, index) => (
+                          <div key={`${agent.agent_id}-${change.target_path || change.skill_path}-${index}`} className={`data-sync-preview-entry ${change.action === 'conflict' ? 'is-danger' : ''}`}>
+                            <span className={syncActionClass(change.action)}>{syncActionLabel(change.action, tx)}</span>
+                            <span className="skill-local-sync-path">
+                              {change.skill_path}{change.rel_path ? `/${change.rel_path}` : ''}
+                            </span>
+                            <small>{change.target_path || change.reason || agent.export_file_name || ''}</small>
+                          </div>
+                        ))}
+                        {agent.changes.filter((change) => change.action !== 'marker').length > 20 ? (
+                          <p className="dashboard-empty-copy">{tx('只显示前 20 条变化。', 'Showing the first 20 changes only.')}</p>
+                        ) : null}
+                      </div>
+                    )}
+                    {agent.export_available ? (
+                      <div className="materials-actions">
+                        <button className="btn btn-sm" type="button" disabled={Boolean(teamSkillExportBusy)} onClick={() => { void handleTeamSkillExport(agent.agent_id) }}>
+                          {teamSkillExportBusy === agent.agent_id ? tx('生成中...', 'Creating...') : tx('下载导出包', 'Download export')}
+                        </button>
+                      </div>
+                    ) : null}
+                  </details>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
+      )}
+
+      {selectedTeam && (
         <section className="materials-section">
           <div className="materials-section-head">
             <div>
@@ -1064,6 +1518,12 @@ export default function TeamLibraryPage() {
               const sub = subscriptions.find(s => s.source_path === pub.skill_path)
               const isInstalled = !!sub
               const hasUpdate = sub?.update_available
+              const reviewLabel = publicationReviewLabel(pub, tx)
+              const draft = skillPublicationDrafts[pub.skill_path] || {
+                version: pub.version || '',
+                release_note: pub.release_note || '',
+                note: pub.note || '',
+              }
 
               return (
                 <MaterialsTile
@@ -1071,22 +1531,24 @@ export default function TeamLibraryPage() {
                   iconClassName="icon-stack"
                   title={pub.skill_path.replace(/^\/skills\//, '')}
                   subtitle={pub.skill_path}
-                  description={pub.note || tx('团队共享技能', 'Shared team skill')}
+                  description={pub.release_note || pub.note || tx('团队共享技能', 'Shared team skill')}
                   footerStart={
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                      {pub.visibility === 'team' && (
-                        <span className="badge badge-success" style={{ background: 'rgba(16, 185, 129, 0.1)', color: '#10b981', border: '1px solid rgba(16, 185, 129, 0.2)' }}>
-                          {tx('团队默认', 'Team Default')}
+                    <div className="team-skill-publication-meta">
+                      <span className={`materials-tile-pill team-skill-publication-pill is-${pub.status}`}>
+                        {publicationStatusLabel(pub, tx)}
+                      </span>
+                      {reviewLabel ? (
+                        <span className={`materials-tile-pill team-skill-review-pill is-${pub.review_status || 'none'}`}>
+                          {reviewLabel}
                         </span>
-                      )}
+                      ) : null}
+                      {pub.version ? (
+                        <span className="materials-tile-pill team-skill-version-pill">{pub.version}</span>
+                      ) : null}
                       {isInstalled ? (
-                        <span style={{ color: '#10b981', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
-                          ✓ {tx('已装配', 'Installed')}
-                        </span>
+                        <span className="materials-tile-pill team-skill-install-pill is-installed">{tx('已装配', 'Installed')}</span>
                       ) : (
-                        <span style={{ color: '#94a3b8' }}>
-                          {tx('未装配', 'Not Installed')}
-                        </span>
+                        <span className="materials-tile-pill team-skill-install-pill is-not-installed">{tx('未装配', 'Not Installed')}</span>
                       )}
                     </div>
                   }
@@ -1100,15 +1562,12 @@ export default function TeamLibraryPage() {
                           onChange={async (e) => {
                             setSharingWorking(true)
                             try {
-                              await api.saveTeamSkillPublication(selectedTeam.id, {
-                                skill_path: pub.skill_path,
-                                status: pub.status,
+                              await api.saveTeamSkillPublication(selectedTeam.id, publicationSavePayload(pub, {
                                 visibility: e.target.checked ? 'team' : 'private',
-                                note: pub.note
-                              })
+                                ...draft,
+                              }))
                               setMessage(tx('共享设置已更新', 'Sharing settings updated'))
-                              const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
-                              setSkillPublications(updatedPubs.publications || [])
+                              await refreshSkillPublications()
                             } catch (err: any) {
                               setError(err?.message || tx('更新共享状态失败', 'Failed to update sharing status'))
                             } finally {
@@ -1188,8 +1647,7 @@ export default function TeamLibraryPage() {
                                 note: 'Recommended by team member.'
                               })
                               setMessage(tx('推荐成功，已提交管理员审核！', 'Recommended successfully, submitted to admin for review.'))
-                              const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
-                              setSkillPublications(updatedPubs.publications || [])
+                              await refreshSkillPublications()
                             } catch (err: any) {
                               setError(err?.message || tx('提交推荐失败', 'Failed to recommend'))
                             } finally {
@@ -1216,14 +1674,13 @@ export default function TeamLibraryPage() {
                                   decision: 'approved',
                                   note: 'Approved by admin.'
                                 })
-                                await api.saveTeamSkillPublication(selectedTeam.id, {
-                                  skill_path: pub.skill_path,
+                                await api.saveTeamSkillPublication(selectedTeam.id, publicationSavePayload(pub, {
                                   status: 'published',
-                                  visibility: 'team'
-                                })
+                                  visibility: 'team',
+                                  ...draft,
+                                }))
                                 setMessage(tx('已通过审查并全员共享！', 'Approved and shared with all!'))
-                                const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
-                                setSkillPublications(updatedPubs.publications || [])
+                                await refreshSkillPublications()
                               } catch (err: any) {
                                 setError(err?.message || tx('审核操作失败', 'Failed to resolve review'))
                               } finally {
@@ -1247,8 +1704,7 @@ export default function TeamLibraryPage() {
                                   note: 'Changes requested by admin.'
                                 })
                                 setMessage(tx('已要求修改。', 'Changes requested.'))
-                                const updatedPubs = await api.getTeamSkillPublications(selectedTeam.id)
-                                setSkillPublications(updatedPubs.publications || [])
+                                await refreshSkillPublications()
                               } catch (err: any) {
                                 setError(err?.message || tx('审核操作失败', 'Failed to resolve review'))
                               } finally {
@@ -1262,7 +1718,42 @@ export default function TeamLibraryPage() {
                       ) : null}
                     </>
                   }
-                />
+                >
+                  <div className="team-skill-publication-copy">
+                    {selectedTeam.can_manage_members ? (
+                      <>
+                        <input
+                          className="input"
+                          placeholder={tx('版本，例如 v1.2.0', 'Version, e.g. v1.2.0')}
+                          value={draft.version}
+                          onChange={(event) => updateSkillPublicationDraft(pub.skill_path, 'version', event.target.value)}
+                        />
+                        <input
+                          className="input"
+                          placeholder={tx('发布说明', 'Release note')}
+                          value={draft.release_note}
+                          onChange={(event) => updateSkillPublicationDraft(pub.skill_path, 'release_note', event.target.value)}
+                        />
+                        <textarea
+                          className="input"
+                          rows={2}
+                          placeholder={tx('内部备注', 'Internal note')}
+                          value={draft.note}
+                          onChange={(event) => updateSkillPublicationDraft(pub.skill_path, 'note', event.target.value)}
+                        />
+                        <button className="btn btn-sm" type="button" disabled={sharingWorking} onClick={() => { void handleSaveSkillPublicationMeta(pub) }}>
+                          {tx('保存发布信息', 'Save publication details')}
+                        </button>
+                      </>
+                    ) : (
+                      <>
+                        <span>{tx('发布状态：', 'Publication: ')}{publicationStatusLabel(pub, tx)}</span>
+                        {pub.version ? <span>{tx('版本：', 'Version: ')}{pub.version}</span> : null}
+                        {pub.release_note ? <span>{pub.release_note}</span> : null}
+                      </>
+                    )}
+                  </div>
+                </MaterialsTile>
               )
             })}
             {skillPublications.length === 0 && (
@@ -1400,6 +1891,7 @@ export default function TeamLibraryPage() {
             ))}
             {selectedTeam.can_write && (
               <MaterialsTile
+                className="materials-tile-form materials-tile-large"
                 iconClassName="icon-file"
                 title={tx('新 Agent 配方', 'New Agent Recipe')}
                 subtitle={tx('默认保存为团队资产', 'Saved as a team asset')}
@@ -1430,8 +1922,16 @@ export default function TeamLibraryPage() {
             <div>
               <h3 className="materials-section-title">{tx('团队共享 MCP 配置', 'Team MCP Configurations')}</h3>
               <p className="materials-section-copy">
-                {tx('将数据库、服务 API 或专用工具包装为团队共享 MCP，成员在本地 connect 时会自动同步拉起。', 'Share databases, service APIs, or custom tools as team MCPs. Wired automatically on local client connection.')}
+                {tx('将数据库、服务 API 或专用工具包装为团队共享 MCP。Codex 和 Claude Code 刷新本机连接后会同步拉起已发布条目，Cursor 和 Gemini CLI 仍按导出或手动方式处理。', 'Share databases, service APIs, or custom tools as team MCPs. Codex and Claude Code sync published items after a local connection refresh, while Cursor and Gemini CLI stay export-only or manual.')}
               </p>
+            </div>
+            <div className="materials-actions">
+              <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'codex'} onClick={() => { void handleRefreshLocalPlatform('codex') }}>
+                {platformRefreshBusy === 'codex' ? tx('刷新中...', 'Refreshing...') : tx('同步到 Codex', 'Sync to Codex')}
+              </button>
+              <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'claude-code'} onClick={() => { void handleRefreshLocalPlatform('claude-code') }}>
+                {platformRefreshBusy === 'claude-code' ? tx('刷新中...', 'Refreshing...') : tx('同步到 Claude Code', 'Sync to Claude Code')}
+              </button>
             </div>
           </div>
 
@@ -1522,6 +2022,7 @@ export default function TeamLibraryPage() {
             ))}
             {selectedTeam.can_write && (
               <MaterialsTile
+                className="materials-tile-form materials-tile-large"
                 iconClassName="icon-file"
                 title={tx('新建共享 MCP', 'New Shared MCP')}
                 subtitle={tx('默认保存为团队资产', 'Saved as a team asset')}
@@ -1565,7 +2066,7 @@ export default function TeamLibraryPage() {
       )}
 
       {!selectedTeam ? (
-        <section className="dashboard-file-panel github-tree-list">
+        <section className="dashboard-file-panel github-tree-list" id="team-files">
           <div className="dashboard-section-head">
             <div>
               <h3>{tx('团队文件', 'Team Files')}</h3>
@@ -1575,7 +2076,7 @@ export default function TeamLibraryPage() {
           <div className="dashboard-file-empty">{tx('暂无团队文件。', 'No team files yet.')}</div>
         </section>
       ) : !loading && !teamRoot ? (
-        <section className="dashboard-file-panel github-tree-list">
+        <section className="dashboard-file-panel github-tree-list" id="team-files">
           <div className="dashboard-section-head">
             <div>
               <h3>{tx('团队文件', 'Team Files')}</h3>
@@ -1585,16 +2086,18 @@ export default function TeamLibraryPage() {
           <div className="dashboard-file-empty">{tx('暂无团队文件。', 'No team files yet.')}</div>
         </section>
       ) : (
-        <GitHubTreeList
-          rootPath={currentTreeRoot}
-          path={treePath}
-          rootLabel={currentTreeRoot === '/skills' ? tx('团队 Skill', 'Team Skills') : tx('团队资料', 'Team')}
-          title={tx('团队文件', 'Team Files')}
-          description={selectedTeam ? `${selectedTeam.name} / ${selectedTeam.slug}` : undefined}
-          loadNode={teamTreeLoader}
-          fileRoute={teamFileRoute}
-          onPathChange={setTreePath}
-        />
+        <div id="team-files">
+          <GitHubTreeList
+            rootPath={currentTreeRoot}
+            path={treePath}
+            rootLabel={currentTreeRoot === '/skills' ? tx('团队 Skill', 'Team Skills') : tx('团队资料', 'Team')}
+            title={tx('团队文件', 'Team Files')}
+            description={selectedTeam ? `${selectedTeam.name} / ${selectedTeam.slug}` : undefined}
+            loadNode={teamTreeLoader}
+            fileRoute={teamFileRoute}
+            onPathChange={setTreePath}
+          />
+        </div>
       )}
     </div>
   )

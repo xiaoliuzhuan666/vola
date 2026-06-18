@@ -3,6 +3,15 @@ import react from '@vitejs/plugin-react'
 
 const apiTarget = process.env.VOLA_DEV_API_TARGET || 'http://localhost:8080'
 const gatewayProxy = () => ({ target: apiTarget, changeOrigin: true })
+const exactGatewayProxy = (path: string) => ({
+  ...gatewayProxy(),
+  bypass: (req: { method?: string; url?: string }) => {
+    const url = req.url || ''
+    if (url === path || url.startsWith(`${path}?`) || url.startsWith(`${path}/`)) return undefined
+    if (req.method === 'GET' || req.method === 'HEAD') return '/index.html'
+    return undefined
+  },
+})
 
 function manualChunks(id: string) {
   const normalized = id.replace(/\\/g, '/')
@@ -87,7 +96,7 @@ export default defineConfig({
     proxy: {
       '/api': gatewayProxy(),
       '/agent': gatewayProxy(),
-      '/mcp': gatewayProxy(),
+      '/mcp': exactGatewayProxy('/mcp'),
       '/gpt': gatewayProxy(),
       '/stripe': gatewayProxy(),
       '/.well-known': gatewayProxy(),

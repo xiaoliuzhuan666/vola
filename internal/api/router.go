@@ -442,6 +442,11 @@ func (s *Server) setupRoutes() {
 		r.Get("/api/local/config", s.handleLocalConfigGet)
 		r.Put("/api/local/config", s.handleLocalConfigUpdate)
 		r.Put("/api/local/workspace/active", s.handleLocalWorkspaceActiveUpdate)
+		r.Get("/api/local/cloud/status", s.handleLocalCloudStatus)
+		r.Post("/api/local/cloud/login", s.handleLocalCloudLogin)
+		r.Post("/api/local/cloud/register", s.handleLocalCloudRegister)
+		r.Post("/api/local/cloud/push", s.handleLocalCloudPush)
+		r.Post("/api/local/cloud/disconnect", s.handleLocalCloudDisconnect)
 		r.Get("/api/local/git-mirror", s.handleLocalGitMirrorGet)
 		r.Put("/api/local/git-mirror", s.handleLocalGitMirrorUpdate)
 		r.Post("/api/local/git-mirror/github/test", s.handleLocalGitMirrorGitHubTest)
@@ -467,6 +472,8 @@ func (s *Server) setupRoutes() {
 		r.Post("/api/local/mcp/clients/register", s.handleLocalMCPClientsRegister)
 		r.Post("/api/local/mcp/clients/unregister", s.handleLocalMCPClientsUnregister)
 		r.Get("/api/local/mcp/health", s.handleLocalMcpHealth)
+		r.Get("/api/local/tools/status", s.handleLocalToolsStatus)
+		r.Post("/api/local/platform/connection/refresh", s.handleLocalPlatformConnectionRefresh)
 
 		// GPT Setup
 		r.Get("/api/gpt/setup", s.handleGPTSetup)

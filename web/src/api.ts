@@ -218,6 +218,46 @@ export interface AuthResponse {
   user: any;
 }
 
+export interface LocalCloudQuota {
+  storage_quota_bytes?: number | null;
+  effective_storage_quota_bytes: number;
+  storage_used_bytes: number;
+}
+
+export interface LocalCloudStatus {
+  connected: boolean;
+  api_base?: string;
+  profile?: string;
+  auth_mode?: string;
+  account?: any;
+  quota?: LocalCloudQuota | null;
+  updated_at?: string;
+  error?: string;
+}
+
+export interface LocalCloudPushResponse {
+  status: LocalCloudStatus;
+  bundle_stats: {
+    total_skills?: number;
+    total_files?: number;
+    total_bytes?: number;
+    binary_files?: number;
+    profile_items?: number;
+    memory_items?: number;
+  };
+  import_result?: {
+    version?: string;
+    mode?: string;
+    skills_written?: number;
+    files_written?: number;
+    files_deleted?: number;
+    profile_categories?: number;
+    memory_imported?: number;
+  };
+  confirmed?: boolean;
+  warning?: string;
+}
+
 export interface Session {
   id: string;
   user_id: string;
@@ -828,6 +868,22 @@ export interface LocalSkillSyncResponse {
   blocked?: boolean;
 }
 
+export interface LocalPlatformConnectionRefreshResponse {
+  platform: string;
+  name: string;
+  refreshed: boolean;
+  connection: {
+    transport?: string;
+    config_path?: string;
+    entrypoint_type?: string;
+    entrypoint_path?: string;
+    managed_paths?: string[];
+    chat_usage?: string[];
+    connected_at?: string;
+    last_platform_url?: string;
+  };
+}
+
 export interface SkillConversionRequest {
   source_path: string;
   source_platform?: "claude-code" | "codex";
@@ -941,6 +997,8 @@ export interface TeamSkillPublication {
   skill_path: string;
   status: "draft" | "published" | "archived" | string;
   visibility: "private" | "team" | string;
+  version?: string;
+  release_note?: string;
   note?: string;
   review_status?: "requested" | "approved" | "changes_requested" | string;
   review_note?: string;
@@ -962,6 +1020,40 @@ export interface TeamSkillPublicationsResponse {
   storage_path: string;
   updated_at?: string;
   publications: TeamSkillPublication[];
+}
+
+export interface LocalToolStatusPlatform {
+  id: string;
+  name: string;
+  installed: boolean;
+  connected: boolean;
+  config_path?: string;
+  entrypoint_installed: boolean;
+  entrypoint_path?: string;
+  auto_sync_supported: boolean;
+  export_supported: boolean;
+  sync_mode: string;
+  status_label: string;
+  next_action: string;
+  reasons?: string[];
+  chat_usage?: string[];
+}
+
+export interface LocalToolResourceRecommendation {
+  id: string;
+  title: string;
+  category: string;
+  preview_only: boolean;
+  description: string;
+  steps?: string[];
+  platforms?: string[];
+}
+
+export interface LocalToolStatusResponse {
+  version: string;
+  generated_at: string;
+  platforms: LocalToolStatusPlatform[];
+  resource_recommendations: LocalToolResourceRecommendation[];
 }
 
 export interface TeamSkillSubscriptionStatus {
@@ -1706,6 +1798,36 @@ export const api = {
   getLocalMcpHealth: (): Promise<Record<string, { status: "online" | "offline"; latency_ms: number; last_check: string }>> =>
     request<Record<string, { status: "online" | "offline"; latency_ms: number; last_check: string }>>("/local/mcp/health"),
 
+  getLocalToolsStatus: (): Promise<LocalToolStatusResponse> =>
+    request<LocalToolStatusResponse>("/local/tools/status"),
+
+  getLocalCloudStatus: (): Promise<LocalCloudStatus> =>
+    request<LocalCloudStatus>("/local/cloud/status"),
+
+  loginLocalCloud: (data: LoginRequest): Promise<LocalCloudStatus> =>
+    request<LocalCloudStatus>("/local/cloud/login", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  registerLocalCloud: (data: RegisterRequest): Promise<LocalCloudStatus> =>
+    request<LocalCloudStatus>("/local/cloud/register", {
+      method: "POST",
+      body: JSON.stringify(data),
+    }),
+
+  pushLocalCloud: (): Promise<LocalCloudPushResponse> =>
+    request<LocalCloudPushResponse>("/local/cloud/push", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
+  disconnectLocalCloud: (): Promise<LocalCloudStatus> =>
+    request<LocalCloudStatus>("/local/cloud/disconnect", {
+      method: "POST",
+      body: JSON.stringify({}),
+    }),
+
   getSessions: (): Promise<Session[]> => request<Session[]>("/auth/sessions"),
 
   revokeSession: (id: string): Promise<void> =>
@@ -1770,6 +1892,11 @@ export const api = {
     request("/local/mcp/clients/unregister", {
       method: "POST",
       body: JSON.stringify({ client_id: clientId }),
+    }),
+  refreshLocalPlatformConnection: (platform: string): Promise<LocalPlatformConnectionRefreshResponse> =>
+    request("/local/platform/connection/refresh", {
+      method: "POST",
+      body: JSON.stringify({ platform }),
     }),
 
   // Connections
@@ -1942,6 +2069,8 @@ export const api = {
     skill_path: string;
     status: string;
     visibility: string;
+    version?: string;
+    release_note?: string;
     note?: string;
   }) =>
     request<TeamSkillPublicationsResponse>(`/teams/${encodeURIComponent(teamID)}/skill-publications`, {

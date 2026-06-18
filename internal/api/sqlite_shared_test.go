@@ -1426,6 +1426,12 @@ func TestSQLiteSharedServerRegisterLoginRefresh(t *testing.T) {
 	if !bytes.Contains(me.Data, []byte(`"slug":"new-user"`)) {
 		t.Fatalf("unexpected auth me payload: %s", string(me.Data))
 	}
+	if !bytes.Contains(me.Data, []byte(`"effective_storage_quota_bytes":104857600`)) {
+		t.Fatalf("auth me missing default storage quota: %s", string(me.Data))
+	}
+	if !bytes.Contains(me.Data, []byte(`"storage_used_bytes":0`)) {
+		t.Fatalf("auth me missing storage usage: %s", string(me.Data))
+	}
 
 	refreshReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/refresh", bytes.NewReader([]byte(`{"refresh_token":"`+registered.RefreshToken+`"}`)))
 	refreshReq.Header.Set("Content-Type", "application/json")
@@ -1497,6 +1503,310 @@ func TestHostedSharedServerRegisterLoginRefresh(t *testing.T) {
 	}
 	if loggedIn.AccessToken == "" || loggedIn.RefreshToken == "" {
 		t.Fatalf("expected hosted auth tokens in login response: %+v", loggedIn)
+	}
+}
+
+func TestLocalCloudRegisterStatusAndPushUsesOfficialCloud(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+	t.Setenv("HOME", tempDir)
+
+	var importedBundle models.Bundle
+	importCalls := 0
+	cloudUsedBytes := int64(0)
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/auth/register":
+			if r.Method != http.MethodPost {
+				t.Fatalf("unexpected register method: %s", r.Method)
+			}
+			writeJSON(w, http.StatusCreated, models.AuthResponse{
+				AccessToken:  "cloud-access",
+				RefreshToken: "cloud-refresh",
+				ExpiresIn:    86400,
+				User: models.User{
+					Slug:        "cloud-user",
+					DisplayName: "Cloud User",
+					Email:       "cloud@example.com",
+				},
+			})
+		case "/api/auth/me":
+			if got := r.Header.Get("Authorization"); got != "Bearer cloud-access" {
+				t.Fatalf("unexpected auth header for me: %q", got)
+			}
+			respondOK(w, map[string]any{
+				"slug":                          "cloud-user",
+				"display_name":                  "Cloud User",
+				"email":                         "cloud@example.com",
+				"storage_quota_bytes":           nil,
+				"effective_storage_quota_bytes": int64(100 * 1024 * 1024),
+				"storage_used_bytes":            cloudUsedBytes,
+			})
+		case "/agent/import/bundle":
+			if got := r.Header.Get("Authorization"); got != "Bearer cloud-access" {
+				t.Fatalf("unexpected auth header for import: %q", got)
+			}
+			importCalls++
+			if err := json.NewDecoder(r.Body).Decode(&importedBundle); err != nil {
+				t.Fatalf("decode imported bundle: %v", err)
+			}
+			cloudUsedBytes = importedBundle.Stats.TotalBytes
+			respondOK(w, &models.BundleImportResult{
+				Version:        importedBundle.Version,
+				Mode:           importedBundle.Mode,
+				SkillsWritten:  len(importedBundle.Skills),
+				FilesWritten:   importedBundle.Stats.TotalFiles,
+				MemoryImported: importedBundle.Stats.MemoryItems,
+			})
+		default:
+			t.Fatalf("unexpected cloud request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer cloud.Close()
+
+	if err := runtimecfg.SaveConfig(configPath, &runtimecfg.CLIConfig{
+		Version: 3,
+		Profiles: map[string]runtimecfg.SyncProfile{
+			localCloudProfileName: {APIBase: cloud.URL},
+		},
+		Local: runtimecfg.LocalConfig{Connections: map[string]runtimecfg.LocalConnection{}},
+	}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, user.ID, "/skills/cloud-demo/SKILL.md", "# Cloud Demo\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("WriteEntry skill: %v", err)
+	}
+	if err := store.UpsertProfile(ctx, user.ID, "preferences", "prefers bright blue", "test"); err != nil {
+		t.Fatalf("UpsertProfile: %v", err)
+	}
+	if _, err := store.WriteScratchWithTitle(ctx, user.ID, "remember cloud sync", "test", "sync note"); err != nil {
+		t.Fatalf("WriteScratchWithTitle: %v", err)
+	}
+
+	status, registered := doJSON(t, http.MethodPost, ts.URL+"/api/local/cloud/register", adminToken, []byte(`{
+		"email":"cloud@example.com",
+		"password":"cloudpass22",
+		"display_name":"Cloud User",
+		"slug":"cloud-user"
+	}`))
+	if status != http.StatusCreated || !registered.OK {
+		t.Fatalf("local cloud register failed: status=%d body=%+v", status, registered)
+	}
+	if !bytes.Contains(registered.Data, []byte(`"connected":true`)) ||
+		!bytes.Contains(registered.Data, []byte(`"effective_storage_quota_bytes":104857600`)) ||
+		!bytes.Contains(registered.Data, []byte(`"storage_used_bytes":0`)) {
+		t.Fatalf("unexpected register status payload: %s", string(registered.Data))
+	}
+
+	_, saved, err := runtimecfg.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	profile := saved.Profiles[localCloudProfileName]
+	if profile.APIBase != cloud.URL || profile.Token != "cloud-access" || profile.RefreshToken != "cloud-refresh" {
+		t.Fatalf("official profile not saved correctly: %+v", profile)
+	}
+
+	status, pushed := doJSON(t, http.MethodPost, ts.URL+"/api/local/cloud/push", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !pushed.OK {
+		t.Fatalf("local cloud push failed: status=%d body=%+v", status, pushed)
+	}
+	if importCalls != 1 {
+		t.Fatalf("import calls = %d, want 1", importCalls)
+	}
+	if importedBundle.Version != models.BundleVersionV1 || importedBundle.Stats.TotalFiles == 0 || importedBundle.Stats.MemoryItems == 0 {
+		t.Fatalf("unexpected imported bundle: %+v", importedBundle)
+	}
+	if !bytes.Contains(pushed.Data, []byte(`"storage_used_bytes":`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"files_written":1`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"memory_imported":1`)) {
+		t.Fatalf("unexpected push payload: %s", string(pushed.Data))
+	}
+}
+
+func TestLocalCloudAPIBaseReplacesLegacyOfficialHost(t *testing.T) {
+	s := &Server{}
+	if got := s.localCloudAPIBase(""); got != localCloudDefaultAPIBase {
+		t.Fatalf("empty cloud api base = %q, want %q", got, localCloudDefaultAPIBase)
+	}
+	for _, legacy := range []string{"https://vola.ai", "https://www.vola.ai/", " https://vola.ai/ "} {
+		if got := s.localCloudAPIBase(legacy); got != localCloudDefaultAPIBase {
+			t.Fatalf("legacy cloud api base %q resolved to %q, want %q", legacy, got, localCloudDefaultAPIBase)
+		}
+	}
+	if got := s.localCloudAPIBase("https://custom.example.com/"); got != "https://custom.example.com" {
+		t.Fatalf("custom cloud api base resolved to %q", got)
+	}
+}
+
+func TestLocalCloudPushReportsUsageWhenImportConfirmationTimesOut(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+	t.Setenv("HOME", tempDir)
+
+	importSeen := make(chan struct{}, 1)
+	cloudUsedBytes := int64(0)
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/auth/me":
+			respondOK(w, map[string]any{
+				"slug":                          "cloud-user",
+				"email":                         "cloud@example.com",
+				"storage_quota_bytes":           nil,
+				"effective_storage_quota_bytes": int64(100 * 1024 * 1024),
+				"storage_used_bytes":            cloudUsedBytes,
+			})
+		case "/agent/import/bundle":
+			var importedBundle models.Bundle
+			if err := json.NewDecoder(r.Body).Decode(&importedBundle); err != nil {
+				t.Fatalf("decode imported bundle: %v", err)
+			}
+			cloudUsedBytes = importedBundle.Stats.TotalBytes
+			importSeen <- struct{}{}
+			time.Sleep(150 * time.Millisecond)
+			respondOK(w, &models.BundleImportResult{})
+		default:
+			t.Fatalf("unexpected cloud request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer cloud.Close()
+
+	if err := runtimecfg.SaveConfig(configPath, &runtimecfg.CLIConfig{
+		Version: 3,
+		Profiles: map[string]runtimecfg.SyncProfile{
+			localCloudProfileName: {
+				APIBase: cloud.URL,
+				Token:   "cloud-access",
+			},
+		},
+		Local: runtimecfg.LocalConfig{Connections: map[string]runtimecfg.LocalConnection{}},
+	}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	originalImportTimeout := localCloudImportHTTPTimeout
+	originalPollTimeout := localCloudImportUsagePollTimeout
+	originalPollInterval := localCloudImportUsagePollInterval
+	localCloudImportHTTPTimeout = 25 * time.Millisecond
+	localCloudImportUsagePollTimeout = time.Second
+	localCloudImportUsagePollInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		localCloudImportHTTPTimeout = originalImportTimeout
+		localCloudImportUsagePollTimeout = originalPollTimeout
+		localCloudImportUsagePollInterval = originalPollInterval
+	})
+
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, user.ID, "/skills/cloud-timeout/SKILL.md", "# Cloud Timeout\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("WriteEntry skill: %v", err)
+	}
+
+	status, pushed := doJSON(t, http.MethodPost, ts.URL+"/api/local/cloud/push", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !pushed.OK {
+		t.Fatalf("local cloud push should report cloud usage on timeout: status=%d body=%+v", status, pushed)
+	}
+	select {
+	case <-importSeen:
+	default:
+		t.Fatalf("cloud import endpoint was not called")
+	}
+	if !bytes.Contains(pushed.Data, []byte(`"confirmed":false`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"warning":`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"storage_used_bytes":`)) {
+		t.Fatalf("unexpected timeout push payload: %s", string(pushed.Data))
+	}
+}
+
+func TestLocalCloudPushReturnsCurrentQuotaWhenRepeatedImportConfirmationTimesOut(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+	t.Setenv("HOME", tempDir)
+
+	cloudUsedBytes := int64(12345)
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/auth/me":
+			respondOK(w, map[string]any{
+				"slug":                          "cloud-user",
+				"email":                         "cloud@example.com",
+				"storage_quota_bytes":           nil,
+				"effective_storage_quota_bytes": int64(100 * 1024 * 1024),
+				"storage_used_bytes":            cloudUsedBytes,
+			})
+		case "/agent/import/bundle":
+			var importedBundle models.Bundle
+			if err := json.NewDecoder(r.Body).Decode(&importedBundle); err != nil {
+				t.Fatalf("decode imported bundle: %v", err)
+			}
+			time.Sleep(150 * time.Millisecond)
+			respondOK(w, &models.BundleImportResult{})
+		default:
+			t.Fatalf("unexpected cloud request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer cloud.Close()
+
+	if err := runtimecfg.SaveConfig(configPath, &runtimecfg.CLIConfig{
+		Version: 3,
+		Profiles: map[string]runtimecfg.SyncProfile{
+			localCloudProfileName: {
+				APIBase: cloud.URL,
+				Token:   "cloud-access",
+			},
+		},
+		Local: runtimecfg.LocalConfig{Connections: map[string]runtimecfg.LocalConnection{}},
+	}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	originalImportTimeout := localCloudImportHTTPTimeout
+	originalPollTimeout := localCloudImportUsagePollTimeout
+	originalPollInterval := localCloudImportUsagePollInterval
+	localCloudImportHTTPTimeout = 25 * time.Millisecond
+	localCloudImportUsagePollTimeout = 35 * time.Millisecond
+	localCloudImportUsagePollInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		localCloudImportHTTPTimeout = originalImportTimeout
+		localCloudImportUsagePollTimeout = originalPollTimeout
+		localCloudImportUsagePollInterval = originalPollInterval
+	})
+
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, user.ID, "/skills/cloud-repeat/SKILL.md", "# Cloud Repeat\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("WriteEntry skill: %v", err)
+	}
+
+	status, pushed := doJSON(t, http.MethodPost, ts.URL+"/api/local/cloud/push", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !pushed.OK {
+		t.Fatalf("local cloud repeated push should return latest quota on timeout: status=%d body=%+v", status, pushed)
+	}
+	if !bytes.Contains(pushed.Data, []byte(`"confirmed":false`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"storage_used_bytes":12345`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"warning":`)) {
+		t.Fatalf("unexpected repeated timeout push payload: %s", string(pushed.Data))
 	}
 }
 

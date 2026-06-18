@@ -907,7 +907,7 @@ export function MarketingHomePage() {
           <div className="public-product-visual public-product-visual-rich hub-visual" aria-label={tx('Vola 工作台预览', 'Vola workspace preview')}>
             <aside className="hub-sidebar" aria-label={tx('资料分类', 'Data categories')}>
               <div className="hub-sidebar-brand">
-                <span>X</span>
+                <img className="hub-sidebar-brand-icon" src="/vola-mark.svg" alt="" aria-hidden="true" />
                 <strong>Vola</strong>
               </div>
               {[

@@ -669,12 +669,23 @@ function App() {
   }
 
   const showGitHubBackup = localMode || !!publicConfig?.github_enabled || !!publicConfig?.github_app_enabled
+  const isMaterialsNavRoute =
+    location.pathname.startsWith('/imports') ||
+    location.pathname.startsWith('/skills') ||
+    location.pathname.startsWith('/memory') ||
+    location.pathname.startsWith('/growth-proposals') ||
+    location.pathname.startsWith('/data')
+  const isSyncNavRoute =
+    location.pathname.startsWith('/team') ||
+    location.pathname.startsWith('/mcp-hub') ||
+    location.pathname.startsWith('/sync-backup') ||
+    location.pathname.startsWith('/git-mirror') ||
+    location.pathname.startsWith('/settings/profile')
   const isAdvancedNavRoute =
     location.pathname.startsWith('/settings/developer-access') ||
     location.pathname.startsWith('/settings/developer') ||
     location.pathname.startsWith('/cli') ||
-    location.pathname.startsWith('/codex-console') ||
-    location.pathname.startsWith('/mcp-hub') ||
+    (location.pathname.startsWith('/codex-console') && !desktopConsoleHome) ||
     location.pathname.startsWith('/settings/security')
   const isSyncLoginRoute = location.pathname === '/sync/login'
   const isLegacySyncLoginRoute =
@@ -700,7 +711,7 @@ function App() {
         </div>
 
         <nav className="sidebar-nav">
-          <div className="sidebar-group-header">{tx('日常任务', 'Daily Work')}</div>
+          <div className="sidebar-group-header">{tx('常用', 'Main')}</div>
 
           <NavLink to={homePath} end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
             <NavIcon name="home" />
@@ -723,54 +734,69 @@ function App() {
             )}
           </NavLink>
 
-          {localMode && (
-            <NavLink to={importsHomePath} className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <NavIcon name="import" />
-              <span>{tx('导入资料', 'Import Data')}</span>
-            </NavLink>
-          )}
-
-          <NavLink to="/skills" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <NavIcon name="skills" />
-            <span>{tx('技能库', 'Skills')}</span>
-          </NavLink>
-
-          <NavLink to="/memory" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <NavIcon name="memory" />
-            <span>{tx('记忆', 'Memory')}</span>
-          </NavLink>
-
-          <NavLink to="/growth-proposals" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <NavIcon name="growth" />
-            <span>{tx('优化建议', 'Suggestions')}</span>
-          </NavLink>
+          <div className="nav-group">
+            <details open={isMaterialsNavRoute || undefined}>
+              <summary className={isMaterialsNavRoute ? 'nav-item nav-item-button group-active' : 'nav-item nav-item-button'}>
+                <NavIcon name="import" />
+                <span>{tx('资料库', 'Library')}</span>
+                <span className="nav-group-caret">›</span>
+              </summary>
+              <div className="nav-submenu">
+                {localMode && (
+                  <NavLink to={importsHomePath} className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                    {tx('导入资料', 'Import Data')}
+                  </NavLink>
+                )}
+                <NavLink to="/skills" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                  {tx('技能库', 'Skills')}
+                </NavLink>
+                <NavLink to="/memory" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                  {tx('记忆', 'Memory')}
+                </NavLink>
+                <NavLink to="/growth-proposals" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                  {tx('优化建议', 'Suggestions')}
+                </NavLink>
+              </div>
+            </details>
+          </div>
 
           <div className="sidebar-divider" />
-          <div className="sidebar-group-header">{tx('同步与协作', 'Sync & Team')}</div>
+          <div className="sidebar-group-header">{tx('协作', 'Collaboration')}</div>
 
-          {localMode && (
-            <NavLink to="/settings/profile#cloud-account" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <NavIcon name="account" />
-              <span>{tx('云端账号', 'Cloud Account')}</span>
-            </NavLink>
-          )}
-
-          <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <NavIcon name="team" />
-            <span>{tx('团队资料', 'Team Library')}</span>
-          </NavLink>
-
-          {showGitHubBackup && (
-            <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-              <NavIcon name="backup" />
-              <span>{tx('GitHub 备份', 'GitHub Backup')}</span>
-            </NavLink>
-          )}
+          <div className="nav-group">
+            <details open={isSyncNavRoute || undefined}>
+              <summary className={isSyncNavRoute ? 'nav-item nav-item-button group-active' : 'nav-item nav-item-button'}>
+                <NavIcon name="team" />
+                <span>{tx('同步与团队', 'Sync & Team')}</span>
+                <span className="nav-group-caret">›</span>
+              </summary>
+              <div className="nav-submenu">
+                {localMode && (
+                  <NavLink to="/settings/profile#cloud-account" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                    {tx('云端账号', 'Cloud Account')}
+                  </NavLink>
+                )}
+                <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                  {tx('团队资料', 'Team Library')}
+                </NavLink>
+                {localMode && (
+                  <NavLink to="/mcp-hub" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                    {tx('本机同步', 'Local Sync')}
+                  </NavLink>
+                )}
+                {showGitHubBackup && (
+                  <NavLink to="/sync-backup" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                    {tx('GitHub 备份', 'GitHub Backup')}
+                  </NavLink>
+                )}
+              </div>
+            </details>
+          </div>
 
           <div className="sidebar-divider" />
           <div className="nav-group">
             <details open={isAdvancedNavRoute || undefined}>
-              <summary className={isAdvancedNavRoute ? 'nav-item nav-item-button active' : 'nav-item nav-item-button'}>
+              <summary className={isAdvancedNavRoute ? 'nav-item nav-item-button group-active' : 'nav-item nav-item-button'}>
                 <NavIcon name="developer" />
                 <span>{tx('高级工具', 'Advanced')}</span>
                 <span className="nav-group-caret">›</span>
@@ -785,11 +811,6 @@ function App() {
                 {localMode && !desktopConsoleHome && (
                   <NavLink to="/codex-console" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
                     Codex Console
-                  </NavLink>
-                )}
-                {localMode && (
-                  <NavLink to="/mcp-hub" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
-                    {tx('MCP 控制中心', 'MCP Hub')}
                   </NavLink>
                 )}
                 {systemSettingsEnabled && (

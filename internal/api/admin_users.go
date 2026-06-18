@@ -138,10 +138,10 @@ func (s *Server) isInstanceAdminUser(userID uuid.UUID) bool {
 }
 
 func (s *Server) defaultUserStorageQuotaBytes() int64 {
-	if s != nil && s.Config != nil {
+	if s != nil && s.Config != nil && s.Config.UserStorageQuotaBytes > 0 {
 		return s.Config.UserStorageQuotaBytes
 	}
-	return 0
+	return 100 * 1024 * 1024
 }
 
 func parseQuotaUpdateBody(r *http.Request) (*int64, error) {

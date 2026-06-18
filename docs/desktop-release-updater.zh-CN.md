@@ -233,3 +233,51 @@ GitHub Release 资产：
 注意：
 
 - GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。
+
+## 2026-06-18 v0.1.15 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点是让最新包使用新版蓝色 icon，并把云账号、团队同步和桌面首页体验一起发布。
+
+本次修复与优化：
+
+- 桌面端版本提升到 `0.1.15`，高于当前 GitHub 最新 Release `v0.1.14`，确保自动更新能识别新包。
+- 主 icon 更新为浅底、亮蓝渐变、白色 `V` 的方案，并同步到 `src-tauri/icons`、`desktop/icons`、Web favicon、文档图标和扩展图标。
+- 侧边栏收为“常用 / 资料库 / 同步与团队 / 高级工具”几组，减少首屏菜单数量。
+- 页面主色改为更明亮的蓝色系，保留浅色、低噪声的工具型界面。
+- 云账号页改为走桌面本机云代理，显示官方云账号、API base、100 MB 额度和上传结果。
+- 官方云默认地址改为 `https://driver.sunningfun.cn`，旧 `vola.ai` 官方地址会迁移到当前生产 API。
+- 新用户默认有效额度改为 100 MB，`/api/auth/me` 返回额度和已用空间。
+- 本机上传资料到官方云时，如果云端导入确认响应超时，桌面端会刷新当前云端额度并显示说明，不再直接显示 502。
+
+本地发版前验证：
+
+- `GOCACHE=/private/tmp/vola-go-cache go test ./internal/api -run 'LocalCloud|AuthMe|SharedServerRegisterLoginRefresh'`：通过。
+- `npm --prefix web run typecheck`：通过。
+- `cargo check --manifest-path src-tauri/Cargo.toml`：通过，Cargo 识别 app 版本为 `0.1.15`。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./...`：通过。
+- `npm --prefix web run build`：通过。
+- `git diff --check`：通过。
+- `TAURI_ENV_TARGET_TRIPLE=aarch64-apple-darwin node scripts/tauri-web-command.mjs build`：通过。
+- 本机签名 Tauri 构建：通过，产物包含 `vola.app`、`vola_0.1.15_aarch64.dmg`、`vola.app.tar.gz` 和 `vola.app.tar.gz.sig`。
+- 包内版本检查：`CFBundleShortVersionString` 与 `CFBundleVersion` 均为 `0.1.15`。
+- 包内 icon 检查：`src-tauri/icons/icon.icns` 与 `vola.app/Contents/Resources/icon.icns` 的 SHA-256 都是 `ca5cfe07ace7a72c75261c45ce3a3cc57d48c56a1c327cda2f84a66249821b6f`。
+- 桌面端 Computer Use 验证：用最新 `.app` 完整路径打开，`tauri://localhost/codex-console` 正常显示首页，未看到首页内容被挡住。
+- 桌面端云账号页验证：已连接测试账号，页面显示官方云 `https://driver.sunningfun.cn`，额度为 `15 MB / 100 MB`。
+- 桌面端上传验证：从页面点击“上传本机资料到云端”后，重复上传不再显示 502，页面显示当前云端用量和导入确认超时说明。
+- 真实官方云验证：新注册账号有效额度为 `104857600` 字节；首次上传后云端已用空间从 0 增长到约 `15293684` 字节。
+
+本机产物：
+
+- `.app`：`src-tauri/target/aarch64-apple-darwin/release/bundle/macos/vola.app`
+- DMG：`src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/vola_0.1.15_aarch64.dmg`
+- updater：`src-tauri/target/aarch64-apple-darwin/release/bundle/macos/vola.app.tar.gz`
+- signature：`src-tauri/target/aarch64-apple-darwin/release/bundle/macos/vola.app.tar.gz.sig`
+
+发布完成后回填：
+
+- 提交：待回填
+- tag：`v0.1.15`
+- Release workflow run：待回填
+- Actions 页面：待回填
+- Release 页面：待回填
+- workflow 结果：待回填
