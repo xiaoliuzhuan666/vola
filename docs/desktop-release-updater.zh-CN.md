@@ -499,9 +499,35 @@ GitHub Release 资产：
 
 发布完成后回填：
 
-- 提交：
+- 提交：`2d867b77491ec04470bea735a7bebdd6f8528419`
 - tag：`v0.1.13`
-- Release workflow run：
-- Actions 页面：
+- Release workflow run：`27731081581`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27731081581`
 - Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.13`
-- workflow 结果：
+- workflow 结果：通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-Vola.app.tar.gz`
+- `macos-aarch64-Vola_0.1.13_aarch64.dmg`
+- `macos-x86_64-Vola.app.tar.gz`
+- `macos-x86_64-Vola_0.1.13_x64.dmg`
+- `linux-x86_64-Vola_0.1.13_amd64.AppImage`
+- `windows-x86_64-Vola_0.1.13_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.13`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
+- macOS updater URL 已指向 `macos-aarch64-Vola.app.tar.gz` 和 `macos-x86_64-Vola.app.tar.gz`。
+
+远端 macOS updater 包复查：
+
+- 下载 `macos-aarch64-Vola.app.tar.gz` 后，压缩包内顶层目录为 `Vola.app/`。
+- 包内包含 `Vola.app/Contents/MacOS/vola-desktop` 和 `Vola.app/Contents/Resources/icon.icns`。
+
+注意：
+
+- GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`、`actions/download-artifact@v4` 和 `softprops/action-gh-release@v2`，未影响本次打包。
