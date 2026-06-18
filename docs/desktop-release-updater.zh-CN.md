@@ -450,9 +450,58 @@ GitHub Release 资产：
 
 发布完成后回填：
 
-- 提交：
+- 提交：`f6d18239e77995c7a2b9df225983f9da7cfad97e`
 - tag：`v0.1.12`
+- Release workflow run：`27728076043`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27728076043`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.12`
+- workflow 结果：通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
+
+GitHub Release 资产：
+
+- `latest.json`
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.12_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.12_x64.dmg`
+- `linux-x86_64-vola_0.1.12_amd64.AppImage`
+- `windows-x86_64-vola_0.1.12_x64-setup.exe`
+
+`latest.json` 复查：
+
+- `version` 为 `0.1.12`。
+- `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
+- 四个平台记录均包含资产 URL 和 signature。
+
+注意：
+
+- v0.1.12 已经确认包内图标文件是新图标，但正式包的 `productName` 仍是小写 `vola`，GitHub Release 资产名也仍是 `vola_0.1.12...`。这会让 macOS / Windows 的应用缓存和历史包更容易混在一起，因此继续发布 v0.1.13 修正桌面包身份。
+
+## 2026-06-18 v0.1.13 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，专门处理安装包身份仍沿用 Tauri 默认值的问题。
+
+本次更新：
+
+- `src-tauri/tauri.conf.json` 的 `productName` 从 `vola` 改为 `Vola`。
+- `src-tauri/Cargo.toml` 的包名从默认 `app` 改为 `vola-desktop`，描述和作者同步改成 Vola 项目信息。
+- 桌面版本升到 `0.1.13`。
+
+本地发版前验证：
+
+- `cargo check --manifest-path src-tauri/Cargo.toml`：通过。
+- `TAURI_ENV_TARGET_TRIPLE=aarch64-apple-darwin node scripts/tauri-web-command.mjs build`：通过，包含 `npm run typecheck` 和 `vite build`。
+- 本机 Tauri macOS app 构建：生成 `src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Vola.app` 和 `Vola.app.tar.gz`；最后 updater 签名阶段因本机未配置 `TAURI_SIGNING_PRIVATE_KEY` 失败。正式 GitHub Release workflow 使用仓库 secret 完成签名。
+- 包内信息检查：`CFBundleDisplayName` 为 `Vola`，`CFBundleName` 为 `Vola`，`CFBundleExecutable` 为 `vola-desktop`，版本为 `0.1.13`。
+- 包内图标检查：`Vola.app/Contents/Resources/icon.icns` 与 `src-tauri/icons/icon.icns` 的 SHA-256 一致。
+- `git diff --check`：通过。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.13`。
+
+发布完成后回填：
+
+- 提交：
+- tag：`v0.1.13`
 - Release workflow run：
 - Actions 页面：
-- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.12`
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.13`
 - workflow 结果：

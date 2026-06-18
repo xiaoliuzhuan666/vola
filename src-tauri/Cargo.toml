@@ -1,8 +1,8 @@
 [package]
-name = "app"
-version = "0.1.12"
-description = "A Tauri App"
-authors = ["you"]
+name = "vola-desktop"
+version = "0.1.13"
+description = "Vola desktop application"
+authors = ["Vola"]
 license = ""
 repository = ""
 edition = "2021"
