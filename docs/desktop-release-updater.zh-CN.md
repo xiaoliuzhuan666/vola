@@ -420,3 +420,39 @@ GitHub Release 资产：
 - `version` 为 `0.1.11`。
 - `platforms` 包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64`。
 - 四个平台记录均包含资产 URL 和 signature。
+
+## 2026-06-18 v0.1.12 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点处理三个用户反馈：项目资料入口太复杂、Codex 本地导入偶发 SQLite 锁冲突、桌面安装包仍显示旧图标。
+
+本次更新：
+
+- 项目资料工作台改成一个主入口：粘贴 Markdown 或拖入本机 `.md` 文件即可保存到 Vola。
+- 标题、来源链接、Git 路径、标签和手动 Vola 路径移入高级区域，降低首次使用时的表单负担。
+- 仓库同步独立成“同步到项目仓库”区域，默认只需要填写本机仓库根目录；仓库内目录、覆盖开关和上下文包信息放入高级区域。
+- 已选资料和上下文包可一键复制路径，便于直接贴给 Codex 或同事。
+- Codex / Claude Code 本地导入增加串行导入锁和 SQLite busy/locked 重试；仍然繁忙时返回 409，并显示“Vola 正在保存本地资料，请稍等几秒再试”。
+- 更新 `src-tauri/icons`、`desktop/icons`、`web/public` 和浏览器扩展 `extension/icon*.png` 图标资源；Tauri 安装包实际引用的 `src-tauri/icons/32x32.png`、`128x128.png`、`icon.icns`、`icon.ico` 已替换。
+
+本地发版前验证：
+
+- `npm --prefix web run typecheck`：通过。
+- `npm --prefix web run build`：通过。
+- `rsync -a --delete web/dist/ internal/web/dist/`：通过。
+- `GOCACHE=/private/tmp/vola-go-cache go test ./internal/api ./internal/storage/sqlite`：通过。
+- `cargo check --manifest-path src-tauri/Cargo.toml`：通过。
+- `TAURI_ENV_TARGET_TRIPLE=aarch64-apple-darwin node scripts/tauri-web-command.mjs build`：通过，生成 `src-tauri/bin/vola`，文件类型为 macOS arm64 Mach-O。
+- 本机 Tauri macOS 构建：`.app`、`.dmg` 和 updater tar 包已生成；最后 updater 签名阶段因本机未配置 `TAURI_SIGNING_PRIVATE_KEY` 失败。正式 GitHub Release workflow 使用仓库 secret 完成签名。
+- 包内图标检查：`vola.app/Contents/Resources/icon.icns` 与 `src-tauri/icons/icon.icns` 的 SHA-256 一致，`Info.plist` 指向 `icon.icns`，版本为 `0.1.12`。
+- 本地浏览器验证 `/data/projects/ui-check`：通过，项目资料主入口改为粘贴 / 拖入 Markdown；桌面和 390px 移动宽度没有控件重叠。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.12`。
+- 桌面安装包图标配置复查：`src-tauri/tauri.conf.json` 的 bundle icon 列表指向 `src-tauri/icons`，对应文件已更新。
+
+发布完成后回填：
+
+- 提交：
+- tag：`v0.1.12`
+- Release workflow run：
+- Actions 页面：
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.12`
+- workflow 结果：

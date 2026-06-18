@@ -194,27 +194,34 @@ func (s *Server) handleLocalPlatformImport(w http.ResponseWriter, r *http.Reques
 		Mode:     mode,
 	}
 
-	switch mode {
-	case platforms.ImportModeFiles:
-		resp.Files, err = s.importLocalPlatformSources(r.Context(), userID, adapter.ID(), adapter.DiscoverSources())
-	case platforms.ImportModeAgent:
-		var payload sqlitestorage.AgentExportPayload
-		payload, err = platforms.PrepareAgentImportPayload(r.Context(), cfg, adapter.ID())
-		if err == nil {
-			resp.Agent, err = s.importLocalPlatformAgentPayload(r.Context(), userID, adapter.ID(), payload)
-		}
-	case platforms.ImportModeAll:
-		var payload sqlitestorage.AgentExportPayload
-		payload, err = platforms.PrepareAgentImportPayload(r.Context(), cfg, adapter.ID())
-		if err == nil {
-			resp.Agent, err = s.importLocalPlatformAgentPayload(r.Context(), userID, adapter.ID(), payload)
-		}
-		if err == nil {
+	err = s.withLocalPlatformImportLock(func() error {
+		switch mode {
+		case platforms.ImportModeFiles:
 			resp.Files, err = s.importLocalPlatformSources(r.Context(), userID, adapter.ID(), adapter.DiscoverSources())
+		case platforms.ImportModeAgent:
+			var payload sqlitestorage.AgentExportPayload
+			payload, err = platforms.PrepareAgentImportPayload(r.Context(), cfg, adapter.ID())
+			if err == nil {
+				resp.Agent, err = s.importLocalPlatformAgentPayload(r.Context(), userID, adapter.ID(), payload)
+			}
+		case platforms.ImportModeAll:
+			var payload sqlitestorage.AgentExportPayload
+			payload, err = platforms.PrepareAgentImportPayload(r.Context(), cfg, adapter.ID())
+			if err == nil {
+				resp.Agent, err = s.importLocalPlatformAgentPayload(r.Context(), userID, adapter.ID(), payload)
+			}
+			if err == nil {
+				resp.Files, err = s.importLocalPlatformSources(r.Context(), userID, adapter.ID(), adapter.DiscoverSources())
+			}
 		}
-	}
+		return err
+	})
 	if err != nil {
 		slog.Warn("local platform import failed", "platform", adapter.ID(), "mode", mode, "error", err)
+		if errors.Is(err, errLocalPlatformImportBusy) {
+			respondError(w, http.StatusConflict, ErrCodeConflict, err.Error())
+			return
+		}
 		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, err.Error())
 		return
 	}

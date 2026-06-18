@@ -81,6 +81,7 @@ type Server struct {
 	MCPGateway               *mcp.MCPGateway
 	mcpSessionSources        sync.Map
 	localPlatformPreviewJobs sync.Map
+	localPlatformImportMu    sync.Mutex
 }
 
 type ServerDeps struct {

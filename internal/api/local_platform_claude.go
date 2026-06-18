@@ -67,16 +67,16 @@ func (s *Server) importClaudeProject(ctx context.Context, userID uuid.UUID, plat
 		return nil
 	}
 	if _, err := s.ProjectService.Get(ctx, userID, name); err != nil {
-		if _, err := s.ProjectService.Create(ctx, userID, name); err != nil {
+		if _, err := s.retryLocalPlatformCreateProject(ctx, userID, name); err != nil {
 			return err
 		}
 	}
 	contextBody := renderClaudeProjectContext(project)
 	if strings.TrimSpace(contextBody) != "" {
-		if err := s.ProjectService.UpdateContext(ctx, userID, name, contextBody); err != nil {
+		if err := s.retryLocalPlatformUpdateProjectContext(ctx, userID, name, contextBody); err != nil {
 			return err
 		}
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, hubpath.ProjectContextPath(name), contextBody, "text/markdown", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, hubpath.ProjectContextPath(name), contextBody, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "project_context",
 			MinTrustLevel: models.TrustLevelCollaborate,
 			Metadata: map[string]interface{}{
@@ -142,7 +142,7 @@ func (s *Server) importClaudeBundle(ctx context.Context, userID uuid.UUID, platf
 			Exactness:   "derived",
 			SourcePaths: bundle.SourcePaths,
 		}
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, target, content, "text/markdown", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, target, content, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "skill_file",
 			MinTrustLevel: models.TrustLevelWork,
 			Metadata: map[string]interface{}{
@@ -199,7 +199,7 @@ func (s *Server) writeBundleSkillManifest(ctx context.Context, userID uuid.UUID,
 		return "", err
 	}
 	target := filepath.ToSlash(filepath.Join("/skills", bundleName, skillsarchive.ManifestFile))
-	if _, err := s.FileTreeService.WriteEntry(ctx, userID, target, string(append(data, '\n')), "application/json", models.FileTreeWriteOptions{
+	if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, target, string(append(data, '\n')), "application/json", models.FileTreeWriteOptions{
 		Kind:          "skill_file",
 		MinTrustLevel: models.TrustLevelWork,
 		Metadata: map[string]interface{}{
@@ -241,7 +241,7 @@ func (s *Server) importClaudeConversations(ctx context.Context, userID uuid.UUID
 		rootPath := claudeConversationArchiveRoot(convo)
 		transcriptPath := path.Join(rootPath, "conversation.md")
 		conversationPath := path.Join(rootPath, "conversation.json")
-		if _, err := s.FileTreeService.EnsureDirectoryWithMetadata(ctx, userID, rootPath, sqlitestorage.ConversationBundleDirectoryMetadata(normalized, transcriptPath, conversationPath), models.TrustLevelWork); err != nil {
+		if err := s.retryLocalPlatformEnsureDirectoryWithMetadata(ctx, userID, rootPath, sqlitestorage.ConversationBundleDirectoryMetadata(normalized, transcriptPath, conversationPath), models.TrustLevelWork); err != nil {
 			return err
 		}
 		transcript := renderNormalizedConversationMarkdown(normalized)
@@ -253,7 +253,7 @@ func (s *Server) importClaudeConversations(ctx context.Context, userID uuid.UUID
 			"session_id":      strings.TrimSpace(convo.SessionID),
 			"project_name":    strings.TrimSpace(convo.ProjectName),
 		}
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, transcriptPath, transcript, "text/markdown", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, transcriptPath, transcript, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "file",
 			MinTrustLevel: models.TrustLevelWork,
 			Metadata: mergeConversationMetadata(metadata, map[string]interface{}{
@@ -267,7 +267,7 @@ func (s *Server) importClaudeConversations(ctx context.Context, userID uuid.UUID
 		if err != nil {
 			return err
 		}
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, conversationPath, string(conversationJSON)+"\n", "application/json", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, conversationPath, string(conversationJSON)+"\n", "application/json", models.FileTreeWriteOptions{
 			Kind:          "file",
 			MinTrustLevel: models.TrustLevelWork,
 			Metadata: mergeConversationMetadata(metadata, map[string]interface{}{
@@ -301,7 +301,7 @@ func (s *Server) importClaudeConversations(ctx context.Context, userID uuid.UUID
 		return err
 	}
 	indexPath := hubpath.ConversationIndexPath("claude-code")
-	if _, err := s.FileTreeService.WriteEntry(ctx, userID, indexPath, string(data)+"\n", "application/json", models.FileTreeWriteOptions{
+	if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, indexPath, string(data)+"\n", "application/json", models.FileTreeWriteOptions{
 		Kind:          "file",
 		MinTrustLevel: models.TrustLevelWork,
 		Metadata: map[string]interface{}{
@@ -347,14 +347,14 @@ func (s *Server) writeClaudeFileRecord(ctx context.Context, userID uuid.UUID, ta
 	}
 	if binary {
 		metadata["binary"] = true
-		_, err = s.FileTreeService.WriteBinaryEntry(ctx, userID, target, data, contentType, models.FileTreeWriteOptions{
+		_, err = s.retryLocalPlatformWriteBinaryEntry(ctx, userID, target, data, contentType, models.FileTreeWriteOptions{
 			Kind:          kind,
 			MinTrustLevel: trustLevel,
 			Metadata:      metadata,
 		})
 		return err
 	}
-	_, err = s.FileTreeService.WriteEntry(ctx, userID, target, string(data), contentType, models.FileTreeWriteOptions{
+	_, err = s.retryLocalPlatformWriteEntry(ctx, userID, target, string(data), contentType, models.FileTreeWriteOptions{
 		Kind:          kind,
 		MinTrustLevel: trustLevel,
 		Metadata:      metadata,

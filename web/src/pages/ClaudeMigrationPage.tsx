@@ -48,6 +48,18 @@ const localImportPlatforms: Array<{
 
 const semanticMode = "agent" as const;
 
+function localPlatformImportErrorMessage(err: any, fallback: string, busyMessage: string) {
+  const message = `${err?.message || ""}`;
+  const code = `${err?.code || ""}`;
+  if (
+    code === "conflict" ||
+    /database is locked|database table is locked|sqlite_busy|sqlite_locked/i.test(message)
+  ) {
+    return busyMessage;
+  }
+  return message || fallback;
+}
+
 function formatBytes(bytes: number | undefined, locale: "zh-CN" | "en") {
   if (!Number.isFinite(bytes) || !bytes || bytes <= 0)
     return locale === "zh-CN" ? "0 字节" : "0 bytes";
@@ -300,7 +312,11 @@ export default function ClaudeMigrationPage({
         ),
       );
     } catch (err: any) {
-      setError(err.message || tx("导入失败", "Import failed"));
+      setError(localPlatformImportErrorMessage(
+        err,
+        tx("导入失败", "Import failed"),
+        tx("Vola 正在保存本地资料，请稍等几秒再试。", "Vola is still saving local data. Please wait a few seconds and try again."),
+      ));
     } finally {
       setImporting(false);
     }

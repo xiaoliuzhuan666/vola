@@ -67,7 +67,7 @@ func (s *Server) importCodexBundle(ctx context.Context, userID uuid.UUID, platfo
 			Exactness:   "derived",
 			SourcePaths: bundle.SourcePaths,
 		}
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, target, content, "text/markdown", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, target, content, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "skill_file",
 			MinTrustLevel: models.TrustLevelWork,
 			Metadata: map[string]interface{}{
@@ -131,7 +131,7 @@ func (s *Server) importCodexConversations(ctx context.Context, userID uuid.UUID,
 		rootPath := codexConversationArchiveRoot(convo)
 		transcriptPath := path.Join(rootPath, "conversation.md")
 		conversationPath := path.Join(rootPath, "conversation.json")
-		if _, err := s.FileTreeService.EnsureDirectoryWithMetadata(ctx, userID, rootPath, sqlitestorage.ConversationBundleDirectoryMetadata(normalized, transcriptPath, conversationPath), models.TrustLevelWork); err != nil {
+		if err := s.retryLocalPlatformEnsureDirectoryWithMetadata(ctx, userID, rootPath, sqlitestorage.ConversationBundleDirectoryMetadata(normalized, transcriptPath, conversationPath), models.TrustLevelWork); err != nil {
 			if isStorageQuotaExceeded(err) {
 				result.Blocked++
 				continue
@@ -147,7 +147,7 @@ func (s *Server) importCodexConversations(ctx context.Context, userID uuid.UUID,
 			"session_id":      strings.TrimSpace(convo.SessionID),
 			"project_name":    strings.TrimSpace(convo.ProjectName),
 		}
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, transcriptPath, transcript, "text/markdown", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, transcriptPath, transcript, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "file",
 			MinTrustLevel: models.TrustLevelWork,
 			Metadata: mergeConversationMetadata(metadata, map[string]interface{}{
@@ -165,7 +165,7 @@ func (s *Server) importCodexConversations(ctx context.Context, userID uuid.UUID,
 		if err != nil {
 			return err
 		}
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, conversationPath, string(conversationJSON)+"\n", "application/json", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, conversationPath, string(conversationJSON)+"\n", "application/json", models.FileTreeWriteOptions{
 			Kind:          "file",
 			MinTrustLevel: models.TrustLevelWork,
 			Metadata: mergeConversationMetadata(metadata, map[string]interface{}{
@@ -203,7 +203,7 @@ func (s *Server) importCodexConversations(ctx context.Context, userID uuid.UUID,
 		return err
 	}
 	indexPath := hubpath.ConversationIndexPath("codex")
-	if _, err := s.FileTreeService.WriteEntry(ctx, userID, indexPath, string(data)+"\n", "application/json", models.FileTreeWriteOptions{
+	if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, indexPath, string(data)+"\n", "application/json", models.FileTreeWriteOptions{
 		Kind:          "file",
 		MinTrustLevel: models.TrustLevelWork,
 		Metadata: map[string]interface{}{

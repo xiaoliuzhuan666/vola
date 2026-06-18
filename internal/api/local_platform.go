@@ -165,19 +165,28 @@ func (s *Server) handleAgentImportLocalPlatformData(w http.ResponseWriter, r *ht
 	userID, _ := userIDFromCtx(r.Context())
 	resp := &localPlatformImportResponse{}
 	var err error
-	if req.AgentPayload != nil {
-		resp.Agent, err = s.importLocalPlatformAgentPayload(r.Context(), userID, platform, *req.AgentPayload)
-		if err != nil {
-			respondInternalError(w, err)
+	err = s.withLocalPlatformImportLock(func() error {
+		if req.AgentPayload != nil {
+			resp.Agent, err = s.importLocalPlatformAgentPayload(r.Context(), userID, platform, *req.AgentPayload)
+			if err != nil {
+				return err
+			}
+		}
+		if req.Sources != nil {
+			resp.Files, err = s.importLocalPlatformSources(r.Context(), userID, platform, req.Sources)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, errLocalPlatformImportBusy) {
+			respondError(w, http.StatusConflict, ErrCodeConflict, err.Error())
 			return
 		}
-	}
-	if req.Sources != nil {
-		resp.Files, err = s.importLocalPlatformSources(r.Context(), userID, platform, req.Sources)
-		if err != nil {
-			respondInternalError(w, err)
-			return
-		}
+		respondInternalError(w, err)
+		return
 	}
 
 	respondOKWithLocalGitSync(w, resp, s.syncLocalGitMirror(r.Context(), userID))
@@ -331,13 +340,13 @@ func (s *Server) writeLocalPlatformFile(ctx context.Context, userID uuid.UUID, h
 	}
 	contentType := skillsarchive.DetectContentType(srcPath, data)
 	if skillsarchive.LooksBinary(srcPath, data) {
-		_, err = s.FileTreeService.WriteBinaryEntry(ctx, userID, hubPath, data, contentType, models.FileTreeWriteOptions{
+		_, err = s.retryLocalPlatformWriteBinaryEntry(ctx, userID, hubPath, data, contentType, models.FileTreeWriteOptions{
 			Metadata:      metadata,
 			MinTrustLevel: models.TrustLevelWork,
 		})
 		return int64(len(data)), err
 	}
-	_, err = s.FileTreeService.WriteEntry(ctx, userID, hubPath, string(data), contentType, models.FileTreeWriteOptions{
+	_, err = s.retryLocalPlatformWriteEntry(ctx, userID, hubPath, string(data), contentType, models.FileTreeWriteOptions{
 		Metadata:      metadata,
 		MinTrustLevel: models.TrustLevelWork,
 	})
@@ -420,15 +429,15 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 			continue
 		}
 		if _, err := s.ProjectService.Get(ctx, userID, name); err != nil {
-			if _, err := s.ProjectService.Create(ctx, userID, name); err != nil {
+			if _, err := s.retryLocalPlatformCreateProject(ctx, userID, name); err != nil {
 				return nil, err
 			}
 		}
 		contextBody := renderAgentProjectContext(project)
-		if err := s.ProjectService.UpdateContext(ctx, userID, name, contextBody); err != nil {
+		if err := s.retryLocalPlatformUpdateProjectContext(ctx, userID, name, contextBody); err != nil {
 			return nil, err
 		}
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, hubpath.ProjectContextPath(name), contextBody, "text/markdown", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, hubpath.ProjectContextPath(name), contextBody, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "project_context",
 			MinTrustLevel: models.TrustLevelCollaborate,
 			Metadata: map[string]interface{}{
@@ -483,7 +492,7 @@ func (s *Server) importLocalPlatformAgentPayload(ctx context.Context, userID uui
 	}
 	if content := renderAgentNotes(payload.Notes); strings.TrimSpace(content) != "" {
 		target := filepath.ToSlash(filepath.Join("/platforms", platform, "agent", "notes.md"))
-		if _, err := s.FileTreeService.WriteEntry(ctx, userID, target, content, "text/markdown", models.FileTreeWriteOptions{
+		if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, target, content, "text/markdown", models.FileTreeWriteOptions{
 			Kind:          "file",
 			MinTrustLevel: models.TrustLevelWork,
 			Metadata: map[string]interface{}{
@@ -536,11 +545,11 @@ func (s *Server) importAgentMemoryItem(ctx context.Context, userID uuid.UUID, pl
 	content := renderAgentMemoryItem(item)
 	title := strings.TrimSpace(item.Title)
 	if len(content) <= localPlatformScratchContentLimitBytes {
-		return s.MemoryService.ImportScratch(ctx, userID, content, source, title, createdAt, expiresAt)
+		return s.retryLocalPlatformImportScratch(ctx, userID, content, source, title, createdAt, expiresAt)
 	}
 
 	archivePath := agentMemoryArchivePath(platform, title, createdAt)
-	if _, err := s.FileTreeService.WriteEntry(ctx, userID, archivePath, content+"\n", "text/markdown", models.FileTreeWriteOptions{
+	if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, archivePath, content+"\n", "text/markdown", models.FileTreeWriteOptions{
 		Kind:          "file",
 		MinTrustLevel: models.TrustLevelWork,
 		Metadata: map[string]interface{}{
@@ -559,14 +568,14 @@ func (s *Server) importAgentMemoryItem(ctx context.Context, userID uuid.UUID, pl
 	result.Paths = append(result.Paths, archivePath)
 
 	summary := renderArchivedAgentMemorySummary(platform, archivePath, len(content), item)
-	return s.MemoryService.ImportScratch(ctx, userID, summary, source, title, createdAt, expiresAt)
+	return s.retryLocalPlatformImportScratch(ctx, userID, summary, source, title, createdAt, expiresAt)
 }
 
 func (s *Server) importAgentProfileRules(ctx context.Context, userID uuid.UUID, platform, source, content string, rules []sqlitestorage.AgentProfileRule, result *sqlitestorage.AgentImportResult) error {
 	category := platform + "-agent"
 	profilePath := hubpath.ProfilePath(category)
 	if len(content) <= localPlatformProfileContentLimitBytes {
-		if err := s.MemoryService.UpsertProfile(ctx, userID, category, content, source); err != nil {
+		if err := s.retryLocalPlatformUpsertProfile(ctx, userID, category, content, source); err != nil {
 			return err
 		}
 		result.ProfileCategories++
@@ -576,7 +585,7 @@ func (s *Server) importAgentProfileRules(ctx context.Context, userID uuid.UUID, 
 	}
 
 	archivePath := filepath.ToSlash(filepath.Join("/platforms", platform, "agent", "profile-rules.md"))
-	if _, err := s.FileTreeService.WriteEntry(ctx, userID, archivePath, content+"\n", "text/markdown", models.FileTreeWriteOptions{
+	if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, archivePath, content+"\n", "text/markdown", models.FileTreeWriteOptions{
 		Kind:          "file",
 		MinTrustLevel: models.TrustLevelWork,
 		Metadata: map[string]interface{}{
@@ -592,7 +601,7 @@ func (s *Server) importAgentProfileRules(ctx context.Context, userID uuid.UUID, 
 	}
 
 	summary := renderArchivedAgentProfileRulesSummary(platform, archivePath, len(content), rules)
-	if err := s.MemoryService.UpsertProfile(ctx, userID, category, summary, source); err != nil {
+	if err := s.retryLocalPlatformUpsertProfile(ctx, userID, category, summary, source); err != nil {
 		return err
 	}
 
@@ -706,7 +715,7 @@ func (s *Server) writeLocalAgentArtifact(ctx context.Context, userID uuid.UUID, 
 		return "", err
 	}
 	target := filepath.ToSlash(filepath.Join("/platforms", platform, "agent", filename))
-	if _, err := s.FileTreeService.WriteEntry(ctx, userID, target, string(data)+"\n", "application/json", models.FileTreeWriteOptions{
+	if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, target, string(data)+"\n", "application/json", models.FileTreeWriteOptions{
 		Kind:          "file",
 		MinTrustLevel: models.TrustLevelWork,
 		Metadata: map[string]interface{}{
@@ -745,7 +754,7 @@ func (s *Server) importLocalSkillsArchive(ctx context.Context, userID uuid.UUID,
 		}
 		contentType := skillsarchive.DetectContentType(file.RelPath, file.Data)
 		if skillsarchive.LooksBinary(file.RelPath, file.Data) {
-			if _, err := s.FileTreeService.WriteBinaryEntry(ctx, userID, hubPath, file.Data, contentType, models.FileTreeWriteOptions{
+			if _, err := s.retryLocalPlatformWriteBinaryEntry(ctx, userID, hubPath, file.Data, contentType, models.FileTreeWriteOptions{
 				Kind:          "skill_asset",
 				Metadata:      metadata,
 				MinTrustLevel: models.TrustLevelWork,
@@ -753,7 +762,7 @@ func (s *Server) importLocalSkillsArchive(ctx context.Context, userID uuid.UUID,
 				return nil, fmt.Errorf("write %s: %w", hubPath, err)
 			}
 		} else {
-			if _, err := s.FileTreeService.WriteEntry(ctx, userID, hubPath, string(file.Data), contentType, models.FileTreeWriteOptions{
+			if _, err := s.retryLocalPlatformWriteEntry(ctx, userID, hubPath, string(file.Data), contentType, models.FileTreeWriteOptions{
 				Kind:          "skill_file",
 				Metadata:      metadata,
 				MinTrustLevel: models.TrustLevelWork,
