@@ -321,13 +321,25 @@ GitHub Release 资产：
 
 发布完成后回填：
 
-- 提交：待回填。
+- 提交：`06094b36b1f7075f31c7f97cb2cf4cb2d3569c73`
 - tag：`v0.1.16`
-- Release workflow run：待回填。
-- Actions 页面：待回填。
+- Release workflow run：`27813120873`
+- Actions 页面：`https://github.com/xiaoliuzhuan666/vola/actions/runs/27813120873`
 - Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.16`
-- workflow 结果：待回填。
+- workflow 结果：通过，`Desktop macos-aarch64`、`Desktop macos-x86_64`、`Desktop linux-x86_64`、`Desktop windows-x86_64` 和 `Publish GitHub release` 均为 success。
 
 GitHub Release 资产：
 
-- 待 GitHub Actions 发布完成后复查。
+- `latest.json`：已上传，`version` 为 `0.1.16`，包含 `darwin-aarch64`、`darwin-x86_64`、`linux-x86_64`、`windows-x86_64` 四个平台。
+- `macos-aarch64-vola.app.tar.gz`
+- `macos-aarch64-vola_0.1.16_aarch64.dmg`
+- `macos-x86_64-vola.app.tar.gz`
+- `macos-x86_64-vola_0.1.16_x64.dmg`
+- `linux-x86_64-vola_0.1.16_amd64.AppImage`
+- `windows-x86_64-vola_0.1.16_x64-setup.exe`
+
+发布后复查：
+
+- `https://github.com/xiaoliuzhuan666/vola/releases/latest/download/latest.json` 返回 `version: 0.1.16`。
+- Release run 总耗时为 11m 29s。
+- GitHub Actions 出现 Node.js 20 deprecation 警告，来源为 `actions/upload-artifact@v4`，未影响本次打包。
