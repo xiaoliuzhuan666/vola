@@ -2529,7 +2529,7 @@ export default function DataSkillsPage() {
         <div className="materials-section-head">
           <div>
             <h3 className="materials-section-title">{tx('技能包', 'Skill Bundles')}</h3>
-            <p className="materials-section-copy">{tx('统一按时间或名称浏览技能包卡片。', 'Browse skill bundle cards by time or name.')}</p>
+            <p className="materials-section-copy">{tx('统一按时间或名称浏览技能包列表。', 'Browse skill bundle lists by time or name.')}</p>
           </div>
           <MaterialsSectionToolbar
             count={filteredSkills.length}
@@ -2590,260 +2590,251 @@ export default function DataSkillsPage() {
             <p className="empty-hint">{tx('导入或创建技能包后，会在这里看到对应文件夹。', 'Imported or newly created skill bundles will appear here.')}</p>
           </div>
         ) : (
-          <div className="materials-grid">
+          <div className="skill-library-list">
             {filteredSkills.map((skill) => {
               const bundlePath = normalizeHubPath(skill.bundlePath)
               const learningItem = learningSummary?.items?.find(
                 (item) => normalizeHubPath(item.path) === bundlePath
               )
               const tile = buildSkillBundleTileModel(skill, locale, learningItem)
+              const normalizedSkillPath = normalizeSkillPath(skill.bundlePath || skill.path)
               const publication = activeTeamID
-                ? teamSkillPublicationByPath[normalizeSkillPath(skill.bundlePath || skill.path)] || defaultTeamSkillPublication(skill)
+                ? teamSkillPublicationByPath[normalizedSkillPath] || defaultTeamSkillPublication(skill)
                 : null
               const installStatus = activeTeamID ? teamSkillInstallStatus(skill, personalSkillCopies, teamSkillSubscriptionByPath) : null
               const installActionLabel = installStatus ? teamSkillInstallActionLabel(installStatus, tx) : ''
               const installActionBusy = copyingSkillPath === normalizeSkillPath(skill.bundlePath)
               const installActionOverwrite = installStatus === 'update_available'
 
-              const statusPill = tile.learningStatus ? (
-                <span className={`materials-tile-pill skill-status-${tile.learningStatus}`}>
-                  {learningStatusLabel(tile.learningStatus, tx)}
-                </span>
-              ) : null
-
               const scoreClass = tile.learningScore !== undefined
                 ? (tile.learningScore >= 80 ? 'good' : tile.learningScore >= 60 ? 'medium' : 'poor')
                 : ''
-              const scorePill = tile.learningScore !== undefined ? (
-                <span className={`materials-tile-pill skill-score-pill ${scoreClass}`}>
-                  {tx('健康度: ', 'Health: ')}{tile.learningScore}%
-                </span>
-              ) : null
-
-              const agentPills = tile.assignedAgents?.map((agentId) => (
-                <span key={agentId} className="materials-tile-pill skill-agents-pill">
-                  {agentId}
-                </span>
-              ))
-
-              const teamInstallPill = installStatus ? (
-                <span className={`materials-tile-pill team-skill-install-pill is-${installStatus.replace('_', '-')}`}>
-                  {teamSkillInstallLabel(installStatus, tx)}
-                </span>
-              ) : null
-              const teamPublicationPill = publication ? (
-                <span className={`materials-tile-pill team-skill-publication-pill is-${publication.status}`}>
-                  {teamSkillPublicationLabel(publication, tx)}
-                </span>
-              ) : null
               const reviewLabel = publication ? teamSkillReviewLabel(publication, tx) : ''
-              const teamReviewPill = publication && reviewLabel ? (
-                <span className={`materials-tile-pill team-skill-review-pill is-${publication.review_status || 'none'}`}>
-                  {reviewLabel}
-                </span>
-              ) : null
-
-              const customExtraPills = (
-                <>
-                  {tile.source ? <span className="materials-tile-pill materials-source-pill">{sourceLabel(tile.source, locale)}</span> : null}
-                  {skill.tags?.slice(0, 4).map((tag) => (
-                    <span key={`${skill.path}-${tag}`} className="materials-tile-pill skill-tag-pill">#{tag}</span>
-                  ))}
-                  {teamPublicationPill}
-                  {teamReviewPill}
-                  {teamInstallPill}
-                  {statusPill}
-                  {scorePill}
-                  {agentPills}
-                </>
-              )
-
-              const qualityClass = tile.qualityStatus
-                ? `skill-quality-${tile.qualityStatus}`
-                : ''
-              const customSubtitle = installStatus || tile.qualityStatus ? (
-                <div className="skill-tile-subtitle">
-                  {installStatus ? <span>{teamSkillInstallHint(installStatus, tx)}</span> : null}
-                  {tile.qualityStatus ? (
-                    <span className={qualityClass}>
-                      {tx('质量评级: ', 'Quality: ')}{qualityStatusLabel(tile.qualityStatus, tx)}
-                    </span>
-                  ) : null}
-                </div>
-              ) : tile.subtitle
-
-              const customDescription = (
-                <div>
-                  <div style={{ wordBreak: 'break-all' }}>{tile.description}</div>
-                  {publication && (publication.version || publication.release_note) ? (
-                    <div className="team-skill-card-version">
-                      {publication.version ? <span>{publication.version}</span> : null}
-                      {publication.release_note ? <small>{publication.release_note}</small> : null}
-                    </div>
-                  ) : null}
-                  {tile.qualityFindings && tile.qualityFindings.length > 0 && (
-                    <div className="skill-tile-warnings">
-                      ⚠️ {tile.qualityFindings[0].title}: {tile.qualityFindings[0].message}
-                      {tile.qualityFindings.length > 1 && ` (+${tile.qualityFindings.length - 1} ${tx('更多问题', 'more issues')})`}
-                    </div>
-                  )}
-                </div>
-              )
 
               return (
-                <FileMaterialsTile
+                <div
                   key={skill.path}
-                  node={tile.node}
-                  subtitle={customSubtitle}
-                  description={customDescription}
-                  extraPills={customExtraPills}
-                  actions={installActionLabel ? (
-                    <button
-                      type="button"
-                      className="btn btn-sm btn-primary"
-                      disabled={Boolean(copyingSkillPath)}
-                      onClick={() => { void handleCopySkillAction(skill.bundlePath, installActionOverwrite) }}
-                    >
-                      {installActionBusy ? tx('处理中...', 'Working...') : installActionLabel}
-                    </button>
-                  ) : undefined}
-                  path={tile.path}
-                  footerStart={tile.footerStart}
-                  footerEnd={tile.footerEnd}
-                  selected={selectedBundlePath === tile.node.path}
-                  menuOpen={isMenuOpen(skill.bundlePath)}
-                  menuButtonAriaLabel={tx(`打开 ${skill.name} 的工具菜单`, `Open tools menu for ${skill.name}`)}
-                  menuPanel={(
-                    <ResourceActionMenu
-                      items={[
-                        {
-                          key: 'open',
-                          label: tx('进入 bundle', 'Open bundle'),
-                          onSelect: () => {
-                            closeMenu()
-                            openBundleDetail(skill.bundleId)
-                          },
-                        },
-                        {
-                          key: 'download',
-                          label: tx('下载 ZIP', 'Download ZIP'),
-                          onSelect: () => {
-                            void handleDownloadZip(skill.bundlePath)
-                          },
-                        },
-                        ...(activeTeamID
-                          ? [{
-                              key: 'copy-to-personal',
-                              label: installActionLabel || teamSkillInstallLabel(installStatus || 'installed', tx),
-                              disabled: Boolean(copyingSkillPath) || !installActionLabel,
-                              onSelect: () => {
-                                closeMenu()
-                                if (installActionLabel) void handleCopySkillAction(skill.bundlePath, installActionOverwrite)
+                  className={`skill-library-row${selectedBundlePath === tile.node.path ? ' is-selected' : ''}`}
+                >
+                  <button
+                    type="button"
+                    className="skill-library-row-main"
+                    onClick={() => openBundleDetail(skill.bundleId)}
+                    onFocus={() => setSelectedBundlePath(tile.node.path)}
+                  >
+                    <span className="materials-tile-icon icon-stack" aria-hidden="true" />
+                    <span className="skill-library-row-copy">
+                      <strong>{skill.name}</strong>
+                      <small>{tile.path || normalizedSkillPath}</small>
+                      <span>{tile.description}</span>
+                      {publication?.release_note ? <em>{publication.release_note}</em> : null}
+                      {tile.qualityFindings && tile.qualityFindings.length > 0 ? (
+                        <em className="skill-library-warning">
+                          {tile.qualityFindings[0].title}: {tile.qualityFindings[0].message}
+                          {tile.qualityFindings.length > 1 ? ` (+${tile.qualityFindings.length - 1} ${tx('更多问题', 'more issues')})` : ''}
+                        </em>
+                      ) : null}
+                    </span>
+                  </button>
+                  <div className="skill-library-meta">
+                    {tile.source ? <span className="materials-tile-pill materials-source-pill">{sourceLabel(tile.source, locale)}</span> : null}
+                    {skill.tags?.slice(0, 3).map((tag) => (
+                      <span key={`${skill.path}-${tag}`} className="materials-tile-pill skill-tag-pill">#{tag}</span>
+                    ))}
+                    {publication ? (
+                      <span className={`materials-tile-pill team-skill-publication-pill is-${publication.status}`}>
+                        {teamSkillPublicationLabel(publication, tx)}
+                      </span>
+                    ) : null}
+                    {reviewLabel ? (
+                      <span className={`materials-tile-pill team-skill-review-pill is-${publication?.review_status || 'none'}`}>
+                        {reviewLabel}
+                      </span>
+                    ) : null}
+                    {installStatus ? (
+                      <span className={`materials-tile-pill team-skill-install-pill is-${installStatus.replace('_', '-')}`}>
+                        {teamSkillInstallLabel(installStatus, tx)}
+                      </span>
+                    ) : null}
+                    {tile.learningStatus ? (
+                      <span className={`materials-tile-pill skill-status-${tile.learningStatus}`}>
+                        {learningStatusLabel(tile.learningStatus, tx)}
+                      </span>
+                    ) : null}
+                    {tile.qualityStatus ? (
+                      <span className={`materials-tile-pill skill-quality-${tile.qualityStatus}`}>
+                        {qualityStatusLabel(tile.qualityStatus, tx)}
+                      </span>
+                    ) : null}
+                    {tile.learningScore !== undefined ? (
+                      <span className={`materials-tile-pill skill-score-pill ${scoreClass}`}>
+                        {tx('健康度 ', 'Health ')}{tile.learningScore}%
+                      </span>
+                    ) : null}
+                    {tile.assignedAgents?.slice(0, 3).map((agentId) => (
+                      <span key={agentId} className="materials-tile-pill skill-agents-pill">
+                        {agentId}
+                      </span>
+                    ))}
+                    {tile.assignedAgents && tile.assignedAgents.length > 3 ? (
+                      <span className="materials-tile-pill skill-agents-pill">+{tile.assignedAgents.length - 3}</span>
+                    ) : null}
+                  </div>
+                  <div className="skill-library-actions">
+                    {installActionLabel ? (
+                      <button
+                        type="button"
+                        className="btn btn-sm btn-primary"
+                        disabled={Boolean(copyingSkillPath)}
+                        title={installStatus ? teamSkillInstallHint(installStatus, tx) : undefined}
+                        onClick={() => { void handleCopySkillAction(skill.bundlePath, installActionOverwrite) }}
+                      >
+                        {installActionBusy ? tx('处理中...', 'Working...') : installActionLabel}
+                      </button>
+                    ) : null}
+                    <div className="materials-tile-menu-wrap">
+                      <button
+                        type="button"
+                        className={`materials-tile-menu-button${isMenuOpen(skill.bundlePath) ? ' is-open' : ''}`}
+                        aria-label={tx(`打开 ${skill.name} 的工具菜单`, `Open tools menu for ${skill.name}`)}
+                        aria-haspopup="menu"
+                        aria-expanded={isMenuOpen(skill.bundlePath)}
+                        onClick={() => toggleMenu(skill.bundlePath)}
+                      >
+                        <span className="materials-tile-menu" aria-hidden="true">⋯</span>
+                      </button>
+                      {isMenuOpen(skill.bundlePath) ? (
+                        <div className="materials-tile-menu-panel" role="menu">
+                          <ResourceActionMenu
+                            items={[
+                              {
+                                key: 'open',
+                                label: tx('进入 bundle', 'Open bundle'),
+                                onSelect: () => {
+                                  closeMenu()
+                                  openBundleDetail(skill.bundleId)
+                                },
                               },
-                            }]
-                          : []),
-                        ...(installStatus !== 'not_installed'
-                          ? [{
-                              key: 'rollback-version',
-                              label: tx('历史版本回滚...', 'Rollback to backup...'),
-                              onSelect: () => {
-                                closeMenu()
-                                void handleOpenRollback(normalizeSkillPath(skill.bundlePath))
+                              {
+                                key: 'download',
+                                label: tx('下载 ZIP', 'Download ZIP'),
+                                onSelect: () => {
+                                  void handleDownloadZip(skill.bundlePath)
+                                },
                               },
-                            }]
-                          : []),
-                        ...(activeTeamID && selectedTeam?.can_manage_members
-                          ? [
-                              ...(publication?.review_status === 'requested'
-                                ? [
-                                    {
-                                      key: 'approve-review',
-                                      label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('通过审查', 'Approve review'),
-                                      disabled: Boolean(teamSkillPublishingPath),
-                                      onSelect: () => {
-                                        closeMenu()
-                                        void resolveTeamSkillReview(skill.bundlePath, 'approved')
-                                      },
+                              ...(activeTeamID
+                                ? [{
+                                    key: 'copy-to-personal',
+                                    label: installActionLabel || teamSkillInstallLabel(installStatus || 'installed', tx),
+                                    disabled: Boolean(copyingSkillPath) || !installActionLabel,
+                                    onSelect: () => {
+                                      closeMenu()
+                                      if (installActionLabel) void handleCopySkillAction(skill.bundlePath, installActionOverwrite)
                                     },
+                                  }]
+                                : []),
+                              ...(installStatus !== 'not_installed'
+                                ? [{
+                                    key: 'rollback-version',
+                                    label: tx('历史版本回滚...', 'Rollback to backup...'),
+                                    onSelect: () => {
+                                      closeMenu()
+                                      void handleOpenRollback(normalizeSkillPath(skill.bundlePath))
+                                    },
+                                  }]
+                                : []),
+                              ...(activeTeamID && selectedTeam?.can_manage_members
+                                ? [
+                                    ...(publication?.review_status === 'requested'
+                                      ? [
+                                          {
+                                            key: 'approve-review',
+                                            label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('通过审查', 'Approve review'),
+                                            disabled: Boolean(teamSkillPublishingPath),
+                                            onSelect: () => {
+                                              closeMenu()
+                                              void resolveTeamSkillReview(skill.bundlePath, 'approved')
+                                            },
+                                          },
+                                          {
+                                            key: 'request-changes',
+                                            label: tx('要求修改', 'Request changes'),
+                                            disabled: Boolean(teamSkillPublishingPath),
+                                            onSelect: () => {
+                                              closeMenu()
+                                              void resolveTeamSkillReview(skill.bundlePath, 'changes_requested')
+                                            },
+                                          },
+                                        ]
+                                      : []),
+                                    ...(publication?.status === 'published' && publication.visibility === 'team'
+                                      ? [{
+                                          key: 'draft-publication',
+                                          label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('转为草稿', 'Move to draft'),
+                                          disabled: Boolean(teamSkillPublishingPath),
+                                          onSelect: () => {
+                                            closeMenu()
+                                            void updateTeamSkillPublication(skill.bundlePath, 'draft')
+                                          },
+                                        }]
+                                      : [{
+                                          key: 'publish-skill',
+                                          label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('发布给团队', 'Publish to team'),
+                                          disabled: Boolean(teamSkillPublishingPath),
+                                          onSelect: () => {
+                                            closeMenu()
+                                            void updateTeamSkillPublication(skill.bundlePath, 'published')
+                                          },
+                                        }]),
                                     {
-                                      key: 'request-changes',
-                                      label: tx('要求修改', 'Request changes'),
-                                      disabled: Boolean(teamSkillPublishingPath),
+                                      key: 'archive-publication',
+                                      label: tx('归档团队共享', 'Archive team share'),
+                                      tone: 'danger' as const,
+                                      disabled: Boolean(teamSkillPublishingPath) || publication?.status === 'archived',
                                       onSelect: () => {
                                         closeMenu()
-                                        void resolveTeamSkillReview(skill.bundlePath, 'changes_requested')
+                                        void updateTeamSkillPublication(skill.bundlePath, 'archived')
                                       },
                                     },
                                   ]
                                 : []),
-                              ...(publication?.status === 'published' && publication.visibility === 'team'
+                              ...(activeTeamID && selectedTeam?.can_write && !selectedTeam?.can_manage_members && publication?.status !== 'published'
                                 ? [{
-                                    key: 'draft-publication',
-                                    label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('转为草稿', 'Move to draft'),
-                                    disabled: Boolean(teamSkillPublishingPath),
+                                    key: 'request-review',
+                                    label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('提交审查', 'Request review'),
+                                    disabled: Boolean(teamSkillPublishingPath) || publication?.review_status === 'requested',
                                     onSelect: () => {
                                       closeMenu()
-                                      void updateTeamSkillPublication(skill.bundlePath, 'draft')
+                                      void requestTeamSkillReview(skill.bundlePath)
                                     },
                                   }]
-                                : [{
-                                    key: 'publish-skill',
-                                    label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('发布给团队', 'Publish to team'),
-                                    disabled: Boolean(teamSkillPublishingPath),
-                                    onSelect: () => {
-                                      closeMenu()
-                                      void updateTeamSkillPublication(skill.bundlePath, 'published')
-                                    },
-                                  }]),
+                                : []),
                               {
-                                key: 'archive-publication',
-                                label: tx('归档团队共享', 'Archive team share'),
-                                tone: 'danger' as const,
-                                disabled: Boolean(teamSkillPublishingPath) || publication?.status === 'archived',
+                                key: 'select',
+                                label: selectedBundlePath === tile.node.path ? tx('取消选中', 'Unselect') : tx('加入选择', 'Select'),
                                 onSelect: () => {
                                   closeMenu()
-                                  void updateTeamSkillPublication(skill.bundlePath, 'archived')
+                                  setSelectedBundlePath((value) => (value === tile.node.path ? null : tile.node.path))
                                 },
                               },
-                            ]
-                          : []),
-                        ...(activeTeamID && selectedTeam?.can_write && !selectedTeam?.can_manage_members && publication?.status !== 'published'
-                          ? [{
-                              key: 'request-review',
-                              label: teamSkillPublishingPath === normalizeSkillPath(skill.bundlePath) ? tx('处理中...', 'Working...') : tx('提交审查', 'Request review'),
-                              disabled: Boolean(teamSkillPublishingPath) || publication?.review_status === 'requested',
-                              onSelect: () => {
-                                closeMenu()
-                                void requestTeamSkillReview(skill.bundlePath)
-                              },
-                            }]
-                          : []),
-                        {
-                          key: 'select',
-                          label: selectedBundlePath === tile.node.path ? tx('取消选中', 'Unselect') : tx('加入选择', 'Select'),
-                          onSelect: () => {
-                            closeMenu()
-                            setSelectedBundlePath((value) => (value === tile.node.path ? null : tile.node.path))
-                          },
-                        },
-                        ...(!skill.read_only && canWriteCurrentScope
-                          ? [{
-                              key: 'delete',
-                              label: tx('删除', 'Delete'),
-                              tone: 'danger' as const,
-                              onSelect: () => {
-                                closeMenu()
-                                void requestDelete([skill.bundlePath])
-                              },
-                            }]
-                          : []),
-                      ]}
-                    />
-                  )}
-                  onMenuToggle={() => toggleMenu(skill.bundlePath)}
-                  onSelect={() => setSelectedBundlePath(tile.node.path)}
-                  onOpen={() => openBundleDetail(skill.bundleId)}
-                />
+                              ...(!skill.read_only && canWriteCurrentScope
+                                ? [{
+                                    key: 'delete',
+                                    label: tx('删除', 'Delete'),
+                                    tone: 'danger' as const,
+                                    onSelect: () => {
+                                      closeMenu()
+                                      void requestDelete([skill.bundlePath])
+                                    },
+                                  }]
+                                : []),
+                            ]}
+                          />
+                        </div>
+                      ) : null}
+                    </div>
+                  </div>
+                </div>
               )
             })}
           </div>

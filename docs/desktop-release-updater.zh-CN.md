@@ -296,3 +296,38 @@ GitHub Release 资产：
 
 - `https://github.com/xiaoliuzhuan666/vola/releases/latest/download/latest.json` 返回 `version: 0.1.15`。
 - 从 GitHub Release 下载 `macos-aarch64-vola_0.1.15_aarch64.dmg` 后挂载检查，包内 `vola.app/Contents/Resources/icon.icns` 的 SHA-256 为 `ca5cfe07ace7a72c75261c45ce3a3cc57d48c56a1c327cda2f84a66249821b6f`，与 `src-tauri/icons/icon.icns` 一致。
+
+## 2026-06-19 v0.1.16 GitHub 打包记录
+
+本次准备按 GitHub tag 发布流程重新打包桌面端，重点发布项目 Markdown 知识索引、Codex Console 的项目文档入口，以及团队/资料库页面样式优化。
+
+本次修复与优化：
+
+- 桌面端版本提升到 `0.1.16`，高于当前 GitHub 最新 Release `v0.1.15`。
+- 新增本地 Markdown 知识索引 API，可扫描项目文档、解析标题、概念、普通 Markdown 链接、`[[WikiLink]]` 和反向链接。
+- Codex Console 增加“项目文档”入口，可查看项目、概念和链接关系，并复制真实文件路径或编译提示词给 Codex。
+- 团队页改为 tab 结构，减少一屏里同时出现的内容。
+- 资料库下的 Skill 页面改为更清爽的列表/分栏样式，减少大卡片密度。
+- 更新 Vola 核心工作台 UI 方向文档和本地 Markdown 知识索引设计文档。
+
+本地发版前验证：
+
+- `npm --prefix web run build`：通过，`web/dist` 已同步到 `internal/web/dist`。
+- `go test ./internal/api -run 'TestBuildLocalKnowledgeIndexLinksConceptsAndBacklinks|TestLocalLibraryMarkdownClassificationRecognizesCodexFiles|TestSQLiteSharedServerLocalLibraryScanAndImport' -count=1`：通过。
+- `cargo check --manifest-path src-tauri/Cargo.toml`：通过。
+- `go test ./...`：通过。
+- `git diff --check`：通过。
+- `src-tauri/tauri.conf.json`、`src-tauri/Cargo.toml`、`src-tauri/Cargo.lock` 版本均为 `0.1.16`。
+
+发布完成后回填：
+
+- 提交：待回填。
+- tag：`v0.1.16`
+- Release workflow run：待回填。
+- Actions 页面：待回填。
+- Release 页面：`https://github.com/xiaoliuzhuan666/vola/releases/tag/v0.1.16`
+- workflow 结果：待回填。
+
+GitHub Release 资产：
+
+- 待 GitHub Actions 发布完成后复查。

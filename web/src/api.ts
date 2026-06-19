@@ -457,6 +457,90 @@ export interface LocalLibraryImportResponse {
   warnings?: string[];
 }
 
+export interface LocalKnowledgeHeading {
+  level: number;
+  text: string;
+  anchor: string;
+}
+
+export interface LocalKnowledgeLink {
+  source_path?: string;
+  kind: string;
+  text: string;
+  target: string;
+  target_path?: string;
+  resolved: boolean;
+}
+
+export interface LocalKnowledgeBacklink {
+  source_path: string;
+  source_title: string;
+  kind: string;
+  text: string;
+}
+
+export interface LocalKnowledgeDocument {
+  id: string;
+  title: string;
+  path: string;
+  project_name?: string;
+  project_path?: string;
+  category: string;
+  generic_candidate: boolean;
+  sensitive_candidate: boolean;
+  size_bytes: number;
+  updated_at?: string;
+  score: number;
+  headings?: string[];
+  heading_items?: LocalKnowledgeHeading[];
+  concepts?: string[];
+  outgoing_links?: LocalKnowledgeLink[];
+  backlinks?: LocalKnowledgeBacklink[];
+  excerpt?: string;
+  summary?: string;
+  suggested_output_path?: string;
+}
+
+export interface LocalKnowledgeConcept {
+  name: string;
+  slug: string;
+  category: string;
+  count: number;
+  document_paths: string[];
+  related?: string[];
+}
+
+export interface LocalKnowledgeTreeNode {
+  id: string;
+  kind: string;
+  label: string;
+  path?: string;
+  count?: number;
+  children?: LocalKnowledgeTreeNode[];
+}
+
+export interface LocalKnowledgeCompilePlan {
+  output_dir: string;
+  source_dirs: string[];
+  steps: string[];
+  prompt: string;
+  source_paths: string[];
+}
+
+export interface LocalKnowledgeIndexResponse {
+  version: string;
+  generated_at: string;
+  roots: LocalLibraryRoot[];
+  stats: LocalLibraryStats;
+  projects: LocalLibraryProjectCandidate[];
+  documents: LocalKnowledgeDocument[];
+  concepts: LocalKnowledgeConcept[];
+  links: LocalKnowledgeLink[];
+  tree: LocalKnowledgeTreeNode[];
+  compile: LocalKnowledgeCompilePlan;
+  warnings?: string[];
+}
+
 export function normalizeDashboardStats(stats?: Partial<DashboardStats> | null): DashboardStats {
   return {
     connections: Number(stats?.connections || 0),
@@ -1959,6 +2043,11 @@ export const api = {
     }),
   scanLocalLibrary: (data?: LocalLibraryScanRequest) =>
     request<LocalLibraryScanResponse>("/local/library/scan", {
+      method: "POST",
+      body: JSON.stringify(data || {}),
+    }),
+  indexLocalLibrary: (data?: LocalLibraryScanRequest) =>
+    request<LocalKnowledgeIndexResponse>("/local/library/index", {
       method: "POST",
       body: JSON.stringify(data || {}),
     }),

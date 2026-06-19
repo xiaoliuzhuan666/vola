@@ -4,12 +4,13 @@ import { registerUser, loginViaUI, setupUser } from './helpers'
 test.describe('Import & Export', () => {
   test('export JSON from dashboard', async ({ page, request }) => {
     await setupUser(page, request)
-    await page.goto('/')
+    await page.goto('/settings/profile')
+    await page.waitForLoadState('networkidle')
 
     // Click JSON export
     const [download] = await Promise.all([
       page.waitForEvent('download', { timeout: 10000 }).catch(() => null),
-      page.getByRole('button', { name: '导出数据 (JSON)' }).click(),
+      page.getByRole('button', { name: /导出全部数据|Export all data/ }).click(),
     ])
 
     // Either a download started or success message shown
@@ -17,7 +18,7 @@ test.describe('Import & Export', () => {
     expect(download !== null || hasMsg).toBeTruthy()
   })
 
-  test('import data then verify on dashboard', async ({ page, request }) => {
+  test('import skill then verify in skills library', async ({ page, request }) => {
     const user = await registerUser(request)
 
     // Import skill via API
@@ -29,15 +30,12 @@ test.describe('Import & Export', () => {
       },
     })
 
-    // Login and check dashboard
+    // Login and check skills library
     await loginViaUI(page, user.email, user.password)
-    await page.goto('/')
+    await page.goto('/skills')
     await page.waitForLoadState('networkidle')
 
-    // Dashboard should show non-zero stats after import
-    const statsText = await page.locator('.stat-value').allTextContents()
-    const hasNonZero = statsText.some(v => parseInt(v) > 0)
-    expect(hasNonZero).toBeTruthy()
+    await expect(page.getByText('pw-test-skill').first()).toBeVisible({ timeout: 10000 })
   })
 
   test('import profile then verify on info page', async ({ page, request }) => {
@@ -49,6 +47,7 @@ test.describe('Import & Export', () => {
       data: {
         preferences: 'Imported preference via Playwright test',
         relationships: 'Carol is a colleague',
+        principles: 'Imported principle via Playwright test',
       },
     })
 
@@ -57,11 +56,18 @@ test.describe('Import & Export', () => {
     await page.goto('/info')
     await page.waitForLoadState('networkidle')
 
-    // Preferences textarea should have imported content
-    const prefValue = await page.locator('textarea').nth(0).inputValue()
+    await page.getByRole('button', { name: /编辑资料|Edit profile/ }).click()
+    await expect(page.getByRole('dialog', { name: /编辑个人资料|Edit profile/ })).toBeVisible()
+
+    const dialog = page.getByRole('dialog', { name: /编辑个人资料|Edit profile/ })
+
+    const prefValue = await dialog.getByLabel(/工作偏好|Work preferences/).inputValue()
     expect(prefValue).toContain('Imported preference')
 
-    const relValue = await page.locator('textarea').nth(1).inputValue()
+    const relValue = await dialog.getByLabel(/人际关系|Relationships/).inputValue()
     expect(relValue).toContain('Carol')
+
+    const principleValue = await dialog.getByLabel(/决策风格|Decision style/).inputValue()
+    expect(principleValue).toContain('Imported principle')
   })
 })

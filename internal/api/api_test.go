@@ -6,6 +6,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -198,6 +200,85 @@ func TestLocalLibraryMarkdownClassificationRecognizesCodexFiles(t *testing.T) {
 				t.Fatalf("classifyLocalMarkdown() = (%q, %v), want (%q, %v)", category, generic, tc.category, tc.generic)
 			}
 		})
+	}
+}
+
+func TestBuildLocalKnowledgeIndexLinksConceptsAndBacklinks(t *testing.T) {
+	root := t.TempDir()
+	projectDir := filepath.Join(root, "knowledge-app")
+	docsDir := filepath.Join(projectDir, "docs")
+	if err := os.MkdirAll(docsDir, 0o755); err != nil {
+		t.Fatalf("mkdir docs: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(projectDir, "package.json"), []byte(`{"name":"knowledge-app"}`), 0o644); err != nil {
+		t.Fatalf("write package.json: %v", err)
+	}
+	readme := "# Knowledge App\n\ntags: [Vola, MCP]\n\nUse [[MCP Hub]] and [architecture](docs/architecture.md).\n"
+	if err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(readme), 0o644); err != nil {
+		t.Fatalf("write readme: %v", err)
+	}
+	architecture := "# MCP Hub\n\n## Sync Flow\n\nBack to [home](../README.md). #KnowledgeGraph\n"
+	if err := os.WriteFile(filepath.Join(docsDir, "architecture.md"), []byte(architecture), 0o644); err != nil {
+		t.Fatalf("write architecture: %v", err)
+	}
+
+	index, err := buildLocalKnowledgeIndex(context.Background(), []string{root}, 20, 20)
+	if err != nil {
+		t.Fatalf("buildLocalKnowledgeIndex: %v", err)
+	}
+	if index.Version != localKnowledgeIndexVersion {
+		t.Fatalf("version = %q", index.Version)
+	}
+	if len(index.Documents) != 2 {
+		t.Fatalf("documents = %d, want 2: %+v", len(index.Documents), index.Documents)
+	}
+	if len(index.Tree) != 3 {
+		t.Fatalf("tree sections = %d, want 3", len(index.Tree))
+	}
+	readmePath := filepath.Join(projectDir, "README.md")
+	architecturePath := filepath.Join(docsDir, "architecture.md")
+	var readmeDoc, architectureDoc *localKnowledgeDocument
+	for i := range index.Documents {
+		switch index.Documents[i].Path {
+		case readmePath:
+			readmeDoc = &index.Documents[i]
+		case architecturePath:
+			architectureDoc = &index.Documents[i]
+		}
+	}
+	if readmeDoc == nil || architectureDoc == nil {
+		t.Fatalf("expected readme and architecture docs, got %+v", index.Documents)
+	}
+	hasResolvedArchitectureLink := false
+	for _, link := range readmeDoc.OutgoingLinks {
+		if link.TargetPath == architecturePath && link.Resolved {
+			hasResolvedArchitectureLink = true
+		}
+	}
+	if !hasResolvedArchitectureLink {
+		t.Fatalf("expected README to link to architecture, links=%+v", readmeDoc.OutgoingLinks)
+	}
+	hasReadmeBacklink := false
+	for _, backlink := range architectureDoc.Backlinks {
+		if backlink.SourcePath == readmePath {
+			hasReadmeBacklink = true
+		}
+	}
+	if !hasReadmeBacklink {
+		t.Fatalf("expected architecture backlink from README, backlinks=%+v", architectureDoc.Backlinks)
+	}
+	foundConcept := false
+	for _, concept := range index.Concepts {
+		if concept.Name == "MCP Hub" && concept.Count >= 1 {
+			foundConcept = true
+			break
+		}
+	}
+	if !foundConcept {
+		t.Fatalf("expected MCP Hub concept, concepts=%+v", index.Concepts)
+	}
+	if !strings.Contains(index.Compile.Prompt, readmePath) || !strings.Contains(index.Compile.Prompt, ".vola/index") {
+		t.Fatalf("compile prompt missing expected paths or output dir: %s", index.Compile.Prompt)
 	}
 }
 

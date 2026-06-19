@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   api,
   type CodexConsoleAutomation,
@@ -18,13 +18,18 @@ import {
   type CodexConsoleSkillCandidateAssignPreviewResponse,
   type CodexConsoleSkillCandidateSaveResponse,
   type CodexConsoleThread,
+  type LocalKnowledgeConcept,
+  type LocalKnowledgeDocument,
+  type LocalKnowledgeIndexResponse,
+  type LocalKnowledgeTreeNode,
   type LocalSkillSyncAgentPlan,
   type SkillAgentTarget,
 } from "../api";
 import { useI18n } from "../i18n";
 
-type ConsoleView = "brief" | "threads" | "runs" | "automations" | "artifacts" | "hooks" | "memory" | "handovers" | "skill_candidates";
+type ConsoleView = "brief" | "context_index" | "threads" | "runs" | "automations" | "artifacts" | "hooks" | "memory" | "handovers" | "skill_candidates";
 type SkillCandidateAgentID = "claude-code" | "codex" | "cursor" | "gemini-cli";
+type LocalContextCategory = "important" | "project" | "skills" | "mcp" | "handoff" | "research" | "docs" | "other";
 type SkillCandidateAgentOption = {
   id: SkillCandidateAgentID;
   name: string;
@@ -68,6 +73,24 @@ const SKILL_CANDIDATE_AGENT_OPTIONS: SkillCandidateAgentOption[] = [
     noteEn: "Keeps the assignment for manual use from GEMINI.md-style guidance.",
   },
 ];
+
+function consoleViewFromSearch(search: string): ConsoleView {
+  const value = new URLSearchParams(search).get("view");
+  if (
+    value === "context_index" ||
+    value === "threads" ||
+    value === "runs" ||
+    value === "automations" ||
+    value === "artifacts" ||
+    value === "hooks" ||
+    value === "memory" ||
+    value === "handovers" ||
+    value === "skill_candidates"
+  ) {
+    return value;
+  }
+  return "brief";
+}
 
 function getAgentOptionsFromTarget(target: SkillAgentTarget, tx: (zh: string, en: string) => string): SkillCandidateAgentOption {
   let modeZh = "导出预览";
@@ -127,6 +150,140 @@ function sourceShortPath(path: string | undefined) {
   const parts = path.split("/").filter(Boolean);
   if (parts.length <= 4) return path;
   return `…/${parts.slice(-4).join("/")}`;
+}
+
+function fileNameFromPath(path: string | undefined) {
+  if (!path) return "";
+  return path.split("/").filter(Boolean).pop() || path;
+}
+
+function dirnameFromPath(path: string | undefined) {
+  if (!path) return "";
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 1) return path.startsWith("/") ? "/" : "";
+  return `${path.startsWith("/") ? "/" : ""}${parts.slice(0, -1).join("/")}`;
+}
+
+function classifyMarkdownCandidate(doc: LocalKnowledgeDocument): LocalContextCategory {
+  const path = (doc.path || "").toLowerCase();
+  const name = fileNameFromPath(path);
+  const category = (doc.category || "").toLowerCase();
+  if (name === "agents.md" || name === "claude.md" || name === "readme.md" || name === "skill.md" || name === "memory.md") return "important";
+  if (path.includes("/project-facts/") || path.includes("/changes/") || path.includes("requirements") || path.includes("design.md")) return "project";
+  if (path.includes("/skills/") || name.includes("skill")) return "skills";
+  if (path.includes("/mcp/") || name.includes("mcp")) return "mcp";
+  if (path.includes("handover") || path.includes("release") || path.includes("verification") || path.includes("验收")) return "handoff";
+  if (path.includes("research") || path.includes("调研") || category.includes("research")) return "research";
+  if (path.includes("/docs/") || category.includes("doc")) return "docs";
+  return "other";
+}
+
+function localContextCategoryLabel(category: LocalContextCategory, tx: (zh: string, en: string) => string) {
+  switch (category) {
+    case "important":
+      return tx("入口文件", "Entry files");
+    case "project":
+      return tx("项目事实", "Project facts");
+    case "skills":
+      return "Skills";
+    case "mcp":
+      return "MCP";
+    case "handoff":
+      return tx("交接与验收", "Handoff and checks");
+    case "research":
+      return tx("调研资料", "Research");
+    case "docs":
+      return tx("文档", "Docs");
+    default:
+      return tx("其他 Markdown", "Other Markdown");
+  }
+}
+
+function localContextCategoryOrder(category: LocalContextCategory) {
+  const order: Record<LocalContextCategory, number> = {
+    important: 0,
+    project: 1,
+    skills: 2,
+    mcp: 3,
+    handoff: 4,
+    research: 5,
+    docs: 6,
+    other: 7,
+  };
+  return order[category];
+}
+
+function isRecommendedMarkdown(doc: LocalKnowledgeDocument) {
+  const category = classifyMarkdownCandidate(doc);
+  if (category === "important" || category === "project" || category === "handoff") return true;
+  return (doc.score || 0) >= 0.72 && !doc.sensitive_candidate;
+}
+
+function buildLocalContextPrompt(
+  docs: LocalKnowledgeDocument[],
+  tx: (zh: string, en: string) => string,
+) {
+  const uniquePaths = Array.from(new Set(docs.map((doc) => doc.path).filter(Boolean)));
+  if (!uniquePaths.length) return "";
+  const lines = [
+    tx(
+      "请先读取下面这些本地 Markdown 文档作为上下文：",
+      "Read these local Markdown files as context first:",
+    ),
+    "",
+    ...uniquePaths.map((path) => `- ${path}`),
+    "",
+    tx(
+      "读取后先说明你理解到的项目约束、当前状态、相关 Skill/MCP 和未验证项，再继续我的任务。",
+      "After reading them, explain the project constraints, current state, relevant Skill/MCP material, and unverified items before continuing my task.",
+    ),
+  ];
+  return lines.join("\n");
+}
+
+function buildLocalContextGroups(docs: LocalKnowledgeDocument[]) {
+  const groups = docs.reduce<Record<LocalContextCategory, LocalKnowledgeDocument[]>>((acc, doc) => {
+    const category = classifyMarkdownCandidate(doc);
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(doc);
+    return acc;
+  }, {} as Record<LocalContextCategory, LocalKnowledgeDocument[]>);
+  return (Object.keys(groups) as LocalContextCategory[])
+    .sort((left, right) => localContextCategoryOrder(left) - localContextCategoryOrder(right))
+    .map((category) => ({
+      category,
+      docs: groups[category].sort((left, right) => {
+        if (Number(!!right.project_name) !== Number(!!left.project_name)) {
+          return Number(!!right.project_name) - Number(!!left.project_name);
+        }
+        return (right.score || 0) - (left.score || 0);
+      }),
+    }));
+}
+
+function selectedKnowledgeDocument(index: LocalKnowledgeIndexResponse | null, path: string) {
+  if (!index || !path) return null;
+  return index.documents.find((doc) => doc.path === path) || null;
+}
+
+function localKnowledgeConceptsForPaths(index: LocalKnowledgeIndexResponse | null, paths: string[]) {
+  if (!index || !paths.length) return [];
+  const selected = new Set(paths);
+  return index.concepts
+    .filter((concept) => (concept.document_paths || []).some((path) => selected.has(path)))
+    .sort((left, right) => {
+      if (right.count !== left.count) return right.count - left.count;
+      return left.name.localeCompare(right.name);
+    });
+}
+
+function findFirstTreeDocument(node: LocalKnowledgeTreeNode): string {
+  if (node.kind === "document" && node.path) return node.path;
+  for (const child of node.children || []) {
+    const path = findFirstTreeDocument(child);
+    if (path) return path;
+  }
+  return "";
 }
 
 function statusTone(status: string | undefined) {
@@ -314,11 +471,12 @@ function artifactHandoffPrompt(item: CodexConsoleArtifact, tx: (zh: string, en: 
 
 export default function CodexConsolePage() {
   const { locale, tx } = useI18n();
+  const location = useLocation();
   const [data, setData] = useState<CodexConsoleResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [view, setView] = useState<ConsoleView>("brief");
+  const [view, setView] = useState<ConsoleView>(() => consoleViewFromSearch(location.search));
   const [selectedThreadID, setSelectedThreadID] = useState("");
   const [selectedRunID, setSelectedRunID] = useState("");
   const [selectedAutomationID, setSelectedAutomationID] = useState("");
@@ -348,6 +506,13 @@ export default function CodexConsolePage() {
   const [skillAssignPreview, setSkillAssignPreview] = useState<CodexConsoleSkillCandidateAssignPreviewResponse | null>(null);
   const [skillAssignAgentIDs, setSkillAssignAgentIDs] = useState<SkillCandidateAgentID[]>(["codex"]);
   const [showArchivedSkillCandidates, setShowArchivedSkillCandidates] = useState(false);
+  const [localKnowledgeIndex, setLocalKnowledgeIndex] = useState<LocalKnowledgeIndexResponse | null>(null);
+  const [localContextScanning, setLocalContextScanning] = useState(false);
+  const [localContextError, setLocalContextError] = useState("");
+  const [localContextQuery, setLocalContextQuery] = useState("");
+  const [localContextCategory, setLocalContextCategory] = useState<LocalContextCategory | "all">("all");
+  const [selectedLocalContextPaths, setSelectedLocalContextPaths] = useState<string[]>([]);
+  const [activeLocalContextPath, setActiveLocalContextPath] = useState("");
   const [availableAgents, setAvailableAgents] = useState<SkillAgentTarget[]>([
     { id: "codex", name: "Codex", platform: "codex", install_path_hint: "~/.agents/skills", supports_apply: true, export_supported: true },
     { id: "claude-code", name: "Claude Code", platform: "claude-code", install_path_hint: "~/.claude/skills", supports_apply: true, export_supported: true },
@@ -358,6 +523,59 @@ export default function CodexConsolePage() {
   const agentOptions = useMemo(() => {
     return availableAgents.map((agent) => getAgentOptionsFromTarget(agent, tx));
   }, [availableAgents, locale]);
+
+  useEffect(() => {
+    setView(consoleViewFromSearch(location.search));
+  }, [location.search]);
+
+  const localContextDocs = useMemo(() => {
+    const docs = localKnowledgeIndex?.documents || [];
+    const query = localContextQuery.trim().toLowerCase();
+    return docs
+      .filter((doc) => !doc.sensitive_candidate)
+      .filter((doc) => localContextCategory === "all" || classifyMarkdownCandidate(doc) === localContextCategory)
+      .filter((doc) => {
+        if (!query) return true;
+        return [
+          doc.title,
+          doc.path,
+          doc.project_name,
+          doc.project_path,
+          doc.category,
+          ...(doc.headings || []),
+        ].join("\n").toLowerCase().includes(query);
+      })
+      .sort((left, right) => {
+        const leftRecommended = isRecommendedMarkdown(left) ? 1 : 0;
+        const rightRecommended = isRecommendedMarkdown(right) ? 1 : 0;
+        if (rightRecommended !== leftRecommended) return rightRecommended - leftRecommended;
+        if (localContextCategory === "all") {
+          const orderDiff = localContextCategoryOrder(classifyMarkdownCandidate(left)) - localContextCategoryOrder(classifyMarkdownCandidate(right));
+          if (orderDiff !== 0) return orderDiff;
+        }
+        return (right.score || 0) - (left.score || 0);
+      });
+  }, [localContextCategory, localContextQuery, localKnowledgeIndex]);
+
+  const selectedLocalContextDocs = useMemo(() => {
+    const selected = new Set(selectedLocalContextPaths);
+    return (localKnowledgeIndex?.documents || []).filter((doc) => selected.has(doc.path));
+  }, [localKnowledgeIndex?.documents, selectedLocalContextPaths]);
+
+  const activeLocalContextDoc = useMemo(
+    () => selectedKnowledgeDocument(localKnowledgeIndex, activeLocalContextPath) || localContextDocs[0] || null,
+    [activeLocalContextPath, localContextDocs, localKnowledgeIndex],
+  );
+
+  const selectedLocalContextConcepts = useMemo(
+    () => localKnowledgeConceptsForPaths(localKnowledgeIndex, selectedLocalContextPaths),
+    [localKnowledgeIndex, selectedLocalContextPaths],
+  );
+
+  const selectedLocalContextPrompt = useMemo(
+    () => buildLocalContextPrompt(selectedLocalContextDocs, tx),
+    [selectedLocalContextDocs, locale],
+  );
 
   const load = async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -472,6 +690,62 @@ export default function CodexConsolePage() {
     await navigator.clipboard?.writeText(value);
     setCopied(marker);
     window.setTimeout(() => setCopied(""), 1400);
+  };
+
+  const copyText = async (marker: string, value: string) => {
+    if (!value) return;
+    await navigator.clipboard?.writeText(value);
+    setCopied(marker);
+    window.setTimeout(() => setCopied(""), 1400);
+  };
+
+  const scanLocalContextIndex = async () => {
+    setLocalContextScanning(true);
+    setLocalContextError("");
+    setMemorySyncMessage("");
+    setNoticeTarget("");
+    try {
+      const index = await api.indexLocalLibrary({ max_markdown: 5000, max_projects: 500 });
+      setLocalKnowledgeIndex(index);
+      const recommended = index.documents
+        .filter((doc) => !doc.sensitive_candidate && isRecommendedMarkdown(doc))
+        .slice(0, 40)
+        .map((doc) => doc.path);
+      setSelectedLocalContextPaths(Array.from(new Set(recommended)));
+      setActiveLocalContextPath((current) => current || recommended[0] || index.documents[0]?.path || "");
+      setMemorySyncMessage(tx(
+        `已建立 ${index.documents.length} 个 Markdown 的知识索引，识别 ${index.concepts.length} 个概念。`,
+        `Indexed ${index.documents.length} Markdown files and detected ${index.concepts.length} concepts.`,
+      ));
+    } catch (err: any) {
+      setLocalContextError(err?.message || tx("建立本地知识索引失败", "Failed to build local knowledge index"));
+    } finally {
+      setLocalContextScanning(false);
+    }
+  };
+
+  const toggleLocalContextPath = (path: string) => {
+    setSelectedLocalContextPaths((current) => {
+      if (current.includes(path)) return current.filter((item) => item !== path);
+      return [...current, path];
+    });
+  };
+
+  const selectRecommendedLocalContext = () => {
+    const recommended = localContextDocs
+      .filter((doc) => isRecommendedMarkdown(doc))
+      .slice(0, 40)
+      .map((doc) => doc.path);
+    setSelectedLocalContextPaths(Array.from(new Set(recommended)));
+  };
+
+  const selectVisibleLocalContext = () => {
+    setSelectedLocalContextPaths(Array.from(new Set(localContextDocs.slice(0, 80).map((doc) => doc.path))));
+  };
+
+  const openLocalKnowledgePath = (path: string) => {
+    if (!path) return;
+    setActiveLocalContextPath(path);
   };
 
   const saveArtifactRegistry = async () => {
@@ -715,6 +989,9 @@ export default function CodexConsolePage() {
           </p>
         </div>
         <div className="page-actions">
+          <button className="btn" type="button" onClick={() => setView("context_index")}>
+            {tx("本地上下文", "Local context")}
+          </button>
           <button className="btn" type="button" disabled={refreshing} onClick={() => void load(true)}>
             {refreshing ? tx("整理中...", "Refreshing...") : tx("重新整理", "Refresh")}
           </button>
@@ -736,9 +1013,12 @@ export default function CodexConsolePage() {
       ) : null}
       {memorySyncError ? <div className="alert alert-warn">{memorySyncError}</div> : null}
 
-      {!hasConsoleData ? (
+      {!hasConsoleData && view !== "context_index" ? (
         <div className="empty-action-state">
           <p>{tx("还没有可展示的 Codex 本地资料。", "No local Codex data is available yet.")}</p>
+          <button className="btn" type="button" onClick={() => setView("context_index")}>
+            {tx("整理本地 Markdown", "Organize local Markdown")}
+          </button>
           <Link className="btn btn-primary" to="/imports/local-apps?platform=codex">
             {tx("扫描 Codex", "Scan Codex")}
           </Link>
@@ -769,6 +1049,7 @@ export default function CodexConsolePage() {
                 <div className="codex-console-tabs" role="tablist" aria-label="Codex Console views">
                   {([
                     ["brief", tx("简报", "Brief"), 0],
+                    ["context_index", tx("项目文档", "Project Docs"), localKnowledgeIndex?.documents.length || 0],
                     ["memory", tx("记忆候选", "Memory"), data?.memory_candidates.length || 0],
                     ["handovers", tx("项目交接", "Handovers"), data?.handovers?.length || 0],
                     ["skill_candidates", tx("Skill 草稿", "Skill Drafts"), visibleSkillCandidates.length],
@@ -784,6 +1065,30 @@ export default function CodexConsolePage() {
                     </button>
                   ))}
                 </div>
+                {view === "context_index" ? (
+                  <LocalContextIndex
+                    index={localKnowledgeIndex}
+                    docs={localContextDocs}
+                    selectedPaths={selectedLocalContextPaths}
+                    activePath={activeLocalContextDoc?.path || ""}
+                    query={localContextQuery}
+                    category={localContextCategory}
+                    scanning={localContextScanning}
+                    error={localContextError}
+                    tx={tx}
+                    locale={locale}
+                    copied={copied}
+                    onScan={() => void scanLocalContextIndex()}
+                    onQueryChange={setLocalContextQuery}
+                    onCategoryChange={setLocalContextCategory}
+                    onTogglePath={toggleLocalContextPath}
+                    onOpenPath={openLocalKnowledgePath}
+                    onSelectRecommended={selectRecommendedLocalContext}
+                    onSelectVisible={selectVisibleLocalContext}
+                    onClearSelection={() => setSelectedLocalContextPaths([])}
+                    onCopyPath={(path) => void copySource(path)}
+                  />
+                ) : null}
                 {view === "threads" ? (
                   <ThreadTable items={data?.threads || []} selectedID={selectedThread?.id || ""} onSelect={setSelectedThreadID} tx={tx} locale={locale} />
                 ) : null}
@@ -820,6 +1125,21 @@ export default function CodexConsolePage() {
               </div>
 
               <aside className="codex-console-detail">
+                {view === "context_index" ? (
+                  <LocalContextDetail
+                    index={localKnowledgeIndex}
+                    activeDoc={activeLocalContextDoc}
+                    selectedDocs={selectedLocalContextDocs}
+                    selectedConcepts={selectedLocalContextConcepts}
+                    prompt={selectedLocalContextPrompt}
+                    tx={tx}
+                    copied={copied}
+                    onCopyPrompt={() => void copyText("local-context-prompt", selectedLocalContextPrompt)}
+                    onCopyPaths={() => void copyText("local-context-paths", selectedLocalContextDocs.map((doc) => doc.path).join("\n"))}
+                    onCopyCompilePrompt={() => void copyText("local-context-compile-prompt", localKnowledgeIndex?.compile?.prompt || "")}
+                    onCopyPath={(path) => void copySource(path)}
+                  />
+                ) : null}
                 {view === "threads" && selectedThread ? (
                   <ThreadDetail item={selectedThread} locale={locale} tx={tx} copied={copied} onCopy={copySource} />
                 ) : null}
@@ -909,7 +1229,7 @@ export default function CodexConsolePage() {
             </section>
           )}
 
-          {view !== "brief" ? (
+          {view !== "brief" && hasConsoleData ? (
             <section className="codex-console-overview">
               <div className="dashboard-section-head compact">
                 <div>
@@ -931,6 +1251,369 @@ export default function CodexConsolePage() {
           ) : null}
         </>
       )}
+    </div>
+  );
+}
+
+function LocalContextIndex({
+  index,
+  docs,
+  selectedPaths,
+  activePath,
+  query,
+  category,
+  scanning,
+  error,
+  tx,
+  locale,
+  copied,
+  onScan,
+  onQueryChange,
+  onCategoryChange,
+  onTogglePath,
+  onOpenPath,
+  onSelectRecommended,
+  onSelectVisible,
+  onClearSelection,
+  onCopyPath,
+}: {
+  index: LocalKnowledgeIndexResponse | null;
+  docs: LocalKnowledgeDocument[];
+  selectedPaths: string[];
+  activePath: string;
+  query: string;
+  category: LocalContextCategory | "all";
+  scanning: boolean;
+  error: string;
+  tx: (zh: string, en: string) => string;
+  locale: "zh-CN" | "en";
+  copied: string;
+  onScan: () => void;
+  onQueryChange: (value: string) => void;
+  onCategoryChange: (value: LocalContextCategory | "all") => void;
+  onTogglePath: (path: string) => void;
+  onOpenPath: (path: string) => void;
+  onSelectRecommended: () => void;
+  onSelectVisible: () => void;
+  onClearSelection: () => void;
+  onCopyPath: (path: string) => void;
+}) {
+  const groups = buildLocalContextGroups(docs);
+  const categories: Array<LocalContextCategory | "all"> = ["all", "important", "project", "skills", "mcp", "handoff", "research", "docs", "other"];
+  return (
+    <div className="local-context-index">
+      <div className="local-context-toolbar">
+        <div>
+          <strong>{tx("项目知识索引", "Project knowledge index")}</strong>
+          <p>{tx("把本机 Markdown 整理成项目、概念、链接和反向链接，使用 Codex 时直接复制真实路径。", "Organize local Markdown into projects, concepts, links, and backlinks, then copy real paths for Codex.")}</p>
+        </div>
+        <button className="btn btn-sm btn-primary" type="button" disabled={scanning} onClick={onScan}>
+          {scanning ? tx("索引中...", "Indexing...") : index ? tx("重新索引", "Re-index") : tx("建立索引", "Build index")}
+        </button>
+      </div>
+
+      {error ? <div className="alert alert-warn">{error}</div> : null}
+
+      {index ? (
+        <div className="local-context-stats">
+          <span>{tx(`${index.stats.projects_shown} 个项目`, `${index.stats.projects_shown} projects`)}</span>
+          <span>{tx(`${index.documents.length} 个 Markdown`, `${index.documents.length} Markdown files`)}</span>
+          <span>{tx(`${index.concepts.length} 个概念`, `${index.concepts.length} concepts`)}</span>
+          <span>{tx(`${index.links.filter((link) => link.resolved).length} 条已解析链接`, `${index.links.filter((link) => link.resolved).length} resolved links`)}</span>
+          <span>{tx(`${selectedPaths.length} 个已选择`, `${selectedPaths.length} selected`)}</span>
+          {index.stats.sensitive_files ? <span>{tx(`${index.stats.sensitive_files} 个敏感候选已隐藏`, `${index.stats.sensitive_files} sensitive candidates hidden`)}</span> : null}
+        </div>
+      ) : null}
+
+      <div className="local-context-filters">
+        <input
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder={tx("搜索项目、路径、标题", "Search projects, paths, titles")}
+        />
+        <select
+          value={category}
+          onChange={(event) => onCategoryChange(event.target.value as LocalContextCategory | "all")}
+        >
+          {categories.map((item) => (
+            <option key={item} value={item}>
+              {item === "all" ? tx("全部类型", "All types") : localContextCategoryLabel(item, tx)}
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-sm" type="button" disabled={!index} onClick={onSelectRecommended}>{tx("推荐选择", "Recommended")}</button>
+        <button className="btn btn-sm" type="button" disabled={!docs.length} onClick={onSelectVisible}>{tx("选择当前列表", "Select visible")}</button>
+        <button className="btn btn-sm" type="button" disabled={!selectedPaths.length} onClick={onClearSelection}>{tx("清空", "Clear")}</button>
+      </div>
+
+      {!index ? (
+        <div className="local-context-empty">
+          <strong>{tx("先建立本地知识索引", "Build a local knowledge index first")}</strong>
+          <p>{tx("Vola 会解析 AGENTS.md、README、docs、Skill、MCP 和项目资料，提取标题、概念、链接、反向链接。", "Vola parses AGENTS.md, README, docs, Skill, MCP, and project notes, then extracts headings, concepts, links, and backlinks.")}</p>
+        </div>
+      ) : groups.length ? (
+        <div className="local-knowledge-layout">
+          <div className="local-knowledge-tree">
+            {(index.tree || []).map((node) => (
+              <KnowledgeTreeNodeView
+                key={node.id}
+                node={node}
+                depth={0}
+                activePath={activePath}
+                selectedPaths={selectedPaths}
+                onOpenPath={onOpenPath}
+                onTogglePath={onTogglePath}
+                tx={tx}
+              />
+            ))}
+          </div>
+          <div className="local-context-groups">
+            {groups.map((group) => (
+              <section key={group.category} className="local-context-group">
+                <div className="local-context-group-head">
+                  <strong>{localContextCategoryLabel(group.category, tx)}</strong>
+                  <span>{tx(`${group.docs.length} 个文件`, `${group.docs.length} files`)}</span>
+                </div>
+                <div className="local-context-doc-list">
+                  {group.docs.slice(0, 36).map((doc) => {
+                    const selected = selectedPaths.includes(doc.path);
+                    const active = activePath === doc.path;
+                    const recommended = isRecommendedMarkdown(doc);
+                    return (
+                      <div key={doc.path} className={active ? "local-context-doc is-active" : selected ? "local-context-doc is-selected" : "local-context-doc"}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          aria-label={tx("选择文档", "Select document")}
+                          onChange={() => onTogglePath(doc.path)}
+                        />
+                        <button className="local-context-doc-main" type="button" onClick={() => onOpenPath(doc.path)}>
+                          <strong>{doc.title || fileNameFromPath(doc.path)}</strong>
+                          <small>{sourceShortPath(doc.path)}</small>
+                          {doc.summary || doc.excerpt ? <p>{shortPreview(doc.summary || doc.excerpt || "", 140)}</p> : null}
+                        </button>
+                        <span className="local-context-doc-meta">
+                          {doc.project_name ? <b>{doc.project_name}</b> : null}
+                          {doc.concepts?.length ? <em>{tx(`${doc.concepts.length} 概念`, `${doc.concepts.length} concepts`)}</em> : null}
+                          {recommended ? <em>{tx("推荐", "Recommended")}</em> : null}
+                          <small>{formatDateTime(doc.updated_at, locale)}</small>
+                        </span>
+                        <button className="btn btn-sm" type="button" onClick={() => onCopyPath(doc.path)}>
+                          {copied === doc.path ? tx("已复制", "Copied") : tx("路径", "Path")}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {group.docs.length > 36 ? (
+                    <div className="local-context-doc-more">
+                      {tx(`还有 ${group.docs.length - 36} 个文件，搜索关键词可缩小范围。`, `${group.docs.length - 36} more files. Search to narrow the list.`)}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="local-context-empty">
+          <strong>{tx("没有匹配的 Markdown", "No matching Markdown")}</strong>
+          <p>{tx("换一个关键词或类型再看。", "Try another keyword or type.")}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KnowledgeTreeNodeView({
+  node,
+  depth,
+  activePath,
+  selectedPaths,
+  onOpenPath,
+  onTogglePath,
+  tx,
+}: {
+  node: LocalKnowledgeTreeNode;
+  depth: number;
+  activePath: string;
+  selectedPaths: string[];
+  onOpenPath: (path: string) => void;
+  onTogglePath: (path: string) => void;
+  tx: (zh: string, en: string) => string;
+}) {
+  const firstPath = node.path || findFirstTreeDocument(node);
+  const isDocument = node.kind === "document" && !!node.path;
+  const selected = isDocument && selectedPaths.includes(node.path || "");
+  const active = isDocument && activePath === node.path;
+  return (
+    <div className="knowledge-tree-node">
+      <div
+        className={[
+          "knowledge-tree-row",
+          `is-${node.kind}`,
+          active ? "is-active" : "",
+          selected ? "is-selected" : "",
+        ].filter(Boolean).join(" ")}
+        style={{ paddingLeft: `${depth * 14 + 8}px` }}
+      >
+        {isDocument ? (
+          <input
+            type="checkbox"
+            checked={selected}
+            aria-label={tx("选择文档", "Select document")}
+            onChange={() => onTogglePath(node.path || "")}
+          />
+        ) : (
+          <span className="knowledge-tree-mark" />
+        )}
+        <button type="button" onClick={() => firstPath && onOpenPath(firstPath)}>
+          <span>{node.label}</span>
+          {node.count ? <small>{node.count}</small> : null}
+        </button>
+      </div>
+      {node.children?.length ? (
+        <div className="knowledge-tree-children">
+          {node.children.slice(0, 36).map((child) => (
+            <KnowledgeTreeNodeView
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              activePath={activePath}
+              selectedPaths={selectedPaths}
+              onOpenPath={onOpenPath}
+              onTogglePath={onTogglePath}
+              tx={tx}
+            />
+          ))}
+          {node.children.length > 36 ? (
+            <div className="knowledge-tree-more" style={{ paddingLeft: `${(depth + 1) * 14 + 26}px` }}>
+              {tx(`还有 ${node.children.length - 36} 项`, `${node.children.length - 36} more`)}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LocalContextDetail({
+  index,
+  activeDoc,
+  selectedDocs,
+  selectedConcepts,
+  prompt,
+  tx,
+  copied,
+  onCopyPrompt,
+  onCopyPaths,
+  onCopyCompilePrompt,
+  onCopyPath,
+}: {
+  index: LocalKnowledgeIndexResponse | null;
+  activeDoc: LocalKnowledgeDocument | null;
+  selectedDocs: LocalKnowledgeDocument[];
+  selectedConcepts: LocalKnowledgeConcept[];
+  prompt: string;
+  tx: (zh: string, en: string) => string;
+  copied: string;
+  onCopyPrompt: () => void;
+  onCopyPaths: () => void;
+  onCopyCompilePrompt: () => void;
+  onCopyPath: (path: string) => void;
+}) {
+  const selectedProjects = Array.from(new Set(selectedDocs.map((doc) => doc.project_name || dirnameFromPath(doc.path)).filter(Boolean)));
+  return (
+    <div className="local-context-detail">
+      <h3>{tx("知识索引", "Knowledge index")}</h3>
+      <p>{tx("先把路径、概念和反向链接交给 Codex，让它读取真实文件后再工作。", "Give Codex paths, concepts, and backlinks first so it can read real files before working.")}</p>
+      <div className="local-context-detail-stats">
+        <span><strong>{selectedDocs.length}</strong>{tx("已选文件", "files")}</span>
+        <span><strong>{selectedProjects.length}</strong>{tx("相关项目", "projects")}</span>
+        <span><strong>{selectedConcepts.length}</strong>{tx("相关概念", "concepts")}</span>
+        <span><strong>{index?.warnings?.length || 0}</strong>{tx("提醒", "warnings")}</span>
+      </div>
+
+      {activeDoc ? (
+        <section className="local-knowledge-active">
+          <div className="local-knowledge-active-head">
+            <div>
+              <strong>{activeDoc.title || fileNameFromPath(activeDoc.path)}</strong>
+              <small>{activeDoc.path}</small>
+            </div>
+            <button className="btn btn-sm" type="button" onClick={() => onCopyPath(activeDoc.path)}>
+              {copied === activeDoc.path ? tx("已复制", "Copied") : tx("复制路径", "Copy path")}
+            </button>
+          </div>
+          {activeDoc.summary ? <p>{activeDoc.summary}</p> : null}
+          {activeDoc.concepts?.length ? (
+            <div className="local-knowledge-chip-list">
+              {activeDoc.concepts.slice(0, 12).map((concept, index) => <span key={`${concept}:${index}`}>{concept}</span>)}
+            </div>
+          ) : null}
+          {activeDoc.heading_items?.length ? (
+            <div className="local-knowledge-outline">
+              <strong>{tx("标题结构", "Outline")}</strong>
+              {activeDoc.heading_items.slice(0, 12).map((heading) => (
+                <small key={`${heading.level}:${heading.anchor}`} style={{ paddingLeft: `${Math.max(0, heading.level - 1) * 10}px` }}>
+                  {heading.text}
+                </small>
+              ))}
+            </div>
+          ) : null}
+          <div className="local-knowledge-relations">
+            <div>
+              <strong>{tx("反向链接", "Backlinks")}</strong>
+              {activeDoc.backlinks?.length ? activeDoc.backlinks.slice(0, 8).map((backlink) => (
+                <button key={`${backlink.source_path}:${backlink.text}`} type="button" onClick={() => onCopyPath(backlink.source_path)}>
+                  <span>{backlink.source_title || fileNameFromPath(backlink.source_path)}</span>
+                  <small>{sourceShortPath(backlink.source_path)}</small>
+                </button>
+              )) : <small>{tx("暂时没有其他文档链接到它", "No document links to it yet")}</small>}
+            </div>
+            <div>
+              <strong>{tx("链接出去", "Outgoing")}</strong>
+              {activeDoc.outgoing_links?.length ? activeDoc.outgoing_links.slice(0, 8).map((link) => (
+                <button key={`${link.kind}:${link.target}:${link.text}`} type="button" onClick={() => link.target_path ? onCopyPath(link.target_path) : undefined}>
+                  <span>{link.text || link.target}</span>
+                  <small>{link.resolved ? sourceShortPath(link.target_path) : link.kind}</small>
+                </button>
+              )) : <small>{tx("没有检测到链接", "No links detected")}</small>}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="local-context-copy-actions">
+        <button className="btn btn-primary" type="button" disabled={!prompt} onClick={onCopyPrompt}>
+          {copied === "local-context-prompt" ? tx("已复制提示词", "Prompt copied") : tx("复制提示词", "Copy prompt")}
+        </button>
+        <button className="btn" type="button" disabled={!selectedDocs.length} onClick={onCopyPaths}>
+          {copied === "local-context-paths" ? tx("已复制路径", "Paths copied") : tx("只复制路径", "Copy paths")}
+        </button>
+        <button className="btn" type="button" disabled={!index?.compile?.prompt} onClick={onCopyCompilePrompt}>
+          {copied === "local-context-compile-prompt" ? tx("已复制编译提示词", "Compile prompt copied") : tx("复制编译提示词", "Copy compile prompt")}
+        </button>
+      </div>
+      <pre className="local-context-prompt-preview">{prompt || tx("选择 Markdown 后，这里会生成可直接贴给 Codex 的提示词。", "Select Markdown files to generate a prompt you can paste into Codex.")}</pre>
+      {selectedConcepts.length ? (
+        <div className="local-knowledge-concepts">
+          <strong>{tx("已选概念", "Selected concepts")}</strong>
+          <div className="local-knowledge-chip-list">
+            {selectedConcepts.slice(0, 20).map((concept, index) => <span key={`${concept.slug}:${index}`}>{concept.name}<small>{concept.count}</small></span>)}
+          </div>
+        </div>
+      ) : null}
+      {selectedDocs.length ? (
+        <div className="local-context-selected-list">
+          {selectedDocs.slice(0, 14).map((doc) => (
+            <div key={doc.path}>
+              <strong>{doc.title || fileNameFromPath(doc.path)}</strong>
+              <small>{doc.path}</small>
+            </div>
+          ))}
+          {selectedDocs.length > 14 ? <p>{tx(`还有 ${selectedDocs.length - 14} 个文件未展示。`, `${selectedDocs.length - 14} more files not shown.`)}</p> : null}
+        </div>
+      ) : null}
     </div>
   );
 }

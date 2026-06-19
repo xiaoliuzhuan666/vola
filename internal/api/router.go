@@ -456,6 +456,7 @@ func (s *Server) setupRoutes() {
 		r.Post("/api/local/platform/preview", s.handleLocalPlatformPreview)
 		r.Post("/api/local/platform/import", s.handleLocalPlatformImport)
 		r.Post("/api/local/library/scan", s.handleLocalLibraryScan)
+		r.Post("/api/local/library/index", s.handleLocalKnowledgeIndex)
 		r.Post("/api/local/library/import", s.handleLocalLibraryImport)
 		r.Get("/api/local/codex-console", s.handleLocalCodexConsole)
 		r.Post("/api/local/codex-console/memory-sync", s.handleLocalCodexConsoleMemorySync)

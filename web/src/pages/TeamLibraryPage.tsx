@@ -3,12 +3,13 @@ import { Link } from 'react-router-dom'
 import { api, type FileNode, type LocalSkillSyncResponse, type LocalToolStatusResponse, type Team, type TeamAgentAsset, type TeamMember, type TeamRole, type TeamSkillReviewEvent, type TeamSkillSubscriptionReportResponse, type TeamSkillUpdateNotification, type TeamSkillUpdateNotificationsResponse, type TeamMcpAsset, type TeamSkillPublication, type TeamSkillSubscriptionStatus } from '../api'
 import CustomSelect from '../components/CustomSelect'
 import GitHubTreeList from '../components/GitHubTreeList'
-import MaterialsTile from '../components/MaterialsTile'
 import { useI18n } from '../i18n'
 import { dataFileEditorRoute } from './data/DataShared'
 
 const TEAM_ROOT = '/team'
 const TEAM_SELECTION_KEY = 'vola:selected-team-id'
+type TeamDialog = '' | 'create-team' | 'add-member' | 'create-agent' | 'create-mcp' | 'skill-publication'
+type TeamView = 'overview' | 'assets' | 'sync' | 'files'
 
 const TEAM_TEMPLATE = [
   { path: '/team', isDir: true, content: '', mimeType: 'directory' },
@@ -302,6 +303,9 @@ export default function TeamLibraryPage() {
   const [platformRefreshBusy, setPlatformRefreshBusy] = useState('')
   const [localToolStatus, setLocalToolStatus] = useState<LocalToolStatusResponse | null>(null)
   const [localToolStatusLoading, setLocalToolStatusLoading] = useState(false)
+  const [teamDialog, setTeamDialog] = useState<TeamDialog>('')
+  const [editingPublicationPath, setEditingPublicationPath] = useState('')
+  const [teamView, setTeamView] = useState<TeamView>('overview')
 
   const selectedTeam = useMemo(
     () => teams.find((team) => team.id === selectedTeamID) || teams[0] || null,
@@ -483,6 +487,20 @@ export default function TeamLibraryPage() {
       `add ${teamLocalSyncTotal.add}, update ${teamLocalSyncTotal.update}, conflicts ${teamLocalSyncTotal.conflict}, export ${teamLocalSyncTotal.export}.`,
     )
   }, [teamLocalSyncTotal, teamSkillSyncPreview, tx])
+  const editingPublication = useMemo(
+    () => skillPublications.find((pub) => pub.skill_path === editingPublicationPath) || null,
+    [editingPublicationPath, skillPublications],
+  )
+
+  const openSkillPublicationDialog = (skillPath: string) => {
+    setEditingPublicationPath(skillPath)
+    setTeamDialog('skill-publication')
+  }
+
+  const closeTeamDialog = () => {
+    setTeamDialog('')
+    setEditingPublicationPath('')
+  }
 
   const handleCheckTeamSkillSubscriptions = async () => {
     if (!selectedTeam || sharingWorking) return
@@ -604,11 +622,11 @@ export default function TeamLibraryPage() {
       detail: tx('共享配置', 'Shared configs'),
     },
   ], [locale, members.length, selectedTeam, skillsRoot, teamAgents.length, teamMcps.length, tx])
-  const sectionLinks = useMemo(() => [
-    { href: '#team-overview', label: tx('概览', 'Overview') },
-    { href: '#team-assets', label: tx('资产', 'Assets') },
-    { href: '#team-sync', label: tx('同步', 'Sync') },
-    { href: '#team-files', label: tx('文件', 'Files') },
+  const teamTabs = useMemo(() => [
+    { id: 'overview' as const, label: tx('概览', 'Overview') },
+    { id: 'assets' as const, label: tx('资产', 'Assets') },
+    { id: 'sync' as const, label: tx('同步', 'Sync') },
+    { id: 'files' as const, label: tx('文件', 'Files') },
   ], [tx])
 
   const publicationSavePayload = (pub: TeamSkillPublication, overrides: Partial<TeamSkillPublication> = {}) => ({
@@ -641,7 +659,7 @@ export default function TeamLibraryPage() {
   }
 
   const handleSaveSkillPublicationMeta = async (pub: TeamSkillPublication) => {
-    if (!selectedTeam || sharingWorking) return
+    if (!selectedTeam || sharingWorking) return false
     const draft = skillPublicationDrafts[pub.skill_path] || {
       version: pub.version || '',
       release_note: pub.release_note || '',
@@ -656,8 +674,10 @@ export default function TeamLibraryPage() {
       setSkillPublications(next)
       setSkillPublicationDrafts(publicationDraftsFromPublications(next))
       setMessage(tx('发布信息已保存。', 'Publication details saved.'))
+      return true
     } catch (err: any) {
       setError(err?.message || tx('保存发布信息失败', 'Failed to save publication details'))
+      return false
     } finally {
       setSharingWorking(false)
     }
@@ -671,7 +691,7 @@ export default function TeamLibraryPage() {
         desc: tx('归属当前团队的 Skill，不会和成员个人 Skill 混在一起。', 'Skills owned by this team, separate from personal skills.'),
         count: childCount(skillsRoot),
         icon: 'icon-stack',
-        action: <button className="btn btn-sm" type="button" onClick={() => setTreePath('/skills')}>{tx('打开', 'Open')}</button>,
+        action: <button className="btn btn-sm" type="button" onClick={() => { setTreePath('/skills'); setTeamView('files') }}>{tx('打开', 'Open')}</button>,
       },
       {
         title: 'MCP',
@@ -736,6 +756,7 @@ export default function TeamLibraryPage() {
       setNewTeamName('')
       setNewTeamSlug('')
       setNewTeamDescription('')
+      closeTeamDialog()
       setMessage(tx('团队已创建。', 'Team created.'))
       await loadTeamData(team)
     } catch (err: any) {
@@ -794,6 +815,7 @@ export default function TeamLibraryPage() {
       const member = await api.addTeamMember(selectedTeam.id, slug, memberRole)
       setMembers((current) => [member, ...current.filter((item) => item.user_id !== member.user_id)])
       setMemberSlug('')
+      closeTeamDialog()
       setMessage(tx('成员已加入团队。', 'Member added to the team.'))
     } catch (err: any) {
       setError(teamMemberErrorMessage(err, tx))
@@ -836,6 +858,7 @@ export default function TeamLibraryPage() {
       setNewAgentSlug('')
       setNewAgentDescription('')
       setNewAgentInstructions('')
+      closeTeamDialog()
       setMessage(selectedTeam.can_manage_members
         ? tx('Agent 配方已发布给团队。', 'Agent recipe published to the team.')
         : tx('Agent 配方已保存为草稿，等待管理员发布。', 'Agent recipe saved as draft for an admin to publish.'))
@@ -994,6 +1017,7 @@ export default function TeamLibraryPage() {
       setNewMcpEnv('')
       setNewMcpURL('')
       setNewMcpHeaders('')
+      closeTeamDialog()
       setMessage(selectedTeam.can_manage_members
         ? tx('团队 MCP 已发布。', 'Team MCP configuration published.')
         : tx('团队 MCP 已保存为草稿，等待管理员发布。', 'Team MCP saved as draft for an admin to publish.'))
@@ -1075,8 +1099,8 @@ export default function TeamLibraryPage() {
   const isLocalTeamSimulation = !currentUser || !currentUser.slug || currentUser.slug === 'local'
 
   return (
-    <div className="materials-page" style={{ paddingLeft: '24px', paddingRight: '24px', margin: '0 auto', maxWidth: '1240px' }}>
-      <section className="materials-hero">
+    <div className="materials-page team-library-page">
+      <section className="materials-hero team-library-hero">
         <div className="materials-hero-copy">
           <div className="materials-kicker">{tx('团队资料', 'Team Library')}</div>
           <h2 className="materials-title">{tx('团队 AI 资料库', 'Team AI Library')}</h2>
@@ -1102,6 +1126,9 @@ export default function TeamLibraryPage() {
           <button className="btn btn-primary" type="button" onClick={handleCreateTemplate} disabled={working || !selectedTeam}>
             {working ? tx('处理中...', 'Working...') : tx('创建目录模板', 'Create folders')}
           </button>
+          <button className="btn" type="button" onClick={() => setTeamDialog('create-team')}>
+            {tx('新团队', 'New team')}
+          </button>
         </div>
       </section>
 
@@ -1116,13 +1143,22 @@ export default function TeamLibraryPage() {
         </div>
       )}
 
-      <nav className="team-page-nav" aria-label={tx('团队页导航', 'Team page navigation')}>
-        {sectionLinks.map((item) => (
-          <a key={item.href} href={item.href}>{item.label}</a>
+      <nav className="team-page-tabs" aria-label={tx('团队页导航', 'Team page navigation')}>
+        {teamTabs.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            className={teamView === item.id ? 'is-active' : ''}
+            aria-current={teamView === item.id ? 'page' : undefined}
+            onClick={() => setTeamView(item.id)}
+          >
+            {item.label}
+          </button>
         ))}
       </nav>
 
-      {selectedTeam && (
+      <div className="team-tab-panel" data-view={teamView}>
+      {teamView === 'overview' && selectedTeam && (
         <section className="team-overview-panel" id="team-overview">
           <div>
             <span>{tx('当前团队', 'Current team')}</span>
@@ -1141,6 +1177,7 @@ export default function TeamLibraryPage() {
         </section>
       )}
 
+      {teamView === 'overview' && (
       <section className="materials-section" id="team-setup">
         <div className="materials-section-head">
           <div>
@@ -1151,204 +1188,163 @@ export default function TeamLibraryPage() {
           </div>
         </div>
 
-        <div className="materials-grid materials-grid-wide">
+        <div className="team-compact-list team-list">
           {teams.map((team) => (
-            <MaterialsTile
+            <button
               key={team.id}
-              iconClassName="icon-stack"
-              title={team.name}
-              subtitle={`/${team.slug}`}
-              description={team.description || tx('团队空间', 'Team space')}
-              selected={selectedTeam?.id === team.id}
-              footerStart={roleLabel(team.role, locale)}
-              footerEnd={team.can_write ? tx('可写入', 'Can write') : tx('只读', 'Read only')}
-              onOpen={() => setSelectedTeamID(team.id)}
-            />
+              className={`team-compact-row team-select-row${selectedTeam?.id === team.id ? ' is-selected' : ''}`}
+              type="button"
+              onClick={() => setSelectedTeamID(team.id)}
+            >
+              <span className="materials-tile-icon icon-stack" aria-hidden="true" />
+              <div>
+                <strong>{team.name}</strong>
+                <small>/{team.slug}{team.description ? ` / ${team.description}` : ''}</small>
+              </div>
+              <span className="team-row-meta">
+                <span className="materials-tile-pill">{roleLabel(team.role, locale)}</span>
+                <span className="materials-tile-pill">{team.can_write ? tx('可写入', 'Can write') : tx('只读', 'Read only')}</span>
+              </span>
+            </button>
           ))}
-          <MaterialsTile
-            className="materials-tile-form"
-            iconClassName="icon-file"
-            title={tx('新团队', 'New team')}
-            subtitle={tx('独立资料空间', 'Separate space')}
-            description={tx('适合部门、项目组或客户项目。', 'For departments, project groups, or client work.')}
-            footerStart={tx('Owner 自动设为当前账号', 'Current account becomes owner')}
-          >
-            <div className="form-grid">
-              <input className="input" placeholder={tx('团队名称', 'Team name')} value={newTeamName} onChange={(event) => {
-                setNewTeamName(event.target.value)
-                if (!newTeamSlug) setNewTeamSlug(normalizeSlugInput(event.target.value))
-              }} />
-              <input className="input" placeholder="slug" value={newTeamSlug} onChange={(event) => setNewTeamSlug(normalizeSlugInput(event.target.value))} />
-              <input className="input" placeholder={tx('描述', 'Description')} value={newTeamDescription} onChange={(event) => setNewTeamDescription(event.target.value)} />
-              <button className="btn btn-sm" type="button" disabled={working} onClick={handleCreateTeam}>{tx('创建', 'Create')}</button>
-            </div>
-          </MaterialsTile>
+          {teams.length === 0 ? (
+            <button className="team-action-row" type="button" onClick={() => setTeamDialog('create-team')}>
+              <span>{tx('还没有团队', 'No teams yet')}</span>
+              <strong>{tx('创建第一个团队资料库', 'Create the first team library')}</strong>
+            </button>
+          ) : null}
         </div>
       </section>
+      )}
 
-      {selectedTeam && (
+      {teamView === 'overview' && selectedTeam && (
         <section className="materials-section">
           <div className="materials-section-head">
             <div>
-            <h3 className="materials-section-title">{tx('成员', 'Members')}</h3>
+              <h3 className="materials-section-title">{tx('成员', 'Members')}</h3>
               <p className="materials-section-copy">
                 {tx('Owner/Admin 管理成员并处理审查；Member 可写团队资料并提交审查；Viewer 只读。', 'Owners/Admins manage members and reviews; Members can write team files and request reviews; Viewers are read-only.')}
               </p>
             </div>
+            {selectedTeam.can_manage_members ? (
+              <div className="materials-actions">
+                <button className="btn btn-sm btn-primary" type="button" onClick={() => setTeamDialog('add-member')}>
+                  {tx('添加成员', 'Add member')}
+                </button>
+              </div>
+            ) : null}
           </div>
 
-          <div className="materials-grid materials-grid-wide">
+          <div className="team-compact-list">
             {members.map((member) => (
-              <MaterialsTile
+              <div
                 key={member.user_id}
-                iconClassName="icon-file"
-                title={member.display_name || member.user_slug}
-                subtitle={`@${member.user_slug}`}
-                description={member.email}
-                footerStart={roleLabel(member.role, locale)}
-              />
-            ))}
-            {selectedTeam.can_manage_members && (
-              <MaterialsTile
-                className="materials-tile-form"
-                iconClassName="icon-file"
-                title={tx('添加成员', 'Add member')}
-                subtitle={tx('通过用户 slug 添加', 'Add by user slug')}
-                description={tx('被添加的同事仍保留自己的个人空间。', 'The teammate keeps their personal space.')}
+                className="team-compact-row"
               >
-                <div className="form-grid">
-                  <input className="input" placeholder={tx('用户 slug', 'User slug')} value={memberSlug} onChange={(event) => setMemberSlug(event.target.value)} />
-                  <CustomSelect
-                    value={memberRole}
-                    onChange={(val) => setMemberRole(val as TeamRole)}
-                    options={[
-                      { value: 'member', label: roleLabel('member', locale) },
-                      { value: 'admin', label: roleLabel('admin', locale) },
-                      { value: 'viewer', label: roleLabel('viewer', locale) },
-                    ]}
-                    ariaLabel={tx('选择角色', 'Select role')}
-                  />
-                  <button className="btn btn-sm" type="button" disabled={working || !memberSlug.trim()} onClick={handleAddMember}>{tx('添加', 'Add')}</button>
+                <span className="materials-tile-icon icon-file" aria-hidden="true" />
+                <div>
+                  <strong>{member.display_name || member.user_slug}</strong>
+                  <small>@{member.user_slug}{member.email ? ` / ${member.email}` : ''}</small>
                 </div>
-              </MaterialsTile>
-            )}
+                <span className="materials-tile-pill">{roleLabel(member.role, locale)}</span>
+              </div>
+            ))}
+            {members.length === 0 ? (
+              <div className="team-admin-empty">{tx('暂无成员。', 'No members yet.')}</div>
+            ) : null}
           </div>
         </section>
       )}
 
-      {selectedTeam && (
-        <section className="materials-section" id="team-assets">
-          <div className="materials-section-head">
-            <div>
-              <h3 className="materials-section-title">{tx('资料类型', 'Library Types')}</h3>
-              <p className="materials-section-copy">
-                {tx('当前查看的是所选团队的独立 Hub 空间。', 'You are viewing the selected team-owned Hub space.')}
-              </p>
+      {teamView === 'assets' && selectedTeam && (
+        <section className="team-assets-workspace" id="team-assets">
+          <aside className="team-assets-rail" aria-label={tx('团队资料目录', 'Team library')}>
+            <div className="team-assets-rail-head">
+              <strong>{tx('团队资料', 'Team library')}</strong>
+              <span>{selectedTeam.name}</span>
             </div>
-          </div>
-
-          <div className="materials-grid materials-grid-wide">
-            {categories.map((category) => (
-              <MaterialsTile
-                key={category.subtitle}
-                iconClassName={category.icon}
-                title={category.title}
-                subtitle={category.subtitle}
-                description={category.desc}
-                footerStart={loading ? tx('读取中', 'Loading') : formatCategoryCount(category.count, locale)}
-                actions={category.action}
-              />
-            ))}
-          </div>
-        </section>
-      )}
-
-      {selectedTeam && (
-        <section className="materials-section" id="team-management">
-          <div className="materials-section-head">
-            <div>
-              <h3 className="materials-section-title">{tx('团队共享管理', 'Team Sharing Management')}</h3>
-              <p className="materials-section-copy">
-                {tx('查看团队 Skill 审查记录、成员订阅状态和更新提醒。', 'Review team skill history, member subscription status, and update notices.')}
-              </p>
-            </div>
-          </div>
-
-          <div className="materials-grid materials-grid-wide">
-            {selectedTeam.can_manage_members ? (
-              <MaterialsTile
-                iconClassName="icon-stack"
-                title={tx('订阅报表', 'Subscription Report')}
-                subtitle={tx(`${subscriptionSummary.skills} 个团队 Skill`, `${subscriptionSummary.skills} team skills`)}
-                description={tx('按成员查看哪些团队 Skill 有个人副本、未安装或需要更新。', 'See which team skills have personal copies, are missing, or need updates by member.')}
-                footerStart={tx(`个人副本 ${subscriptionSummary.personalCopies}`, `${subscriptionSummary.personalCopies} personal copies`)}
-                footerEnd={tx(`待更新 ${subscriptionSummary.updates}`, `${subscriptionSummary.updates} updates`)}
-                actions={(
-                  <button className="btn btn-sm btn-primary" type="button" disabled={sharingWorking} onClick={() => { void handleCheckTeamSkillSubscriptions() }}>
-                    {sharingWorking ? tx('检查中...', 'Checking...') : tx('检查更新', 'Check updates')}
-                  </button>
-                )}
-              >
-                <div className="team-admin-list">
-                  {(skillSubscriptionReport?.skills || []).filter((skill) => skill.update_available_count > 0 || skill.source_missing_count > 0 || skill.not_installed_count > 0).slice(0, 4).map((skill) => (
-                    <div key={skill.skill_path} className="team-admin-row">
-                      <span>{skill.skill_path}</span>
-                      <small>{tx(`未安装 ${skill.not_installed_count} / 更新 ${skill.update_available_count}`, `${skill.not_installed_count} missing / ${skill.update_available_count} updates`)}</small>
-                    </div>
-                  ))}
-                  {!skillSubscriptionReport?.skills?.length ? (
-                    <div className="team-admin-empty">{tx('暂无订阅数据。', 'No subscription data yet.')}</div>
-                  ) : null}
-                </div>
-              </MaterialsTile>
-            ) : null}
-
-            {selectedTeam.can_manage_members ? (
-              <MaterialsTile
-                iconClassName="icon-file"
-                title={tx('更新通知', 'Update Notices')}
-                subtitle={tx(`最近检查：${formatDateTime(skillUpdateNotificationInfo?.last_checked_at || skillUpdateNotifications[0]?.created_at, locale)}`, `Last checked: ${formatDateTime(skillUpdateNotificationInfo?.last_checked_at || skillUpdateNotifications[0]?.created_at, locale)}`)}
-                description={tx('检查结果会保存到团队 Hub，供管理员后续处理。', 'Check results are saved in the team Hub for admins to review.')}
-                footerStart={tx(`${skillUpdateNotifications.length} 条提醒`, `${skillUpdateNotifications.length} notices`)}
-              >
-                <div className="team-admin-list">
-                  {skillUpdateNotifications.slice(0, 4).map((item) => (
-                    <div key={item.id} className="team-admin-row">
-                      <span>{item.skill_path}</span>
-                      <small>{item.display_name || item.user_slug} · {item.status}</small>
-                    </div>
-                  ))}
-                  {skillUpdateNotifications.length === 0 ? (
-                    <div className="team-admin-empty">{tx('暂无更新提醒。', 'No update notices yet.')}</div>
-                  ) : null}
-                </div>
-              </MaterialsTile>
-            ) : null}
-
-            <MaterialsTile
-              iconClassName="icon-file"
-              title={tx('审查历史', 'Review History')}
-              subtitle={tx(`${skillReviewHistory.length} 条记录`, `${skillReviewHistory.length} records`)}
-              description={tx('记录 Skill 和 Agent 配方的提交、通过、要求修改、发布和归档。', 'Records review requests, approvals, requested changes, publishing, and archiving for skills and agent recipes.')}
-              footerStart={tx(`提交审查 ${reviewEventCount}`, `${reviewEventCount} review requests`)}
-            >
-              <div className="team-admin-list">
-                {skillReviewHistory.slice(0, 5).map((event) => (
-                  <div key={event.id} className="team-admin-row">
-                    <span>{event.skill_path || event.agent_slug || event.asset_type}</span>
-                    <small>{reviewActionLabel(event.action, locale)} · {roleLabel(event.actor_role as TeamRole, locale)} · {formatDateTime(event.created_at, locale)}</small>
+            <div className="team-assets-rail-list">
+              {categories.map((category) => (
+                <div key={category.subtitle} className="team-assets-rail-item">
+                  <span className={`materials-tile-icon ${category.icon}`} aria-hidden="true" />
+                  <div>
+                    <strong>{category.title}</strong>
+                    <small>{category.subtitle}</small>
                   </div>
-                ))}
-                {skillReviewHistory.length === 0 ? (
-                  <div className="team-admin-empty">{tx('暂无审查记录。', 'No review history yet.')}</div>
+                  <em>{loading ? tx('读取中', 'Loading') : formatCategoryCount(category.count, locale)}</em>
+                  {category.action}
+                </div>
+              ))}
+            </div>
+          </aside>
+
+          <div className="team-assets-main">
+            <div className="team-assets-main-head">
+              <div>
+                <h3>{tx('共享 Skill 与 MCP', 'Shared Skills and MCP')}</h3>
+                <p>{tx('团队协作的主路径只保留 Skill、MCP、本机同步和审查状态。其他资料放在左侧目录里。', 'The team workflow focuses on Skill, MCP, local sync, and review state. Other material stays in the directory rail.')}</p>
+              </div>
+              <div className="team-assets-head-actions">
+                <Link className="btn btn-sm" to={selectedTeam ? `/data/skills?team=${encodeURIComponent(selectedTeam.id)}` : '/data/skills'}>
+                  {tx('管理 Skill', 'Manage skills')}
+                </Link>
+                {selectedTeam.can_write ? (
+                  <button className="btn btn-sm btn-primary" type="button" onClick={() => setTeamDialog('create-mcp')}>
+                    {tx('新 MCP', 'New MCP')}
+                  </button>
                 ) : null}
               </div>
-            </MaterialsTile>
+            </div>
+
+            <div className="team-assets-summary-grid">
+              <div className="team-assets-summary-item is-primary">
+                <span>Skill</span>
+                <strong>{childCount(skillsRoot)}</strong>
+                <p>{tx(`${skillPublications.length} 个共享发布，${subscriptions.length} 个已装配`, `${skillPublications.length} shared publications, ${subscriptions.length} installed`)}</p>
+              </div>
+              <div className="team-assets-summary-item">
+                <span>MCP</span>
+                <strong>{teamMcps.length}</strong>
+                <p>{tx('发布后可同步到 Codex 和 Claude Code。', 'Published items can sync to Codex and Claude Code.')}</p>
+              </div>
+              <div className="team-assets-summary-item">
+                <span>{tx('待审查', 'Review')}</span>
+                <strong>{reviewEventCount}</strong>
+                <p>{skillReviewHistory[0]
+                  ? `${skillReviewHistory[0].skill_path || skillReviewHistory[0].agent_slug || skillReviewHistory[0].asset_type} / ${reviewActionLabel(skillReviewHistory[0].action, locale)}`
+                  : tx('暂无审查记录。', 'No review history yet.')}
+                </p>
+              </div>
+            </div>
           </div>
+
+          <aside className="team-assets-side">
+            <div className="team-assets-side-block">
+              <strong>{tx('本机同步', 'Local sync')}</strong>
+              <p>{tx('刷新后，已发布的团队 MCP 和 Skill 会进入本机工具链。', 'After refresh, published team MCP and Skills enter the local toolchain.')}</p>
+              <div className="team-assets-side-actions">
+                <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'codex'} onClick={() => { void handleRefreshLocalPlatform('codex') }}>
+                  {platformRefreshBusy === 'codex' ? tx('刷新中...', 'Refreshing...') : 'Codex'}
+                </button>
+                <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'claude-code'} onClick={() => { void handleRefreshLocalPlatform('claude-code') }}>
+                  {platformRefreshBusy === 'claude-code' ? tx('刷新中...', 'Refreshing...') : 'Claude Code'}
+                </button>
+              </div>
+            </div>
+            {selectedTeam.can_manage_members ? (
+              <div className="team-assets-side-block">
+                <strong>{tx('订阅更新', 'Subscription updates')}</strong>
+                <p>{tx(`待更新 ${subscriptionSummary.updates}，未安装 ${subscriptionSummary.notInstalled}，提醒 ${skillUpdateNotifications.length}。`, `${subscriptionSummary.updates} updates, ${subscriptionSummary.notInstalled} missing, ${skillUpdateNotifications.length} notices.`)}</p>
+                <button className="btn btn-sm btn-primary" type="button" disabled={sharingWorking} onClick={() => { void handleCheckTeamSkillSubscriptions() }}>
+                  {sharingWorking ? tx('检查中...', 'Checking...') : tx('检查更新', 'Check updates')}
+                </button>
+              </div>
+            ) : null}
+          </aside>
         </section>
       )}
 
-      {selectedTeam && (
+      {teamView === 'sync' && selectedTeam && (
         <section className="materials-section" id="team-sync">
           <div className="materials-section-head">
             <div>
@@ -1502,8 +1498,8 @@ export default function TeamLibraryPage() {
         </section>
       )}
 
-      {selectedTeam && (
-        <section className="materials-section">
+      {teamView === 'assets' && selectedTeam && (
+        <section className="materials-section team-assets-list-section">
           <div className="materials-section-head">
             <div>
               <h3 className="materials-section-title">{tx('团队 Skills 共享', 'Team Skills Sharing')}</h3>
@@ -1511,9 +1507,14 @@ export default function TeamLibraryPage() {
                 {tx('团队内共享的 AI 技能 (Skills) 列表。管理员可设置全员共享与审核推荐，成员可一键快速装配到本地。', 'Shared AI skills in the team. Admins can share to all and review recommendations, and members can install with one click.')}
               </p>
             </div>
+            <div className="materials-actions">
+              <Link className="btn btn-sm" to={selectedTeam ? `/data/skills?team=${encodeURIComponent(selectedTeam.id)}` : '/data/skills'}>
+                {tx('管理 Skill', 'Manage skills')}
+              </Link>
+            </div>
           </div>
 
-          <div className="materials-grid materials-grid-wide">
+          <div className="team-asset-list team-skill-row-list">
             {skillPublications.map((pub) => {
               const sub = subscriptions.find(s => s.source_path === pub.skill_path)
               const isInstalled = !!sub
@@ -1526,35 +1527,32 @@ export default function TeamLibraryPage() {
               }
 
               return (
-                <MaterialsTile
-                  key={pub.skill_path}
-                  iconClassName="icon-stack"
-                  title={pub.skill_path.replace(/^\/skills\//, '')}
-                  subtitle={pub.skill_path}
-                  description={pub.release_note || pub.note || tx('团队共享技能', 'Shared team skill')}
-                  footerStart={
-                    <div className="team-skill-publication-meta">
-                      <span className={`materials-tile-pill team-skill-publication-pill is-${pub.status}`}>
-                        {publicationStatusLabel(pub, tx)}
+                <div key={pub.skill_path} className="team-asset-row team-skill-row">
+                  <span className="materials-tile-icon icon-stack" aria-hidden="true" />
+                  <div className="team-asset-row-main">
+                    <strong>{pub.skill_path.replace(/^\/skills\//, '')}</strong>
+                    <small>{pub.skill_path}</small>
+                    <p>{pub.release_note || pub.note || tx('团队共享技能', 'Shared team skill')}</p>
+                  </div>
+                  <div className="team-asset-row-meta">
+                    <span className={`materials-tile-pill team-skill-publication-pill is-${pub.status}`}>
+                      {publicationStatusLabel(pub, tx)}
+                    </span>
+                    {reviewLabel ? (
+                      <span className={`materials-tile-pill team-skill-review-pill is-${pub.review_status || 'none'}`}>
+                        {reviewLabel}
                       </span>
-                      {reviewLabel ? (
-                        <span className={`materials-tile-pill team-skill-review-pill is-${pub.review_status || 'none'}`}>
-                          {reviewLabel}
-                        </span>
-                      ) : null}
-                      {pub.version ? (
-                        <span className="materials-tile-pill team-skill-version-pill">{pub.version}</span>
-                      ) : null}
-                      {isInstalled ? (
-                        <span className="materials-tile-pill team-skill-install-pill is-installed">{tx('已装配', 'Installed')}</span>
-                      ) : (
-                        <span className="materials-tile-pill team-skill-install-pill is-not-installed">{tx('未装配', 'Not Installed')}</span>
-                      )}
-                    </div>
-                  }
-                  footerEnd={
-                    selectedTeam.can_manage_members ? (
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: '#94a3b8' }}>
+                    ) : null}
+                    {pub.version ? (
+                      <span className="materials-tile-pill team-skill-version-pill">{pub.version}</span>
+                    ) : null}
+                    {isInstalled ? (
+                      <span className="materials-tile-pill team-skill-install-pill is-installed">{tx('已装配', 'Installed')}</span>
+                    ) : (
+                      <span className="materials-tile-pill team-skill-install-pill is-not-installed">{tx('未装配', 'Not Installed')}</span>
+                    )}
+                    {selectedTeam.can_manage_members ? (
+                      <label className="team-inline-toggle">
                         <input
                           type="checkbox"
                           checked={pub.visibility === 'team'}
@@ -1579,61 +1577,125 @@ export default function TeamLibraryPage() {
                       </label>
                     ) : (
                       pub.visibility === 'team' ? (
-                        <span style={{ fontSize: '12px', color: '#10b981' }}>{tx('全员可见', 'Visible to all')}</span>
+                        <span className="team-inline-status is-visible">{tx('全员可见', 'Visible to all')}</span>
                       ) : pub.review_status === 'requested' ? (
-                        <span style={{ fontSize: '12px', color: '#64748b' }}>{tx('待审查', 'Review requested')}</span>
+                        <span className="team-inline-status">{tx('待审查', 'Review requested')}</span>
                       ) : (
-                        <span style={{ fontSize: '12px', color: '#94a3b8' }}>{tx('推荐中', 'Recommended')}</span>
+                        <span className="team-inline-status">{tx('推荐中', 'Recommended')}</span>
                       )
-                    )
-                  }
-                  actions={
-                    <>
-                      {!isInstalled ? (
-                        <button
-                          className="btn btn-sm btn-primary"
-                          type="button"
-                          disabled={sharingWorking}
-                          onClick={async () => {
-                            setSharingWorking(true)
-                            try {
-                              await api.copyTeamSkillToPersonal(selectedTeam.id, pub.skill_path)
-                              setMessage(tx('技能装配成功！', 'Skill installed successfully!'))
-                              const res = await api.getTeamSkillSubscriptions(selectedTeam.id)
-                              setSubscriptions(res.subscriptions || [])
-                            } catch (err: any) {
-                              setError(err?.message || tx('装配技能失败', 'Failed to install skill'))
-                            } finally {
-                              setSharingWorking(false)
-                            }
-                          }}
-                        >
-                          + {tx('快速装配', 'Install')}
-                        </button>
-                      ) : hasUpdate ? (
-                        <button
-                          className="btn btn-sm btn-primary"
-                          type="button"
-                          disabled={sharingWorking}
-                          onClick={async () => {
-                            setSharingWorking(true)
-                            try {
-                              await api.copyTeamSkillToPersonal(selectedTeam.id, pub.skill_path, undefined, true)
-                              setMessage(tx('技能已同步到最新版！', 'Skill updated successfully!'))
-                              const res = await api.getTeamSkillSubscriptions(selectedTeam.id)
-                              setSubscriptions(res.subscriptions || [])
-                            } catch (err: any) {
-                              setError(err?.message || tx('更新同步失败', 'Failed to update skill'))
-                            } finally {
-                              setSharingWorking(false)
-                            }
-                          }}
-                        >
-                          {tx('一键同步', 'Sync Update')}
-                        </button>
-                      ) : null}
+                    )}
+                  </div>
+                  <div className="team-asset-row-actions">
+                    {selectedTeam.can_manage_members ? (
+                      <button
+                        className="btn btn-sm"
+                        type="button"
+                        onClick={() => openSkillPublicationDialog(pub.skill_path)}
+                      >
+                        {tx('发布信息', 'Details')}
+                      </button>
+                    ) : null}
+                    {!isInstalled ? (
+                      <button
+                        className="btn btn-sm btn-primary"
+                        type="button"
+                        disabled={sharingWorking}
+                        onClick={async () => {
+                          setSharingWorking(true)
+                          try {
+                            await api.copyTeamSkillToPersonal(selectedTeam.id, pub.skill_path)
+                            setMessage(tx('技能装配成功！', 'Skill installed successfully!'))
+                            const res = await api.getTeamSkillSubscriptions(selectedTeam.id)
+                            setSubscriptions(res.subscriptions || [])
+                          } catch (err: any) {
+                            setError(err?.message || tx('装配技能失败', 'Failed to install skill'))
+                          } finally {
+                            setSharingWorking(false)
+                          }
+                        }}
+                      >
+                        + {tx('快速装配', 'Install')}
+                      </button>
+                    ) : hasUpdate ? (
+                      <button
+                        className="btn btn-sm btn-primary"
+                        type="button"
+                        disabled={sharingWorking}
+                        onClick={async () => {
+                          setSharingWorking(true)
+                          try {
+                            await api.copyTeamSkillToPersonal(selectedTeam.id, pub.skill_path, undefined, true)
+                            setMessage(tx('技能已同步到最新版！', 'Skill updated successfully!'))
+                            const res = await api.getTeamSkillSubscriptions(selectedTeam.id)
+                            setSubscriptions(res.subscriptions || [])
+                          } catch (err: any) {
+                            setError(err?.message || tx('更新同步失败', 'Failed to update skill'))
+                          } finally {
+                            setSharingWorking(false)
+                          }
+                        }}
+                      >
+                        {tx('一键同步', 'Sync Update')}
+                      </button>
+                    ) : null}
 
-                      {(!selectedTeam.can_manage_members && pub.review_status !== 'requested' && pub.visibility !== 'team') && (
+                    {(!selectedTeam.can_manage_members && pub.review_status !== 'requested' && pub.visibility !== 'team') && (
+                      <button
+                        className="btn btn-sm"
+                        type="button"
+                        disabled={sharingWorking}
+                        onClick={async () => {
+                          setSharingWorking(true)
+                          try {
+                            await api.requestTeamSkillReview(selectedTeam.id, {
+                              asset_type: 'skill',
+                              skill_path: pub.skill_path,
+                              note: 'Recommended by team member.'
+                            })
+                            setMessage(tx('推荐成功，已提交管理员审核！', 'Recommended successfully, submitted to admin for review.'))
+                            await refreshSkillPublications()
+                          } catch (err: any) {
+                            setError(err?.message || tx('提交推荐失败', 'Failed to recommend'))
+                          } finally {
+                            setSharingWorking(false)
+                          }
+                        }}
+                      >
+                        {tx('推荐', 'Recommend')}
+                      </button>
+                    )}
+
+                    {selectedTeam.can_manage_members && pub.review_status === 'requested' ? (
+                      <>
+                        <button
+                          className="btn btn-sm btn-primary"
+                          type="button"
+                          disabled={sharingWorking}
+                          onClick={async () => {
+                            setSharingWorking(true)
+                            try {
+                              await api.resolveTeamSkillReview(selectedTeam.id, {
+                                asset_type: 'skill',
+                                skill_path: pub.skill_path,
+                                decision: 'approved',
+                                note: 'Approved by admin.'
+                              })
+                              await api.saveTeamSkillPublication(selectedTeam.id, publicationSavePayload(pub, {
+                                status: 'published',
+                                visibility: 'team',
+                                ...draft,
+                              }))
+                              setMessage(tx('已通过审查并全员共享！', 'Approved and shared with all!'))
+                              await refreshSkillPublications()
+                            } catch (err: any) {
+                              setError(err?.message || tx('审核操作失败', 'Failed to resolve review'))
+                            } finally {
+                              setSharingWorking(false)
+                            }
+                          }}
+                        >
+                          {tx('通过审查', 'Approve')}
+                        </button>
                         <button
                           className="btn btn-sm"
                           type="button"
@@ -1641,123 +1703,31 @@ export default function TeamLibraryPage() {
                           onClick={async () => {
                             setSharingWorking(true)
                             try {
-                              await api.requestTeamSkillReview(selectedTeam.id, {
+                              await api.resolveTeamSkillReview(selectedTeam.id, {
                                 asset_type: 'skill',
                                 skill_path: pub.skill_path,
-                                note: 'Recommended by team member.'
+                                decision: 'changes_requested',
+                                note: 'Changes requested by admin.'
                               })
-                              setMessage(tx('推荐成功，已提交管理员审核！', 'Recommended successfully, submitted to admin for review.'))
+                              setMessage(tx('已要求修改。', 'Changes requested.'))
                               await refreshSkillPublications()
                             } catch (err: any) {
-                              setError(err?.message || tx('提交推荐失败', 'Failed to recommend'))
+                              setError(err?.message || tx('审核操作失败', 'Failed to resolve review'))
                             } finally {
                               setSharingWorking(false)
                             }
                           }}
                         >
-                          {tx('推荐', 'Recommend')}
-                        </button>
-                      )}
-
-                      {selectedTeam.can_manage_members && pub.review_status === 'requested' ? (
-                        <>
-                          <button
-                            className="btn btn-sm btn-primary"
-                            type="button"
-                            disabled={sharingWorking}
-                            onClick={async () => {
-                              setSharingWorking(true)
-                              try {
-                                await api.resolveTeamSkillReview(selectedTeam.id, {
-                                  asset_type: 'skill',
-                                  skill_path: pub.skill_path,
-                                  decision: 'approved',
-                                  note: 'Approved by admin.'
-                                })
-                                await api.saveTeamSkillPublication(selectedTeam.id, publicationSavePayload(pub, {
-                                  status: 'published',
-                                  visibility: 'team',
-                                  ...draft,
-                                }))
-                                setMessage(tx('已通过审查并全员共享！', 'Approved and shared with all!'))
-                                await refreshSkillPublications()
-                              } catch (err: any) {
-                                setError(err?.message || tx('审核操作失败', 'Failed to resolve review'))
-                              } finally {
-                                setSharingWorking(false)
-                              }
-                            }}
-                          >
-                            {tx('通过审查', 'Approve')}
-                          </button>
-                          <button
-                            className="btn btn-sm"
-                            type="button"
-                            disabled={sharingWorking}
-                            onClick={async () => {
-                              setSharingWorking(true)
-                              try {
-                                await api.resolveTeamSkillReview(selectedTeam.id, {
-                                  asset_type: 'skill',
-                                  skill_path: pub.skill_path,
-                                  decision: 'changes_requested',
-                                  note: 'Changes requested by admin.'
-                                })
-                                setMessage(tx('已要求修改。', 'Changes requested.'))
-                                await refreshSkillPublications()
-                              } catch (err: any) {
-                                setError(err?.message || tx('审核操作失败', 'Failed to resolve review'))
-                              } finally {
-                                setSharingWorking(false)
-                              }
-                            }}
-                          >
-                            {tx('要求修改', 'Request Changes')}
-                          </button>
-                        </>
-                      ) : null}
-                    </>
-                  }
-                >
-                  <div className="team-skill-publication-copy">
-                    {selectedTeam.can_manage_members ? (
-                      <>
-                        <input
-                          className="input"
-                          placeholder={tx('版本，例如 v1.2.0', 'Version, e.g. v1.2.0')}
-                          value={draft.version}
-                          onChange={(event) => updateSkillPublicationDraft(pub.skill_path, 'version', event.target.value)}
-                        />
-                        <input
-                          className="input"
-                          placeholder={tx('发布说明', 'Release note')}
-                          value={draft.release_note}
-                          onChange={(event) => updateSkillPublicationDraft(pub.skill_path, 'release_note', event.target.value)}
-                        />
-                        <textarea
-                          className="input"
-                          rows={2}
-                          placeholder={tx('内部备注', 'Internal note')}
-                          value={draft.note}
-                          onChange={(event) => updateSkillPublicationDraft(pub.skill_path, 'note', event.target.value)}
-                        />
-                        <button className="btn btn-sm" type="button" disabled={sharingWorking} onClick={() => { void handleSaveSkillPublicationMeta(pub) }}>
-                          {tx('保存发布信息', 'Save publication details')}
+                          {tx('要求修改', 'Request Changes')}
                         </button>
                       </>
-                    ) : (
-                      <>
-                        <span>{tx('发布状态：', 'Publication: ')}{publicationStatusLabel(pub, tx)}</span>
-                        {pub.version ? <span>{tx('版本：', 'Version: ')}{pub.version}</span> : null}
-                        {pub.release_note ? <span>{pub.release_note}</span> : null}
-                      </>
-                    )}
+                    ) : null}
                   </div>
-                </MaterialsTile>
+                </div>
               )
             })}
             {skillPublications.length === 0 && (
-              <div style={{ gridColumn: 'span 2', textAlign: 'center', padding: '24px', color: '#64748b' }}>
+              <div className="team-admin-empty">
                 {tx('暂无团队共享的 Skills。', 'No shared team skills yet.')}
               </div>
             )}
@@ -1765,29 +1735,36 @@ export default function TeamLibraryPage() {
         </section>
       )}
 
-      {selectedTeam && (
-        <section className="materials-section">
-          <div className="materials-section-head">
-            <div>
-              <h3 className="materials-section-title">{tx('团队 Agent 配方', 'Team Agent Recipes')}</h3>
-              <p className="materials-section-copy">
-                {tx('这里保存可共享的 Agent 配置：默认 Skill、模型、权限和审批动作。Vola 保存配方，不直接运行 Agent。', 'Shared agent recipes store default skills, models, permissions, and approval notes. Vola stores the recipe and does not run the agent.')}
-              </p>
-            </div>
-          </div>
+      {teamView === 'assets' && selectedTeam && (
+        <details className="team-secondary-assets">
+          <summary>
+            <span>
+              <strong>{tx('Agent 配方', 'Agent recipes')}</strong>
+              <small>{tx(`${teamAgents.length} 个配置，作为 Skill/MCP 之外的辅助资料。`, `${teamAgents.length} recipes, kept as supporting material outside Skill/MCP.`)}</small>
+            </span>
+            {selectedTeam.can_write ? (
+              <button className="btn btn-sm" type="button" onClick={(event) => { event.preventDefault(); setTeamDialog('create-agent') }}>
+                {tx('新 Agent', 'New agent')}
+              </button>
+            ) : null}
+          </summary>
 
-          <div className="materials-grid materials-grid-wide">
+          <div className="team-asset-list team-secondary-list">
             {teamAgents.map((agent) => (
-              <MaterialsTile
+              <div
                 key={agent.slug}
-                iconClassName="icon-device"
-                title={agent.name}
-                subtitle={`/${agent.slug}`}
-                description={agent.description || agent.instructions || tx('团队 Agent 配方', 'Team agent recipe')}
-                footerStart={agentStatusLabel(agent.status, agent.visibility, locale)}
-                footerEnd={
-                  selectedTeam.can_manage_members ? (
-                    <label style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '12px', color: '#94a3b8' }}>
+                className="team-asset-row"
+              >
+                <span className="materials-tile-icon icon-device" aria-hidden="true" />
+                <div className="team-asset-row-main">
+                  <strong>{agent.name}</strong>
+                  <small>/{agent.slug}</small>
+                  <p>{agent.description || agent.instructions || tx('团队 Agent 配方', 'Team agent recipe')}</p>
+                </div>
+                <div className="team-asset-row-meta">
+                  <span className="materials-tile-pill">{agentStatusLabel(agent.status, agent.visibility, locale)}</span>
+                  {selectedTeam.can_manage_members ? (
+                    <label className="team-inline-toggle">
                       <input
                         type="checkbox"
                         checked={agent.visibility === 'team'}
@@ -1823,101 +1800,79 @@ export default function TeamLibraryPage() {
                     </label>
                   ) : (
                     agent.visibility === 'team' ? (
-                      <span style={{ fontSize: '12px', color: '#10b981' }}>{tx('全员可见', 'Visible to all')}</span>
+                      <span className="team-inline-status is-visible">{tx('全员可见', 'Visible to all')}</span>
                     ) : agent.review_status === 'requested' ? (
-                      <span style={{ fontSize: '12px', color: '#64748b' }}>{tx('待审查', 'Review requested')}</span>
+                      <span className="team-inline-status">{tx('待审查', 'Review requested')}</span>
                     ) : (
-                      <span style={{ fontSize: '12px', color: '#94a3b8' }}>{tx('推荐中', 'Recommended')}</span>
+                      <span className="team-inline-status">{tx('推荐中', 'Recommended')}</span>
                     )
-                  )
-                }
-                actions={(
-                  <>
-                    {agent.status === 'published' && agent.visibility === 'team' ? (
-                      <button className="btn btn-sm" type="button" disabled={installingAgentSlug === agent.slug} onClick={() => { void handleInstallAgent(agent) }}>
-                        {installingAgentSlug === agent.slug ? tx('安装中...', 'Installing...') : `+ ${tx('快速装配', 'Install')}`}
+                  )}
+                </div>
+                <div className="team-asset-row-actions">
+                  {agent.status === 'published' && agent.visibility === 'team' ? (
+                    <button className="btn btn-sm" type="button" disabled={installingAgentSlug === agent.slug} onClick={() => { void handleInstallAgent(agent) }}>
+                      {installingAgentSlug === agent.slug ? tx('安装中...', 'Installing...') : `+ ${tx('快速装配', 'Install')}`}
+                    </button>
+                  ) : null}
+                  {selectedTeam.can_write && !selectedTeam.can_manage_members && agent.review_status !== 'requested' && agent.visibility !== 'team' ? (
+                    <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={async () => {
+                      setAgentWorking(true)
+                      try {
+                        await api.requestTeamSkillReview(selectedTeam.id, {
+                          asset_type: 'agent',
+                          agent_slug: agent.slug,
+                          note: 'Recommended by team member.'
+                        })
+                        setMessage(tx('推荐成功，已提交管理员审核！', 'Recommended successfully, submitted to admin for review.'))
+                        const res = await api.getTeamAgents(selectedTeam.id)
+                        setTeamAgents(res.agents || [])
+                      } catch (err: any) {
+                        setError(err?.message || tx('提交推荐失败', 'Failed to recommend agent'))
+                      } finally {
+                        setAgentWorking(false)
+                      }
+                    }}>
+                      {tx('推荐', 'Recommend')}
+                    </button>
+                  ) : null}
+                  {selectedTeam.can_manage_members && agent.review_status === 'requested' ? (
+                    <>
+                      <button className="btn btn-sm btn-primary" type="button" disabled={agentWorking} onClick={() => { void handleResolveAgentReview(agent, 'approved') }}>
+                        {tx('通过审查', 'Approve review')}
                       </button>
-                    ) : null}
-                    {selectedTeam.can_write && !selectedTeam.can_manage_members && agent.review_status !== 'requested' && agent.visibility !== 'team' ? (
-                      <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={async () => {
-                        setAgentWorking(true)
-                        try {
-                          await api.requestTeamSkillReview(selectedTeam.id, {
-                            asset_type: 'agent',
-                            agent_slug: agent.slug,
-                            note: 'Recommended by team member.'
-                          })
-                          setMessage(tx('推荐成功，已提交管理员审核！', 'Recommended successfully, submitted to admin for review.'))
-                          const res = await api.getTeamAgents(selectedTeam.id)
-                          setTeamAgents(res.agents || [])
-                        } catch (err: any) {
-                          setError(err?.message || tx('提交推荐失败', 'Failed to recommend agent'))
-                        } finally {
-                          setAgentWorking(false)
-                        }
-                      }}>
-                        {tx('推荐', 'Recommend')}
+                      <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={() => { void handleResolveAgentReview(agent, 'changes_requested') }}>
+                        {tx('要求修改', 'Request changes')}
                       </button>
-                    ) : null}
-                    {selectedTeam.can_manage_members && agent.review_status === 'requested' ? (
-                      <>
-                        <button className="btn btn-sm btn-primary" type="button" disabled={agentWorking} onClick={() => { void handleResolveAgentReview(agent, 'approved') }}>
-                          {tx('通过审查', 'Approve review')}
-                        </button>
-                        <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={() => { void handleResolveAgentReview(agent, 'changes_requested') }}>
-                          {tx('要求修改', 'Request changes')}
-                        </button>
-                      </>
-                    ) : null}
-                    {selectedTeam.can_manage_members ? (
-                      agent.status === 'published' && agent.visibility === 'team' ? (
-                        <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={() => { void handlePublishAgent(agent, 'draft') }}>
-                          {tx('转草稿', 'Draft')}
-                        </button>
-                      ) : (
-                        <button className="btn btn-sm btn-primary" type="button" disabled={agentWorking} onClick={() => { void handlePublishAgent(agent, 'published') }}>
-                          {tx('发布', 'Publish')}
-                        </button>
-                      )
-                    ) : null}
-                    {selectedTeam.can_manage_members && agent.status !== 'archived' ? (
+                    </>
+                  ) : null}
+                  {selectedTeam.can_manage_members ? (
+                    agent.status === 'published' && agent.visibility === 'team' ? (
+                      <button className="btn btn-sm" type="button" disabled={agentWorking} onClick={() => { void handlePublishAgent(agent, 'draft') }}>
+                        {tx('转草稿', 'Draft')}
+                      </button>
+                    ) : (
+                      <button className="btn btn-sm btn-primary" type="button" disabled={agentWorking} onClick={() => { void handlePublishAgent(agent, 'published') }}>
+                        {tx('发布', 'Publish')}
+                      </button>
+                    )
+                  ) : null}
+                  {selectedTeam.can_manage_members && agent.status !== 'archived' ? (
                       <button className="btn btn-sm materials-toolbar-control is-danger" type="button" disabled={agentWorking} onClick={() => { void handlePublishAgent(agent, 'archived') }}>
                         {tx('归档', 'Archive')}
                       </button>
                     ) : null}
-                  </>
-                )}
-              />
-            ))}
-            {selectedTeam.can_write && (
-              <MaterialsTile
-                className="materials-tile-form materials-tile-large"
-                iconClassName="icon-file"
-                title={tx('新 Agent 配方', 'New Agent Recipe')}
-                subtitle={tx('默认保存为团队资产', 'Saved as a team asset')}
-                description={tx('给 Codex、Claude、Cursor 或 Gemini CLI 复用的 Agent 说明。', 'Agent instructions reusable by Codex, Claude, Cursor, or Gemini CLI.')}
-                footerStart={selectedTeam.can_manage_members ? tx('创建后发布', 'Publish on create') : tx('创建为草稿', 'Create as draft')}
-              >
-                <div className="form-grid">
-                  <input className="input" placeholder={tx('Agent 名称', 'Agent name')} value={newAgentName} onChange={(event) => {
-                    setNewAgentName(event.target.value)
-                    if (!newAgentSlug) setNewAgentSlug(normalizeSlugInput(event.target.value))
-                  }} />
-                  <input className="input" placeholder="slug" value={newAgentSlug} onChange={(event) => setNewAgentSlug(normalizeSlugInput(event.target.value))} />
-                  <input className="input" placeholder={tx('用途说明', 'Description')} value={newAgentDescription} onChange={(event) => setNewAgentDescription(event.target.value)} />
-                  <textarea className="input" rows={4} placeholder={tx('Agent 指令、默认工作方式和审批边界', 'Agent instructions, default workflow, and approval boundaries')} value={newAgentInstructions} onChange={(event) => setNewAgentInstructions(event.target.value)} />
-                  <button className="btn btn-sm" type="button" disabled={agentWorking || !newAgentName.trim()} onClick={handleCreateAgent}>
-                    {agentWorking ? tx('保存中...', 'Saving...') : tx('保存配方', 'Save recipe')}
-                  </button>
                 </div>
-              </MaterialsTile>
-            )}
+              </div>
+            ))}
+            {teamAgents.length === 0 ? (
+              <div className="team-admin-empty">{tx('暂无团队 Agent 配方。', 'No team agent recipes yet.')}</div>
+            ) : null}
           </div>
-        </section>
+        </details>
       )}
 
-      {selectedTeam && (
-        <section className="materials-section">
+      {teamView === 'assets' && selectedTeam && (
+        <section className="materials-section team-assets-list-section">
           <div className="materials-section-head">
             <div>
               <h3 className="materials-section-title">{tx('团队共享 MCP 配置', 'Team MCP Configurations')}</h3>
@@ -1926,6 +1881,11 @@ export default function TeamLibraryPage() {
               </p>
             </div>
             <div className="materials-actions">
+              {selectedTeam.can_write ? (
+                <button className="btn btn-sm btn-primary" type="button" onClick={() => setTeamDialog('create-mcp')}>
+                  {tx('新 MCP', 'New MCP')}
+                </button>
+              ) : null}
               <button className="btn btn-sm" type="button" disabled={platformRefreshBusy === 'codex'} onClick={() => { void handleRefreshLocalPlatform('codex') }}>
                 {platformRefreshBusy === 'codex' ? tx('刷新中...', 'Refreshing...') : tx('同步到 Codex', 'Sync to Codex')}
               </button>
@@ -1935,56 +1895,31 @@ export default function TeamLibraryPage() {
             </div>
           </div>
 
-          <div className="materials-grid materials-grid-wide">
-            {teamMcps.map((mcp) => (
-              <MaterialsTile
-                key={mcp.slug}
-                iconClassName="icon-gear"
-                title={mcp.name}
-                subtitle={(
-                  <span>
-                    {`/${mcp.slug} (${mcp.transport})`}
-                    {(() => {
-                      const health = mcpHealth[`team-mcp-${mcp.slug}`];
-                      if (mcp.transport === 'http' && health) {
-                        return (
-                          <span
-                            className={`badge ${health.status === 'online' ? 'badge-success' : 'badge-danger'}`}
-                            style={{
-                              marginLeft: 8,
-                              display: 'inline-flex',
-                              alignItems: 'center',
-                              boxShadow: health.status === 'online' ? '0 0 6px rgba(40, 167, 69, 0.4)' : '0 0 6px rgba(220, 53, 69, 0.4)',
-                              animation: 'pulse 2s infinite'
-                            }}
-                          >
-                            <span
-                              style={{
-                                width: 6,
-                                height: 6,
-                                borderRadius: '50%',
-                                backgroundColor: 'currentColor',
-                                marginRight: 4,
-                                display: 'inline-block'
-                              }}
-                            />
-                            {health.status === 'online' ? `Online (${health.latency_ms}ms)` : 'Offline'}
-                          </span>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </span>
-                )}
-                description={mcp.description || (mcp.transport === 'stdio' ? `${mcp.command} ${mcp.args?.join(' ')}` : mcp.url)}
-                footerStart={agentStatusLabel(mcp.status, mcp.visibility, locale)}
-                footerEnd={mcp.review_status === 'requested'
-                  ? tx('待审查', 'Review requested')
-                  : mcp.review_status === 'rejected'
-                    ? tx('需修改', 'Changes requested')
-                    : tx('可在本地自动拉起', 'Auto-wired locally')}
-                actions={(
-                  <>
+          <div className="team-asset-list">
+            {teamMcps.map((mcp) => {
+              const health = mcpHealth[`team-mcp-${mcp.slug}`]
+              return (
+                <div key={mcp.slug} className="team-asset-row">
+                  <span className="materials-tile-icon icon-gear" aria-hidden="true" />
+                  <div className="team-asset-row-main">
+                    <strong>{mcp.name}</strong>
+                    <small>
+                      /{mcp.slug} / {mcp.transport}
+                      {mcp.transport === 'http' && health ? ` / ${health.status === 'online' ? `Online ${health.latency_ms}ms` : 'Offline'}` : ''}
+                    </small>
+                    <p>{mcp.description || (mcp.transport === 'stdio' ? `${mcp.command} ${mcp.args?.join(' ')}` : mcp.url)}</p>
+                  </div>
+                  <div className="team-asset-row-meta">
+                    <span className="materials-tile-pill">{agentStatusLabel(mcp.status, mcp.visibility, locale)}</span>
+                    <span className={`materials-tile-pill ${mcp.review_status === 'requested' ? 'team-skill-review-pill is-requested' : mcp.review_status === 'rejected' ? 'team-skill-review-pill is-changes_requested' : ''}`}>
+                      {mcp.review_status === 'requested'
+                        ? tx('待审查', 'Review requested')
+                        : mcp.review_status === 'rejected'
+                          ? tx('需修改', 'Changes requested')
+                          : tx('本机可用', 'Local ready')}
+                    </span>
+                  </div>
+                  <div className="team-asset-row-actions">
                     {selectedTeam.can_write && !selectedTeam.can_manage_members ? (
                       <button className="btn btn-sm" type="button" disabled={mcpWorking || mcp.review_status === 'requested'} onClick={() => { void handleRequestMcpReview(mcp) }}>
                         {mcp.review_status === 'requested' ? tx('待审查', 'Review requested') : tx('提交审查', 'Request review')}
@@ -2016,56 +1951,18 @@ export default function TeamLibraryPage() {
                         {tx('归档', 'Archive')}
                       </button>
                     ) : null}
-                  </>
-                )}
-              />
-            ))}
-            {selectedTeam.can_write && (
-              <MaterialsTile
-                className="materials-tile-form materials-tile-large"
-                iconClassName="icon-file"
-                title={tx('新建共享 MCP', 'New Shared MCP')}
-                subtitle={tx('默认保存为团队资产', 'Saved as a team asset')}
-                description={tx('共享数据库或本地执行命令，实现团队 AI 的统一扩展。', 'Share databases or local commands for unified AI tooling.')}
-                footerStart={selectedTeam.can_manage_members ? tx('创建后发布', 'Publish on create') : tx('创建为草稿', 'Create as draft')}
-              >
-                <div className="form-grid">
-                  <input className="input" placeholder={tx('MCP 名称', 'MCP name')} value={newMcpName} onChange={(event) => {
-                    setNewMcpName(event.target.value)
-                    if (!newMcpSlug) setNewMcpSlug(normalizeSlugInput(event.target.value))
-                  }} />
-                  <input className="input" placeholder="slug" value={newMcpSlug} onChange={(event) => setNewMcpSlug(normalizeSlugInput(event.target.value))} />
-                  <input className="input" placeholder={tx('用途说明', 'Description')} value={newMcpDescription} onChange={(event) => setNewMcpDescription(event.target.value)} />
-                  <input className="input" placeholder={tx('标签 (例如 frontend,devops - 逗号分隔)', 'Tags (e.g. frontend,devops - comma separated)')} value={newMcpTags} onChange={(event) => setNewMcpTags(event.target.value)} />
-                  <select className="input" value={newMcpTransport} onChange={(event) => setNewMcpTransport(event.target.value as 'stdio' | 'http')}>
-                    <option value="stdio">stdio (本地命令)</option>
-                    <option value="http">http (远端 URL)</option>
-                  </select>
-
-                  {newMcpTransport === 'stdio' ? (
-                    <>
-                      <input className="input" placeholder="Command (e.g. npx, python)" value={newMcpCommand} onChange={(event) => setNewMcpCommand(event.target.value)} />
-                      <input className="input" placeholder="Args (e.g. arg1,arg2 - comma separated)" value={newMcpArgs} onChange={(event) => setNewMcpArgs(event.target.value)} />
-                      <textarea className="input" rows={2} placeholder="Env variables (e.g. KEY=VAL - one per line)" value={newMcpEnv} onChange={(event) => setNewMcpEnv(event.target.value)} />
-                    </>
-                  ) : (
-                    <>
-                      <input className="input" placeholder="URL (e.g. https://...)" value={newMcpURL} onChange={(event) => setNewMcpURL(event.target.value)} />
-                      <textarea className="input" rows={2} placeholder="Custom headers (e.g. Header: Val - one per line)" value={newMcpHeaders} onChange={(event) => setNewMcpHeaders(event.target.value)} />
-                    </>
-                  )}
-
-                  <button className="btn btn-primary" type="button" disabled={mcpWorking} onClick={() => { void handleCreateMcp() }}>
-                    {mcpWorking ? tx('保存中...', 'Saving...') : tx('创建并保存', 'Create & Save')}
-                  </button>
+                  </div>
                 </div>
-              </MaterialsTile>
-            )}
+              )
+            })}
+            {teamMcps.length === 0 ? (
+              <div className="team-admin-empty">{tx('暂无团队共享 MCP。', 'No shared team MCP yet.')}</div>
+            ) : null}
           </div>
         </section>
       )}
 
-      {!selectedTeam ? (
+      {teamView === 'files' && (!selectedTeam ? (
         <section className="dashboard-file-panel github-tree-list" id="team-files">
           <div className="dashboard-section-head">
             <div>
@@ -2097,6 +1994,256 @@ export default function TeamLibraryPage() {
             fileRoute={teamFileRoute}
             onPathChange={setTreePath}
           />
+        </div>
+      ))}
+      </div>
+
+      {teamDialog && (
+        <div
+          className="materials-modal-backdrop"
+          onClick={closeTeamDialog}
+        >
+          <section
+            className="materials-modal app-modal team-action-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="team-action-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="app-modal-head">
+              <div>
+                <div className="app-modal-kicker">Team</div>
+                <h3 id="team-action-title">
+                  {teamDialog === 'create-team'
+                    ? tx('创建团队', 'Create team')
+                    : teamDialog === 'add-member'
+                      ? tx('添加成员', 'Add member')
+                      : teamDialog === 'create-agent'
+                        ? tx('新 Agent 配方', 'New agent recipe')
+                        : teamDialog === 'create-mcp'
+                          ? tx('新建共享 MCP', 'New shared MCP')
+                          : tx('发布信息', 'Publication details')}
+                </h3>
+                <p>
+                  {teamDialog === 'create-team'
+                    ? tx('团队会有独立资料空间，当前账号会成为 Owner。', 'The team gets its own material space. The current account becomes owner.')
+                    : teamDialog === 'add-member'
+                      ? tx('用对方的用户 slug 添加，成员仍保留自己的个人空间。', 'Add a teammate by user slug. Their personal space stays separate.')
+                      : teamDialog === 'create-agent'
+                        ? tx('保存给 Codex、Claude、Cursor 或 Gemini CLI 复用的 Agent 说明。', 'Save reusable agent instructions for Codex, Claude, Cursor, or Gemini CLI.')
+                        : teamDialog === 'create-mcp'
+                          ? tx('把数据库、服务 API 或本地命令登记为团队 MCP 配置。', 'Register a database, service API, or local command as a team MCP config.')
+                          : tx('维护版本、发布说明和内部备注。', 'Maintain version, release note, and internal note.')}
+                </p>
+              </div>
+              <button
+                className="modal-icon-btn"
+                type="button"
+                aria-label={tx('关闭', 'Close')}
+                onClick={closeTeamDialog}
+              >
+                ×
+              </button>
+            </div>
+
+            {teamDialog === 'create-team' ? (
+              <div className="modal-form-grid">
+                <label className="profile-edit-field">
+                  <span>{tx('团队名称', 'Team name')}</span>
+                  <input className="input" value={newTeamName} onChange={(event) => {
+                    setNewTeamName(event.target.value)
+                    if (!newTeamSlug) setNewTeamSlug(normalizeSlugInput(event.target.value))
+                  }} />
+                </label>
+                <label className="profile-edit-field">
+                  <span>slug</span>
+                  <input className="input" value={newTeamSlug} onChange={(event) => setNewTeamSlug(normalizeSlugInput(event.target.value))} />
+                </label>
+                <label className="profile-edit-field profile-long-field">
+                  <span>{tx('描述', 'Description')}</span>
+                  <input className="input" value={newTeamDescription} onChange={(event) => setNewTeamDescription(event.target.value)} />
+                </label>
+                <div className="modal-actions">
+                  <button className="btn" type="button" onClick={closeTeamDialog}>{tx('取消', 'Cancel')}</button>
+                  <button className="btn btn-primary" type="button" disabled={working} onClick={() => { void handleCreateTeam() }}>
+                    {working ? tx('创建中...', 'Creating...') : tx('创建团队', 'Create team')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {teamDialog === 'add-member' ? (
+              <div className="modal-form-grid">
+                <label className="profile-edit-field profile-long-field">
+                  <span>{tx('用户 slug', 'User slug')}</span>
+                  <input className="input" value={memberSlug} onChange={(event) => setMemberSlug(event.target.value)} />
+                </label>
+                <label className="profile-edit-field profile-long-field">
+                  <span>{tx('角色', 'Role')}</span>
+                  <CustomSelect
+                    value={memberRole}
+                    onChange={(val) => setMemberRole(val as TeamRole)}
+                    options={[
+                      { value: 'member', label: roleLabel('member', locale) },
+                      { value: 'admin', label: roleLabel('admin', locale) },
+                      { value: 'viewer', label: roleLabel('viewer', locale) },
+                    ]}
+                    ariaLabel={tx('选择角色', 'Select role')}
+                  />
+                </label>
+                <div className="modal-actions">
+                  <button className="btn" type="button" onClick={closeTeamDialog}>{tx('取消', 'Cancel')}</button>
+                  <button className="btn btn-primary" type="button" disabled={working || !memberSlug.trim()} onClick={() => { void handleAddMember() }}>
+                    {working ? tx('添加中...', 'Adding...') : tx('添加成员', 'Add member')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {teamDialog === 'create-agent' ? (
+              <div className="modal-form-grid">
+                <label className="profile-edit-field">
+                  <span>{tx('Agent 名称', 'Agent name')}</span>
+                  <input className="input" value={newAgentName} onChange={(event) => {
+                    setNewAgentName(event.target.value)
+                    if (!newAgentSlug) setNewAgentSlug(normalizeSlugInput(event.target.value))
+                  }} />
+                </label>
+                <label className="profile-edit-field">
+                  <span>slug</span>
+                  <input className="input" value={newAgentSlug} onChange={(event) => setNewAgentSlug(normalizeSlugInput(event.target.value))} />
+                </label>
+                <label className="profile-edit-field profile-long-field">
+                  <span>{tx('用途说明', 'Description')}</span>
+                  <input className="input" value={newAgentDescription} onChange={(event) => setNewAgentDescription(event.target.value)} />
+                </label>
+                <label className="profile-edit-field profile-long-field">
+                  <span>{tx('Agent 指令', 'Agent instructions')}</span>
+                  <textarea className="input" rows={5} value={newAgentInstructions} onChange={(event) => setNewAgentInstructions(event.target.value)} />
+                </label>
+                <div className="modal-actions">
+                  <button className="btn" type="button" onClick={closeTeamDialog}>{tx('取消', 'Cancel')}</button>
+                  <button className="btn btn-primary" type="button" disabled={agentWorking || !newAgentName.trim()} onClick={() => { void handleCreateAgent() }}>
+                    {agentWorking ? tx('保存中...', 'Saving...') : tx('保存配方', 'Save recipe')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {teamDialog === 'create-mcp' ? (
+              <div className="modal-form-grid">
+                <label className="profile-edit-field">
+                  <span>{tx('MCP 名称', 'MCP name')}</span>
+                  <input className="input" value={newMcpName} onChange={(event) => {
+                    setNewMcpName(event.target.value)
+                    if (!newMcpSlug) setNewMcpSlug(normalizeSlugInput(event.target.value))
+                  }} />
+                </label>
+                <label className="profile-edit-field">
+                  <span>slug</span>
+                  <input className="input" value={newMcpSlug} onChange={(event) => setNewMcpSlug(normalizeSlugInput(event.target.value))} />
+                </label>
+                <label className="profile-edit-field profile-long-field">
+                  <span>{tx('用途说明', 'Description')}</span>
+                  <input className="input" value={newMcpDescription} onChange={(event) => setNewMcpDescription(event.target.value)} />
+                </label>
+                <label className="profile-edit-field">
+                  <span>{tx('标签', 'Tags')}</span>
+                  <input className="input" value={newMcpTags} onChange={(event) => setNewMcpTags(event.target.value)} />
+                </label>
+                <label className="profile-edit-field">
+                  <span>{tx('连接方式', 'Transport')}</span>
+                  <select className="input" value={newMcpTransport} onChange={(event) => setNewMcpTransport(event.target.value as 'stdio' | 'http')}>
+                    <option value="stdio">stdio</option>
+                    <option value="http">http</option>
+                  </select>
+                </label>
+                {newMcpTransport === 'stdio' ? (
+                  <>
+                    <label className="profile-edit-field">
+                      <span>Command</span>
+                      <input className="input" value={newMcpCommand} onChange={(event) => setNewMcpCommand(event.target.value)} />
+                    </label>
+                    <label className="profile-edit-field">
+                      <span>Args</span>
+                      <input className="input" value={newMcpArgs} onChange={(event) => setNewMcpArgs(event.target.value)} />
+                    </label>
+                    <label className="profile-edit-field profile-long-field">
+                      <span>Env</span>
+                      <textarea className="input" rows={3} value={newMcpEnv} onChange={(event) => setNewMcpEnv(event.target.value)} />
+                    </label>
+                  </>
+                ) : (
+                  <>
+                    <label className="profile-edit-field profile-long-field">
+                      <span>URL</span>
+                      <input className="input" value={newMcpURL} onChange={(event) => setNewMcpURL(event.target.value)} />
+                    </label>
+                    <label className="profile-edit-field profile-long-field">
+                      <span>Headers</span>
+                      <textarea className="input" rows={3} value={newMcpHeaders} onChange={(event) => setNewMcpHeaders(event.target.value)} />
+                    </label>
+                  </>
+                )}
+                <div className="modal-actions">
+                  <button className="btn" type="button" onClick={closeTeamDialog}>{tx('取消', 'Cancel')}</button>
+                  <button className="btn btn-primary" type="button" disabled={mcpWorking} onClick={() => { void handleCreateMcp() }}>
+                    {mcpWorking ? tx('保存中...', 'Saving...') : tx('创建并保存', 'Create & Save')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+
+            {teamDialog === 'skill-publication' && editingPublication ? (
+              <div className="modal-form-grid">
+                <div className="team-publication-dialog-path profile-long-field">
+                  <span>{tx('Skill 路径', 'Skill path')}</span>
+                  <code>{editingPublication.skill_path}</code>
+                </div>
+                <label className="profile-edit-field">
+                  <span>{tx('版本', 'Version')}</span>
+                  <input
+                    className="input"
+                    value={skillPublicationDrafts[editingPublication.skill_path]?.version || ''}
+                    onChange={(event) => updateSkillPublicationDraft(editingPublication.skill_path, 'version', event.target.value)}
+                  />
+                </label>
+                <label className="profile-edit-field profile-long-field">
+                  <span>{tx('发布说明', 'Release note')}</span>
+                  <input
+                    className="input"
+                    value={skillPublicationDrafts[editingPublication.skill_path]?.release_note || ''}
+                    onChange={(event) => updateSkillPublicationDraft(editingPublication.skill_path, 'release_note', event.target.value)}
+                  />
+                </label>
+                <label className="profile-edit-field profile-long-field">
+                  <span>{tx('内部备注', 'Internal note')}</span>
+                  <textarea
+                    className="input"
+                    rows={4}
+                    value={skillPublicationDrafts[editingPublication.skill_path]?.note || ''}
+                    onChange={(event) => updateSkillPublicationDraft(editingPublication.skill_path, 'note', event.target.value)}
+                  />
+                </label>
+                <div className="modal-actions">
+                  <button
+                    className="btn"
+                    type="button"
+                    onClick={closeTeamDialog}
+                  >
+                    {tx('取消', 'Cancel')}
+                  </button>
+                  <button className="btn btn-primary" type="button" disabled={sharingWorking} onClick={() => {
+                    void handleSaveSkillPublicationMeta(editingPublication).then((saved) => {
+                      if (saved) closeTeamDialog()
+                    })
+                  }}>
+                    {sharingWorking ? tx('保存中...', 'Saving...') : tx('保存发布信息', 'Save details')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
+          </section>
         </div>
       )}
     </div>

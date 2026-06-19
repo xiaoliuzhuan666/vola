@@ -6,6 +6,7 @@ import CustomSelect from '../components/CustomSelect'
 
 const profileFields = [
   { key: 'preferences', label: { zh: '工作偏好', en: 'Work preferences' } },
+  { key: 'relationships', label: { zh: '人际关系', en: 'Relationships' } },
   { key: 'writing_style', label: { zh: '写作风格', en: 'Writing style' } },
   { key: 'communication', label: { zh: '沟通偏好', en: 'Communication preferences' } },
   { key: 'principles', label: { zh: '决策风格', en: 'Decision style' } },
@@ -82,6 +83,8 @@ export default function InfoPage() {
   const [desktopUpdateStatus, setDesktopUpdateStatus] = useState<DesktopUpdateStatus>('idle')
   const [desktopUpdateDetail, setDesktopUpdateDetail] = useState('')
   const [desktopUpdateProgress, setDesktopUpdateProgress] = useState(0)
+  const [profileDialogOpen, setProfileDialogOpen] = useState(false)
+  const [cloudDialogOpen, setCloudDialogOpen] = useState(false)
 
   const load = async () => {
     setLoading(true)
@@ -103,6 +106,7 @@ export default function InfoPage() {
         display_name: String(me.display_name || next.display_name || prefs.display_name || ''),
         language: String(me.language || locale),
         preferences: String(prefs.preferences || ''),
+        relationships: String(prefs.relationships || ''),
         writing_style: String(prefs.writing_style || ''),
         communication: String(prefs.communication || ''),
         principles: String(prefs.principles || ''),
@@ -152,6 +156,7 @@ export default function InfoPage() {
         api.upsertProfile({
           preferences: {
             preferences: values.preferences || '',
+            relationships: values.relationships || '',
             writing_style: values.writing_style || '',
             communication: values.communication || '',
             principles: values.principles || '',
@@ -159,6 +164,7 @@ export default function InfoPage() {
         }),
       ])
       setMessage(tx('Profile 已保存。', 'Profile saved.'))
+      setProfileDialogOpen(false)
       await load()
     } catch (err: any) {
       setError(err?.message || tx('保存失败', 'Save failed'))
@@ -221,6 +227,7 @@ export default function InfoPage() {
       const status = await api.loginLocalCloud({ email, password })
       setCloudStatus(status)
       setPassword('')
+      setCloudDialogOpen(false)
       setMessage(tx('官方云账号已连接。现在可以把本机资料上传到云端。', 'Official cloud account connected. You can now upload local data to the cloud.'))
     } catch (err: any) {
       setError(err?.message || tx('登录失败，请检查您的邮箱和密码。', 'Login failed. Please check your email and password.'))
@@ -256,6 +263,7 @@ export default function InfoPage() {
       setCloudStatus(status)
       setPassword('')
       setConfirmPassword('')
+      setCloudDialogOpen(false)
       setMessage(tx('官方云账号已创建，初始额度已返回。可以上传本机资料查看用量变化。', 'Official cloud account created and quota returned. Upload local data to see usage change.'))
     } catch (err: any) {
       setError(err?.message || tx('注册并绑定失败，请检查表单信息。', 'Failed to register and bind account. Check form fields.'))
@@ -273,6 +281,7 @@ export default function InfoPage() {
       const status = await api.disconnectLocalCloud()
       setCloudStatus(status)
       setLastPush(null)
+      setCloudDialogOpen(false)
       setMessage(tx('已解除这台电脑上的官方云账号绑定。', 'Official cloud account disconnected on this computer.'))
     } catch (err: any) {
       setError(err?.message || tx('解除绑定失败。', 'Failed to disconnect cloud account.'))
@@ -392,30 +401,29 @@ export default function InfoPage() {
       {message && <div className="alert alert-success">{message}</div>}
       {error && <div className="alert alert-warn">{error}</div>}
 
-      <section className="card profile-main-card">
+      <section className="card profile-main-card profile-summary-card">
         <div className="card-header">
-          <h3 className="card-title">{tx('Vola 了解你的信息', 'What Vola knows about you')}</h3>
-          <button className="btn btn-primary" disabled={saving !== ''} onClick={() => { void saveProfile() }}>{saving ? tx('保存中...', 'Saving...') : tx('保存', 'Save Profile')}</button>
+          <div>
+            <h3 className="card-title">{tx('Vola 了解你的信息', 'What Vola knows about you')}</h3>
+          </div>
+          <button className="btn btn-primary" disabled={saving !== ''} onClick={() => setProfileDialogOpen(true)}>
+            {tx('编辑资料', 'Edit profile')}
+          </button>
         </div>
-        <div className="profile-field-grid">
-          <label className="profile-edit-field">
+        <div className="profile-summary-grid">
+          <div className="profile-summary-item">
             <span>{tx('名称', 'Name')}</span>
-            <input className="input" value={values.display_name || ''} onChange={(event) => setValues({ ...values, display_name: event.target.value })} />
-          </label>
-          <label className="profile-edit-field">
+            <strong>{values.display_name || userProfile.slug || tx('未填写', 'Not set')}</strong>
+          </div>
+          <div className="profile-summary-item">
             <span>{tx('语言偏好', 'Language preference')}</span>
-            <CustomSelect
-              value={values.language || locale}
-              onChange={(val) => setValues({ ...values, language: val })}
-              options={commonLanguages}
-              ariaLabel={tx('语言偏好', 'Language preference')}
-            />
-          </label>
+            <strong>{commonLanguages.find((item) => item.value === (values.language || locale))?.label || values.language || locale}</strong>
+          </div>
           {profileFields.map((field) => (
-            <label key={field.key} className="profile-edit-field profile-long-field">
+            <div key={field.key} className="profile-summary-item profile-summary-long">
               <span>{tx(field.label.zh, field.label.en)}</span>
-              <textarea value={values[field.key] || ''} onChange={(event) => setValues({ ...values, [field.key]: event.target.value })} />
-            </label>
+              <p>{String(values[field.key] || '').trim() || tx('未填写', 'Not set')}</p>
+            </div>
           ))}
         </div>
       </section>
@@ -442,134 +450,29 @@ export default function InfoPage() {
       {localMode && (
         <section id="cloud-account" className="card cloud-sync-card">
           <div className="card-header">
-            <h3 className="card-title">{tx('云同步与团队协作', 'Cloud Sync & Team Collaboration')}</h3>
+            <div>
+              <h3 className="card-title">{tx('云同步与团队协作', 'Cloud Sync & Team Collaboration')}</h3>
+            </div>
+            <button className={cloudConnected ? 'btn' : 'btn btn-primary'} type="button" onClick={() => setCloudDialogOpen(true)}>
+              {cloudConnected ? tx('管理云账号', 'Manage cloud account') : tx('连接云账号', 'Connect cloud account')}
+            </button>
           </div>
           <div className="card-body cloud-sync-body">
-            {!cloudConnected ? (
-              <div className="cloud-bind-flow">
-                <p className="cloud-sync-copy">
-                  {tx(
-                    '当前资料仍保存在本机。连接官方云账号后，可以把本机资料上传到云端，并查看云端额度与使用量。',
-                    'Your data is still stored locally. Connect an official cloud account to upload local data and view cloud quota usage.'
-                  )}
-                </p>
-                {cloudStatus?.error && <div className="alert alert-warn">{cloudStatus.error}</div>}
-
-                <div className="cloud-auth-tabs">
-                  <button
-                    type="button"
-                    onClick={() => { setIsSignUpMode(false); setError(''); }}
-                    className={!isSignUpMode ? 'cloud-auth-tab active' : 'cloud-auth-tab'}
-                  >
-                    {tx('登录已有账号', 'Sign In')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => { setIsSignUpMode(true); setError(''); }}
-                    className={isSignUpMode ? 'cloud-auth-tab active' : 'cloud-auth-tab'}
-                  >
-                    {tx('创建新云账号', 'Create Account')}
-                  </button>
+            <div className="cloud-status-head">
+              <span className="cloud-status-icon">C</span>
+              <div>
+                <div className="cloud-status-title">
+                  {cloudConnected ? tx('已连接官方云账号', 'Official Cloud Connected') : tx('未连接云账号', 'Cloud account not connected')}
                 </div>
-
-                <form onSubmit={(e) => { void (isSignUpMode ? handleCloudSignup(e) : handleCloudLogin(e)) }} className="cloud-auth-form">
-                  <div className="form-group cloud-form-field">
-                    <label className="form-label">{tx('邮箱地址', 'Email Address')}</label>
-                    <input
-                      className="input"
-                      type="email"
-                      placeholder="name@example.com"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      required
-                    />
-                  </div>
-                  <div className="form-group cloud-form-field">
-                    <label className="form-label">{tx('登录密码', 'Password')}</label>
-                    <input
-                      className="input"
-                      type="password"
-                      placeholder={isSignUpMode ? tx('至少 8 位密码', 'At least 8 characters') : '••••••••'}
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      required
-                      minLength={8}
-                    />
-                  </div>
-
-                  {isSignUpMode && (
-                    <>
-                      <div className="form-group cloud-form-field">
-                        <label className="form-label">{tx('确认密码', 'Confirm Password')}</label>
-                        <input
-                          className="input"
-                          type="password"
-                          placeholder={tx('再次输入密码', 'Repeat password')}
-                          value={confirmPassword}
-                          onChange={(e) => setConfirmPassword(e.target.value)}
-                          required
-                          minLength={8}
-                        />
-                        <small className="cloud-form-hint">
-                          {tx('需要和上面的登录密码完全一致。', 'Must match the password above.')}
-                        </small>
-                      </div>
-                      <div className="form-group cloud-form-field">
-                        <label className="form-label">{tx('账户名 (Slug)', 'Account Name (Slug)')}</label>
-                        <input
-                          className="input"
-                          type="text"
-                          placeholder={slugFromEmail(email) || 'my-account'}
-                          value={signupSlug}
-                          onChange={(e) => setSignupSlug(e.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
-                          minLength={3}
-                          required
-                        />
-                      </div>
-                      <div className="form-group cloud-form-field">
-                        <label className="form-label">{tx('显示名称', 'Display Name')}</label>
-                        <input
-                          className="input"
-                          type="text"
-                          placeholder={tx('例如：张三', 'e.g. John Doe')}
-                          value={signupDisplayName}
-                          onChange={(e) => setSignupDisplayName(e.target.value)}
-                        />
-                      </div>
-                    </>
-                  )}
-
-                  <div className="cloud-auth-actions">
-                    <button className="btn btn-primary" type="submit" disabled={syncLoading}>
-                      {syncLoading
-                        ? (isSignUpMode ? tx('注册中...', 'Registering...') : tx('登录中...', 'Signing in...'))
-                        : (isSignUpMode ? tx('创建并连接', 'Create & Connect') : tx('登录并连接', 'Sign In & Connect'))
-                      }
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => { setIsSignUpMode(!isSignUpMode); setError(''); }}
-                      className="cloud-auth-link"
-                    >
-                      {isSignUpMode ? tx('已有账户？立即登录', 'Already have an account? Sign In') : tx('还没有账户？立即注册', 'Need an account? Register')}
-                    </button>
-                  </div>
-                </form>
+                <div className="cloud-status-subtitle">
+                  {cloudConnected
+                    ? tx(`账号：${cloudAccountLabel}`, `Account: ${cloudAccountLabel}`)
+                    : tx('本机资料可以继续离线使用。', 'Local data remains available offline.')}
+                </div>
               </div>
-            ) : (
-              <div className="cloud-unbind-flow">
-                <div className="cloud-status-head">
-                  <span className="cloud-status-icon">C</span>
-                  <div>
-                    <div className="cloud-status-title">
-                      {tx('已连接官方云账号', 'Official Cloud Connected')}
-                    </div>
-                    <div className="cloud-status-subtitle">
-                      {tx(`账号：${cloudAccountLabel}`, `Account: ${cloudAccountLabel}`)}
-                    </div>
-                  </div>
-                </div>
+            </div>
+            {cloudConnected ? (
+              <>
                 <div className="cloud-quota-panel">
                   <div className="cloud-quota-row">
                     <span>{tx('官方云额度', 'Cloud quota')}</span>
@@ -587,7 +490,6 @@ export default function InfoPage() {
                     <span>{cloudQuota ? `${cloudUsagePercent.toFixed(cloudUsagePercent >= 10 ? 0 : 1)}%` : ''}</span>
                   </div>
                 </div>
-
                 {lastPush && (
                   <div className="cloud-push-summary">
                     <strong>{tx('上次上传', 'Last upload')}</strong>
@@ -613,7 +515,17 @@ export default function InfoPage() {
                     {syncLoading ? tx('解除绑定中...', 'Disconnecting...') : tx('解除云账号绑定', 'Disconnect')}
                   </button>
                 </div>
-              </div>
+              </>
+            ) : (
+              <>
+                {cloudStatus?.error && <div className="alert alert-warn">{cloudStatus.error}</div>}
+                <div className="cloud-compact-panel">
+                  <span>{tx('需要多人同步时，打开连接窗口即可。', 'Open the connection dialog when multi-device or team sync is needed.')}</span>
+                  <button className="btn btn-primary" type="button" onClick={() => setCloudDialogOpen(true)}>
+                    {tx('连接云账号', 'Connect cloud account')}
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </section>
@@ -667,6 +579,203 @@ export default function InfoPage() {
           <button className="btn btn-danger" onClick={() => { void revokeAllTokens() }}>{tx('撤销全部 token', 'Revoke all tokens')}</button>
         </div>
       </section>
+
+      {profileDialogOpen && (
+        <div className="materials-modal-backdrop" onClick={() => setProfileDialogOpen(false)}>
+          <section
+            className="materials-modal app-modal profile-edit-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="profile-edit-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="app-modal-head">
+              <div>
+                <div className="app-modal-kicker">Profile</div>
+                <h3 id="profile-edit-title">{tx('编辑个人资料', 'Edit profile')}</h3>
+              </div>
+              <button className="modal-icon-btn" type="button" aria-label={tx('关闭', 'Close')} onClick={() => setProfileDialogOpen(false)}>×</button>
+            </div>
+            <div className="profile-field-grid modal-form-grid">
+              <label className="profile-edit-field">
+                <span>{tx('名称', 'Name')}</span>
+                <input className="input" value={values.display_name || ''} onChange={(event) => setValues({ ...values, display_name: event.target.value })} />
+              </label>
+              <label className="profile-edit-field">
+                <span>{tx('语言偏好', 'Language preference')}</span>
+                <CustomSelect
+                  value={values.language || locale}
+                  onChange={(val) => setValues({ ...values, language: val })}
+                  options={commonLanguages}
+                  ariaLabel={tx('语言偏好', 'Language preference')}
+                />
+              </label>
+              {profileFields.map((field) => (
+                <label key={field.key} className="profile-edit-field profile-long-field">
+                  <span>{tx(field.label.zh, field.label.en)}</span>
+                  <textarea value={values[field.key] || ''} onChange={(event) => setValues({ ...values, [field.key]: event.target.value })} />
+                </label>
+              ))}
+            </div>
+            <div className="modal-actions">
+              <button className="btn" type="button" onClick={() => setProfileDialogOpen(false)}>{tx('取消', 'Cancel')}</button>
+              <button className="btn btn-primary" disabled={saving !== ''} onClick={() => { void saveProfile() }}>
+                {saving ? tx('保存中...', 'Saving...') : tx('保存资料', 'Save profile')}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {cloudDialogOpen && localMode && (
+        <div className="materials-modal-backdrop" onClick={() => setCloudDialogOpen(false)}>
+          <section
+            className="materials-modal app-modal cloud-account-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="cloud-account-title"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="app-modal-head">
+              <div>
+                <div className="app-modal-kicker">Cloud</div>
+                <h3 id="cloud-account-title">{tx('云账号', 'Cloud account')}</h3>
+              </div>
+              <button className="modal-icon-btn" type="button" aria-label={tx('关闭', 'Close')} onClick={() => setCloudDialogOpen(false)}>×</button>
+            </div>
+
+            {!cloudConnected ? (
+              <div className="cloud-bind-flow">
+                {cloudStatus?.error && <div className="alert alert-warn">{cloudStatus.error}</div>}
+                <div className="cloud-auth-tabs">
+                  <button
+                    type="button"
+                    onClick={() => { setIsSignUpMode(false); setError('') }}
+                    className={!isSignUpMode ? 'cloud-auth-tab active' : 'cloud-auth-tab'}
+                  >
+                    {tx('登录已有账号', 'Sign In')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => { setIsSignUpMode(true); setError('') }}
+                    className={isSignUpMode ? 'cloud-auth-tab active' : 'cloud-auth-tab'}
+                  >
+                    {tx('创建新云账号', 'Create Account')}
+                  </button>
+                </div>
+
+                <form onSubmit={(event) => { void (isSignUpMode ? handleCloudSignup(event) : handleCloudLogin(event)) }} className="cloud-auth-form">
+                  <div className="form-group cloud-form-field">
+                    <label className="form-label">{tx('邮箱地址', 'Email Address')}</label>
+                    <input
+                      className="input"
+                      type="email"
+                      placeholder="name@example.com"
+                      value={email}
+                      onChange={(event) => setEmail(event.target.value)}
+                      required
+                    />
+                  </div>
+                  <div className="form-group cloud-form-field">
+                    <label className="form-label">{tx('登录密码', 'Password')}</label>
+                    <input
+                      className="input"
+                      type="password"
+                      placeholder={isSignUpMode ? tx('至少 8 位密码', 'At least 8 characters') : '••••••••'}
+                      value={password}
+                      onChange={(event) => setPassword(event.target.value)}
+                      required
+                      minLength={8}
+                    />
+                  </div>
+                  {isSignUpMode && (
+                    <>
+                      <div className="form-group cloud-form-field">
+                        <label className="form-label">{tx('确认密码', 'Confirm Password')}</label>
+                        <input
+                          className="input"
+                          type="password"
+                          placeholder={tx('再次输入密码', 'Repeat password')}
+                          value={confirmPassword}
+                          onChange={(event) => setConfirmPassword(event.target.value)}
+                          required
+                          minLength={8}
+                        />
+                        <small className="cloud-form-hint">
+                          {tx('需要和上面的登录密码完全一致。', 'Must match the password above.')}
+                        </small>
+                      </div>
+                      <div className="form-group cloud-form-field">
+                        <label className="form-label">{tx('账户名 (Slug)', 'Account Name (Slug)')}</label>
+                        <input
+                          className="input"
+                          type="text"
+                          placeholder={slugFromEmail(email) || 'my-account'}
+                          value={signupSlug}
+                          onChange={(event) => setSignupSlug(event.target.value.toLowerCase().replace(/[^a-z0-9_-]/g, ''))}
+                          minLength={3}
+                          required
+                        />
+                      </div>
+                      <div className="form-group cloud-form-field">
+                        <label className="form-label">{tx('显示名称', 'Display Name')}</label>
+                        <input
+                          className="input"
+                          type="text"
+                          placeholder={tx('例如：张三', 'e.g. John Doe')}
+                          value={signupDisplayName}
+                          onChange={(event) => setSignupDisplayName(event.target.value)}
+                        />
+                      </div>
+                    </>
+                  )}
+                  <div className="modal-actions">
+                    <button className="btn" type="button" onClick={() => setCloudDialogOpen(false)}>{tx('取消', 'Cancel')}</button>
+                    <button className="btn btn-primary" type="submit" disabled={syncLoading}>
+                      {syncLoading
+                        ? (isSignUpMode ? tx('注册中...', 'Registering...') : tx('登录中...', 'Signing in...'))
+                        : (isSignUpMode ? tx('创建并连接', 'Create & Connect') : tx('登录并连接', 'Sign In & Connect'))}
+                    </button>
+                  </div>
+                </form>
+              </div>
+            ) : (
+              <div className="cloud-account-summary">
+                <div className="cloud-status-head">
+                  <span className="cloud-status-icon">C</span>
+                  <div>
+                    <div className="cloud-status-title">{tx('已连接官方云账号', 'Official Cloud Connected')}</div>
+                    <div className="cloud-status-subtitle">{tx(`账号：${cloudAccountLabel}`, `Account: ${cloudAccountLabel}`)}</div>
+                  </div>
+                </div>
+                <div className="cloud-quota-panel">
+                  <div className="cloud-quota-row">
+                    <span>{tx('官方云额度', 'Cloud quota')}</span>
+                    <strong>
+                      {cloudQuota
+                        ? `${formatBytes(cloudQuota.storage_used_bytes, locale)} / ${formatBytes(cloudQuota.effective_storage_quota_bytes, locale)}`
+                        : tx('等待云端返回', 'Waiting for cloud')}
+                    </strong>
+                  </div>
+                  <div className="cloud-quota-bar" aria-hidden="true">
+                    <div className="cloud-quota-fill" style={{ width: `${cloudUsagePercent}%` }} />
+                  </div>
+                  <div className="cloud-quota-meta">
+                    <span>{cloudStatus?.api_base || ''}</span>
+                    <span>{cloudQuota ? `${cloudUsagePercent.toFixed(cloudUsagePercent >= 10 ? 0 : 1)}%` : ''}</span>
+                  </div>
+                </div>
+                <div className="modal-actions">
+                  <button className="btn" type="button" onClick={() => setCloudDialogOpen(false)}>{tx('关闭', 'Close')}</button>
+                  <button className="btn btn-danger" type="button" onClick={handleCloudLogout} disabled={syncLoading || pushLoading}>
+                    {syncLoading ? tx('解除绑定中...', 'Disconnecting...') : tx('解除绑定', 'Disconnect')}
+                  </button>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
     </div>
   )
 }

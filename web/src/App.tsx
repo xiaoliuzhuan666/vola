@@ -477,6 +477,8 @@ function App() {
   useEffect(() => {
     if (!currentUser) return
     const path = location.pathname
+    const pageParams = new URLSearchParams(location.search)
+    const isProjectDocsPage = path.startsWith('/codex-console') && pageParams.get('view') === 'context_index'
     const pageTitle =
       path === '/' ? 'Home' :
       path.startsWith('/plan') ? 'Get Started' :
@@ -489,6 +491,7 @@ function App() {
       path.startsWith('/settings/profile') || path.startsWith('/info') ? 'My Profile' :
       path.startsWith('/team') ? 'Team AI Library' :
       path.startsWith('/cli') ? 'Command Line Tools' :
+      isProjectDocsPage ? 'Project Docs' :
       path.startsWith('/codex-console') ? 'Codex Console' :
       path.startsWith('/setup') ? 'Setup Guide' :
       path.startsWith('/data/conversations') ? 'Conversations' :
@@ -501,7 +504,7 @@ function App() {
       path.startsWith('/imports') ? 'Data Imports' :
       PRODUCT_NAME
     document.title = pageTitle === PRODUCT_NAME ? PRODUCT_NAME : `${pageTitle} — ${PRODUCT_NAME}`
-  }, [location.pathname, currentUser])
+  }, [location.pathname, location.search, currentUser])
 
   useEffect(() => {
     if (!currentUser) {
@@ -669,19 +672,18 @@ function App() {
   }
 
   const showGitHubBackup = localMode || !!publicConfig?.github_enabled || !!publicConfig?.github_app_enabled
-  const isMaterialsNavRoute =
+  const contextIndexParams = new URLSearchParams(location.search)
+  const isContextIndexRoute =
+    location.pathname.startsWith('/codex-console') &&
+    contextIndexParams.get('view') === 'context_index'
+  const isMcpRoute = location.pathname.startsWith('/mcp-hub') || location.pathname.startsWith('/setup/mcp')
+  const isMoreNavRoute =
     location.pathname.startsWith('/imports') ||
-    location.pathname.startsWith('/skills') ||
     location.pathname.startsWith('/memory') ||
     location.pathname.startsWith('/growth-proposals') ||
-    location.pathname.startsWith('/data')
-  const isSyncNavRoute =
-    location.pathname.startsWith('/team') ||
-    location.pathname.startsWith('/mcp-hub') ||
     location.pathname.startsWith('/sync-backup') ||
     location.pathname.startsWith('/git-mirror') ||
-    location.pathname.startsWith('/settings/profile')
-  const isAdvancedNavRoute =
+    location.pathname.startsWith('/settings/profile') ||
     location.pathname.startsWith('/settings/developer-access') ||
     location.pathname.startsWith('/settings/developer') ||
     location.pathname.startsWith('/cli') ||
@@ -713,14 +715,19 @@ function App() {
         <nav className="sidebar-nav">
           <div className="sidebar-group-header">{tx('常用', 'Main')}</div>
 
-          <NavLink to={homePath} end className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+          <NavLink to={homePath} end className={({ isActive }) => isActive && !isContextIndexRoute ? 'nav-item active' : 'nav-item'}>
             <NavIcon name="home" />
             <span>{desktopConsoleHome ? 'Codex Console' : tx('今日概览', 'Today')}</span>
           </NavLink>
 
-          <NavLink to="/setup/mcp" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
-            <NavIcon name="settings" />
-            <span>{tx('连接 AI 工具', 'Connect AI')}</span>
+          <NavLink to="/skills" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="skills" />
+            <span>Skill</span>
+          </NavLink>
+
+          <NavLink to={localMode ? '/mcp-hub' : '/setup/mcp'} className={() => isMcpRoute ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="mcp" />
+            <span>MCP</span>
             {connectionCount !== null && (
               connectionCount > 0 ? (
                 <span className="nav-item-badge badge-online" title={tx('AI 已就绪', 'AI Connected')}>
@@ -734,11 +741,24 @@ function App() {
             )}
           </NavLink>
 
+          <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-item active' : 'nav-item'}>
+            <NavIcon name="team" />
+            <span>{tx('团队', 'Team')}</span>
+          </NavLink>
+
+          {localMode && (
+            <NavLink to="/codex-console?view=context_index" className={() => isContextIndexRoute ? 'nav-item active' : 'nav-item'}>
+              <NavIcon name="memory" />
+              <span>{tx('项目文档', 'Project Docs')}</span>
+            </NavLink>
+          )}
+
+          <div className="sidebar-divider" />
           <div className="nav-group">
-            <details open={isMaterialsNavRoute || undefined}>
-              <summary className={isMaterialsNavRoute ? 'nav-item nav-item-button group-active' : 'nav-item nav-item-button'}>
-                <NavIcon name="import" />
-                <span>{tx('资料库', 'Library')}</span>
+            <details open={isMoreNavRoute || undefined}>
+              <summary className={isMoreNavRoute ? 'nav-item nav-item-button group-active' : 'nav-item nav-item-button'}>
+                <NavIcon name="settings" />
+                <span>{tx('更多', 'More')}</span>
                 <span className="nav-group-caret">›</span>
               </summary>
               <div className="nav-submenu">
@@ -747,41 +767,15 @@ function App() {
                     {tx('导入资料', 'Import Data')}
                   </NavLink>
                 )}
-                <NavLink to="/skills" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
-                  {tx('技能库', 'Skills')}
-                </NavLink>
                 <NavLink to="/memory" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
                   {tx('记忆', 'Memory')}
                 </NavLink>
                 <NavLink to="/growth-proposals" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
                   {tx('优化建议', 'Suggestions')}
                 </NavLink>
-              </div>
-            </details>
-          </div>
-
-          <div className="sidebar-divider" />
-          <div className="sidebar-group-header">{tx('协作', 'Collaboration')}</div>
-
-          <div className="nav-group">
-            <details open={isSyncNavRoute || undefined}>
-              <summary className={isSyncNavRoute ? 'nav-item nav-item-button group-active' : 'nav-item nav-item-button'}>
-                <NavIcon name="team" />
-                <span>{tx('同步与团队', 'Sync & Team')}</span>
-                <span className="nav-group-caret">›</span>
-              </summary>
-              <div className="nav-submenu">
                 {localMode && (
                   <NavLink to="/settings/profile#cloud-account" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
                     {tx('云端账号', 'Cloud Account')}
-                  </NavLink>
-                )}
-                <NavLink to="/team" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
-                  {tx('团队资料', 'Team Library')}
-                </NavLink>
-                {localMode && (
-                  <NavLink to="/mcp-hub" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
-                    {tx('本机同步', 'Local Sync')}
                   </NavLink>
                 )}
                 {showGitHubBackup && (
@@ -789,22 +783,6 @@ function App() {
                     {tx('GitHub 备份', 'GitHub Backup')}
                   </NavLink>
                 )}
-              </div>
-            </details>
-          </div>
-
-          <div className="sidebar-divider" />
-          <div className="nav-group">
-            <details open={isAdvancedNavRoute || undefined}>
-              <summary className={isAdvancedNavRoute ? 'nav-item nav-item-button group-active' : 'nav-item nav-item-button'}>
-                <NavIcon name="developer" />
-                <span>{tx('高级工具', 'Advanced')}</span>
-                <span className="nav-group-caret">›</span>
-              </summary>
-              <div className="nav-submenu">
-                <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
-                  {tx('开发者访问', 'Developer Access')}
-                </NavLink>
                 <NavLink to="/cli" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
                   {tx('命令行工具', 'Command Line')}
                 </NavLink>
@@ -818,6 +796,9 @@ function App() {
                     {tx('系统设置', 'System Settings')}
                   </NavLink>
                 )}
+                <NavLink to="/settings/developer-access" className={({ isActive }) => isActive ? 'nav-subitem active' : 'nav-subitem'}>
+                  {tx('开发者访问', 'Developer Access')}
+                </NavLink>
               </div>
             </details>
           </div>
