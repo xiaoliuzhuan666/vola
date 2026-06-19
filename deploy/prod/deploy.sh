@@ -109,6 +109,8 @@ load_config() {
   fi
   DATABASE_URL="${DATABASE_URL:-postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@vola-postgres.${NAMESPACE}.svc.cluster.local:${POSTGRES_PORT}/${POSTGRES_DB}?sslmode=disable}"
   GIT_MIRROR_HOSTED_ROOT="${GIT_MIRROR_HOSTED_ROOT:-/data/git-mirrors}"
+  INSTANCE_ADMIN_USER_IDS="${INSTANCE_ADMIN_USER_IDS:-}"
+  VOLA_ENABLE_PUBLIC_REGISTRATION="${VOLA_ENABLE_PUBLIC_REGISTRATION:-}"
 
   if [[ -z "$APP_HOST" ]]; then
     APP_HOST="$(printf '%s' "$PUBLIC_BASE_URL" | sed -E 's#^https?://([^/]+)/?.*$#\1#')"
@@ -136,6 +138,8 @@ sync_config_map() {
     --from-literal=CORS_ORIGINS="$CORS_ORIGINS" \
     --from-literal=PUBLIC_BASE_URL="$PUBLIC_BASE_URL" \
     --from-literal=GIT_MIRROR_HOSTED_ROOT="$GIT_MIRROR_HOSTED_ROOT" \
+    --from-literal=INSTANCE_ADMIN_USER_IDS="$INSTANCE_ADMIN_USER_IDS" \
+    --from-literal=VOLA_ENABLE_PUBLIC_REGISTRATION="$VOLA_ENABLE_PUBLIC_REGISTRATION" \
     --dry-run=client -o yaml | kubectl apply -f -
 }
 

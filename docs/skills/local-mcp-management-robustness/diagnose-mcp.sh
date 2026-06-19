@@ -35,10 +35,10 @@ for item in "${IDE_PATHS[@]}"; do
       echo "  ↳ [备份状态]: ⚠️ 未检测到备份。Vola 守护进程将在下次连接修改时自动冷备。"
     fi
     
-    # 从 JSON 中解析出 team-mcp- 开头的 HTTP 服务的 URL 并探测连通性
+    # 从 JSON 中解析出 MCP 连接 URL 并探测连通性
     echo "  ↳ [装配团队 MCP 检测]:"
-    # 用简单的 grep/sed 抓取 "team-mcp-" 相关的 URL (避免强依赖 jq)
-    urls=$(grep -o '"url": *"[^"]*"' "$path" | sed -E 's/"url": *"//;s/"//' || true)
+    # 用简单的 grep/sed 抓取相关的连接 URL (兼容 url, serverUrl, serverURL 等，避免强依赖 jq)
+    urls=$(grep -ioE '"([a-zA-Z]*url)": *"[^"]*"' "$path" | sed -E 's/"[^"]*": *"//;s/"//g' || true)
     
     if [ -z "$urls" ]; then
       echo "    无正在运行的共享 HTTP MCP。"

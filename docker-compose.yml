@@ -26,6 +26,7 @@ services:
       JWT_SECRET: ${JWT_SECRET:-dev-jwt-secret-change-in-production}
       VAULT_MASTER_KEY: ${VAULT_MASTER_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
       USER_STORAGE_QUOTA_BYTES: ${USER_STORAGE_QUOTA_BYTES:-100MB}
+      INSTANCE_ADMIN_USER_IDS: ${INSTANCE_ADMIN_USER_IDS:-}
       OBJECT_STORAGE_BACKEND: ${OBJECT_STORAGE_BACKEND:-db}
       TENCENT_COS_BUCKET: ${TENCENT_COS_BUCKET:-}
       TENCENT_COS_REGION: ${TENCENT_COS_REGION:-ap-guangzhou}
@@ -42,6 +43,7 @@ services:
       GIT_MIRROR_HOSTED_ROOT: ${GIT_MIRROR_HOSTED_ROOT:-/data/git-mirrors}
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:8080}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:5173}
+      VOLA_ENABLE_PUBLIC_REGISTRATION: ${VOLA_ENABLE_PUBLIC_REGISTRATION:-}
     volumes:
       - gitmirrors:/data/git-mirrors
     depends_on:

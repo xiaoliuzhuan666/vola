@@ -310,16 +310,17 @@ func TestAuthProviderStartPocketLoginWrapsAuthorizeURL(t *testing.T) {
 func TestAuthProviderStartPocketSignupReturnsSignupPage(t *testing.T) {
 	repo := &stubExternalAuthRepo{}
 	cfg := &config.Config{
-		JWTSecret:          testJWTSecret,
-		VaultMasterKey:     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		CORSOrigins:        []string{"http://localhost:3000"},
-		RateLimit:          100,
-		MaxBodySize:        10 * 1024 * 1024,
-		PocketProviderID:   "pocket",
-		PocketIssuer:       "https://pocket.example.com",
-		PocketClientID:     "pocket-client",
-		PocketClientSecret: "pocket-secret",
-		PocketScopes:       []string{"openid", "profile", "email"},
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		EnablePublicRegistration: true,
+		PocketProviderID:         "pocket",
+		PocketIssuer:             "https://pocket.example.com",
+		PocketClientID:           "pocket-client",
+		PocketClientSecret:       "pocket-secret",
+		PocketScopes:             []string{"openid", "profile", "email"},
 	}
 	server := NewServerWithDeps(ServerDeps{
 		Config:              cfg,
@@ -352,15 +353,49 @@ func TestAuthProviderStartPocketSignupReturnsSignupPage(t *testing.T) {
 	}
 }
 
+func TestAuthProviderStartSignupBlockedWhenPublicRegistrationDisabled(t *testing.T) {
+	repo := &stubExternalAuthRepo{}
+	cfg := &config.Config{
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		EnablePublicRegistration: false,
+		PocketProviderID:         "pocket",
+		PocketIssuer:             "https://pocket.example.com",
+		PocketClientID:           "pocket-client",
+		PocketClientSecret:       "pocket-secret",
+		PocketScopes:             []string{"openid", "profile", "email"},
+	}
+	server := NewServerWithDeps(ServerDeps{
+		Config:              cfg,
+		JWTSecret:           cfg.JWTSecret,
+		ExternalAuthService: services.NewExternalAuthServiceWithRepo(repo, &services.AuthService{}, cfg),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/providers/pocket/start", strings.NewReader(`{"redirect_url":"/","action":"signup"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("expected 403, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if len(repo.created) != 0 {
+		t.Fatalf("expected no auth transactions for blocked signup, got %d", len(repo.created))
+	}
+}
+
 func TestAuthProviderStartGitHubSignupReturnsBadRequest(t *testing.T) {
 	cfg := &config.Config{
-		JWTSecret:          testJWTSecret,
-		VaultMasterKey:     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
-		CORSOrigins:        []string{"http://localhost:3000"},
-		RateLimit:          100,
-		MaxBodySize:        10 * 1024 * 1024,
-		GithubClientID:     "gh-client",
-		GithubClientSecret: "gh-secret",
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		EnablePublicRegistration: true,
+		GithubClientID:           "gh-client",
+		GithubClientSecret:       "gh-secret",
 	}
 	server := NewServerWithDeps(ServerDeps{
 		Config:              cfg,

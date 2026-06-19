@@ -29,13 +29,14 @@
 1. 生产环境使用持久化 Postgres，`DATABASE_URL` 指向正式数据库。
 2. `PUBLIC_BASE_URL` 使用最终 HTTPS 域名。
 3. `JWT_SECRET` 和 `VAULT_MASTER_KEY` 保存到部署平台 secret 或受控密钥系统，恢复时继续使用原值。
-4. `GIT_MIRROR_HOSTED_ROOT` 指向持久目录，推荐 `/data/git-mirrors`。
-5. 设置默认容量 `USER_STORAGE_QUOTA_BYTES`，并准备 admin token。
-6. 至少配置一个离开服务器的备份目标：GitHub Backup、WebDAV 或 S3-compatible。
-7. 完成一次 Postgres dump，并在临时库做恢复演练。
-8. 使用真实外部备份目标完成上传、历史记录、恢复预览和恢复应用验证。
-9. 管理员调用 `/api/ops/status`，返回状态不能是 `critical`。
-10. 准备测试账号、测试团队和测试资料，不使用生产用户隐私数据做演示。
+4. 公开域名部署不能使用开发默认 `JWT_SECRET`、`VAULT_MASTER_KEY` 或 `vola_dev` 数据库密码；服务启动时会拒绝这类组合。
+5. `GIT_MIRROR_HOSTED_ROOT` 指向持久目录，推荐 `/data/git-mirrors`。
+6. 设置默认容量 `USER_STORAGE_QUOTA_BYTES`，配置 `INSTANCE_ADMIN_USER_IDS`，并准备实例管理员的 admin token。
+7. 至少配置一个离开服务器的备份目标：GitHub Backup、WebDAV 或 S3-compatible。
+8. 完成一次 Postgres dump，并在临时库做恢复演练。
+9. 使用真实外部备份目标完成上传、历史记录、恢复预览和恢复应用验证。
+10. 管理员调用 `/api/ops/status`，返回状态不能是 `critical`。
+11. 准备测试账号、测试团队和测试资料，不使用生产用户隐私数据做演示。
 
 ## 个人账号验收
 

@@ -45,6 +45,16 @@ spec:
                 configMapKeyRef:
                   name: vola-config
                   key: GIT_MIRROR_HOSTED_ROOT
+            - name: INSTANCE_ADMIN_USER_IDS
+              valueFrom:
+                configMapKeyRef:
+                  name: vola-config
+                  key: INSTANCE_ADMIN_USER_IDS
+            - name: VOLA_ENABLE_PUBLIC_REGISTRATION
+              valueFrom:
+                configMapKeyRef:
+                  name: vola-config
+                  key: VOLA_ENABLE_PUBLIC_REGISTRATION
             - name: DATABASE_URL
               valueFrom:
                 secretKeyRef:

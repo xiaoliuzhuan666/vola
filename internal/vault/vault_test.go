@@ -98,6 +98,17 @@ func TestWrongNonce(t *testing.T) {
 	}
 }
 
+func TestShortNonceDoesNotPanic(t *testing.T) {
+	key, _ := GenerateMasterKey()
+	v, _ := NewVault(key)
+
+	ciphertext, _, _ := v.Encrypt([]byte("secret"))
+	_, err := v.Decrypt(ciphertext, []byte{1})
+	if err != ErrDecryptFailed {
+		t.Fatalf("expected ErrDecryptFailed, got: %v", err)
+	}
+}
+
 func TestGenerateMasterKey(t *testing.T) {
 	key, err := GenerateMasterKey()
 	if err != nil {

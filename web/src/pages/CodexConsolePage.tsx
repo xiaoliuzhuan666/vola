@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   api,
   type CodexConsoleAutomation,
@@ -18,28 +18,35 @@ import {
   type CodexConsoleSkillCandidateAssignPreviewResponse,
   type CodexConsoleSkillCandidateSaveResponse,
   type CodexConsoleThread,
+  type LocalKnowledgeConcept,
+  type LocalKnowledgeDocument,
+  type LocalKnowledgeIndexResponse,
+  type LocalKnowledgeTreeNode,
   type LocalSkillSyncAgentPlan,
+  type SkillAgentTarget,
 } from "../api";
 import { useI18n } from "../i18n";
 
-type ConsoleView = "brief" | "threads" | "runs" | "automations" | "artifacts" | "hooks" | "memory" | "handovers" | "skill_candidates";
+type ConsoleView = "brief" | "context_index" | "threads" | "runs" | "automations" | "artifacts" | "hooks" | "memory" | "handovers" | "skill_candidates";
 type SkillCandidateAgentID = "claude-code" | "codex" | "cursor" | "gemini-cli";
-
-const SKILL_CANDIDATE_AGENT_OPTIONS: {
+type LocalContextCategory = "important" | "project" | "skills" | "mcp" | "handoff" | "research" | "docs" | "other";
+type SkillCandidateAgentOption = {
   id: SkillCandidateAgentID;
   name: string;
   modeZh: string;
   modeEn: string;
   noteZh: string;
   noteEn: string;
-}[] = [
+};
+
+const SKILL_CANDIDATE_AGENT_OPTIONS: SkillCandidateAgentOption[] = [
   {
     id: "codex",
     name: "Codex",
     modeZh: "本地同步预览",
     modeEn: "Local sync preview",
-    noteZh: "面向 ~/.codex/skills，当前不会写入本地。",
-    noteEn: "Targets ~/.codex/skills; nothing is written locally here.",
+    noteZh: "面向 ~/.agents/skills，当前不会写入本地。",
+    noteEn: "Targets ~/.agents/skills; nothing is written locally here.",
   },
   {
     id: "claude-code",
@@ -67,6 +74,61 @@ const SKILL_CANDIDATE_AGENT_OPTIONS: {
   },
 ];
 
+function consoleViewFromSearch(search: string): ConsoleView {
+  const value = new URLSearchParams(search).get("view");
+  if (
+    value === "context_index" ||
+    value === "threads" ||
+    value === "runs" ||
+    value === "automations" ||
+    value === "artifacts" ||
+    value === "hooks" ||
+    value === "memory" ||
+    value === "handovers" ||
+    value === "skill_candidates"
+  ) {
+    return value;
+  }
+  return "brief";
+}
+
+function getAgentOptionsFromTarget(target: SkillAgentTarget, tx: (zh: string, en: string) => string): SkillCandidateAgentOption {
+  let modeZh = "导出预览";
+  let modeEn = "Export preview";
+  if (target.supports_apply) {
+    modeZh = "本地同步预览";
+    modeEn = "Local sync preview";
+  }
+
+  let noteZh = "";
+  let noteEn = "";
+  if (target.supports_apply) {
+    const pathHint = target.install_path_hint || "";
+    noteZh = `面向 ${pathHint}，当前不会写入本地。`;
+    noteEn = `Targets ${pathHint}; nothing is written locally here.`;
+  } else {
+    if (target.id === "cursor") {
+      noteZh = "保留分配关系，生成规则素材导出预览。";
+      noteEn = "Keeps the assignment and previews an export package.";
+    } else if (target.id === "gemini-cli") {
+      noteZh = "保留分配关系，供 GEMINI.md 等说明文件引用。";
+      noteEn = "Keeps the assignment for manual use from GEMINI.md-style guidance.";
+    } else {
+      noteZh = target.auto_apply_reason || "保留分配关系。";
+      noteEn = target.auto_apply_reason || "Keeps the assignment.";
+    }
+  }
+
+  return {
+    id: target.id as SkillCandidateAgentID,
+    name: target.name,
+    modeZh,
+    modeEn,
+    noteZh,
+    noteEn,
+  };
+}
+
 function formatDateTime(value: string | undefined, locale: "zh-CN" | "en") {
   if (!value) return "—";
   const time = new Date(value);
@@ -78,11 +140,150 @@ function metricLabel(value: number | undefined) {
   return Number.isFinite(value) ? String(value || 0) : "0";
 }
 
+function countLabel(value: number | undefined) {
+  const safeValue = Number.isFinite(value) ? value || 0 : 0;
+  return safeValue.toLocaleString("en-US");
+}
+
 function sourceShortPath(path: string | undefined) {
   if (!path) return "";
   const parts = path.split("/").filter(Boolean);
   if (parts.length <= 4) return path;
   return `…/${parts.slice(-4).join("/")}`;
+}
+
+function fileNameFromPath(path: string | undefined) {
+  if (!path) return "";
+  return path.split("/").filter(Boolean).pop() || path;
+}
+
+function dirnameFromPath(path: string | undefined) {
+  if (!path) return "";
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length <= 1) return path.startsWith("/") ? "/" : "";
+  return `${path.startsWith("/") ? "/" : ""}${parts.slice(0, -1).join("/")}`;
+}
+
+function classifyMarkdownCandidate(doc: LocalKnowledgeDocument): LocalContextCategory {
+  const path = (doc.path || "").toLowerCase();
+  const name = fileNameFromPath(path);
+  const category = (doc.category || "").toLowerCase();
+  if (name === "agents.md" || name === "claude.md" || name === "readme.md" || name === "skill.md" || name === "memory.md") return "important";
+  if (path.includes("/project-facts/") || path.includes("/changes/") || path.includes("requirements") || path.includes("design.md")) return "project";
+  if (path.includes("/skills/") || name.includes("skill")) return "skills";
+  if (path.includes("/mcp/") || name.includes("mcp")) return "mcp";
+  if (path.includes("handover") || path.includes("release") || path.includes("verification") || path.includes("验收")) return "handoff";
+  if (path.includes("research") || path.includes("调研") || category.includes("research")) return "research";
+  if (path.includes("/docs/") || category.includes("doc")) return "docs";
+  return "other";
+}
+
+function localContextCategoryLabel(category: LocalContextCategory, tx: (zh: string, en: string) => string) {
+  switch (category) {
+    case "important":
+      return tx("入口文件", "Entry files");
+    case "project":
+      return tx("项目事实", "Project facts");
+    case "skills":
+      return "Skills";
+    case "mcp":
+      return "MCP";
+    case "handoff":
+      return tx("交接与验收", "Handoff and checks");
+    case "research":
+      return tx("调研资料", "Research");
+    case "docs":
+      return tx("文档", "Docs");
+    default:
+      return tx("其他 Markdown", "Other Markdown");
+  }
+}
+
+function localContextCategoryOrder(category: LocalContextCategory) {
+  const order: Record<LocalContextCategory, number> = {
+    important: 0,
+    project: 1,
+    skills: 2,
+    mcp: 3,
+    handoff: 4,
+    research: 5,
+    docs: 6,
+    other: 7,
+  };
+  return order[category];
+}
+
+function isRecommendedMarkdown(doc: LocalKnowledgeDocument) {
+  const category = classifyMarkdownCandidate(doc);
+  if (category === "important" || category === "project" || category === "handoff") return true;
+  return (doc.score || 0) >= 0.72 && !doc.sensitive_candidate;
+}
+
+function buildLocalContextPrompt(
+  docs: LocalKnowledgeDocument[],
+  tx: (zh: string, en: string) => string,
+) {
+  const uniquePaths = Array.from(new Set(docs.map((doc) => doc.path).filter(Boolean)));
+  if (!uniquePaths.length) return "";
+  const lines = [
+    tx(
+      "请先读取下面这些本地 Markdown 文档作为上下文：",
+      "Read these local Markdown files as context first:",
+    ),
+    "",
+    ...uniquePaths.map((path) => `- ${path}`),
+    "",
+    tx(
+      "读取后先说明你理解到的项目约束、当前状态、相关 Skill/MCP 和未验证项，再继续我的任务。",
+      "After reading them, explain the project constraints, current state, relevant Skill/MCP material, and unverified items before continuing my task.",
+    ),
+  ];
+  return lines.join("\n");
+}
+
+function buildLocalContextGroups(docs: LocalKnowledgeDocument[]) {
+  const groups = docs.reduce<Record<LocalContextCategory, LocalKnowledgeDocument[]>>((acc, doc) => {
+    const category = classifyMarkdownCandidate(doc);
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(doc);
+    return acc;
+  }, {} as Record<LocalContextCategory, LocalKnowledgeDocument[]>);
+  return (Object.keys(groups) as LocalContextCategory[])
+    .sort((left, right) => localContextCategoryOrder(left) - localContextCategoryOrder(right))
+    .map((category) => ({
+      category,
+      docs: groups[category].sort((left, right) => {
+        if (Number(!!right.project_name) !== Number(!!left.project_name)) {
+          return Number(!!right.project_name) - Number(!!left.project_name);
+        }
+        return (right.score || 0) - (left.score || 0);
+      }),
+    }));
+}
+
+function selectedKnowledgeDocument(index: LocalKnowledgeIndexResponse | null, path: string) {
+  if (!index || !path) return null;
+  return index.documents.find((doc) => doc.path === path) || null;
+}
+
+function localKnowledgeConceptsForPaths(index: LocalKnowledgeIndexResponse | null, paths: string[]) {
+  if (!index || !paths.length) return [];
+  const selected = new Set(paths);
+  return index.concepts
+    .filter((concept) => (concept.document_paths || []).some((path) => selected.has(path)))
+    .sort((left, right) => {
+      if (right.count !== left.count) return right.count - left.count;
+      return left.name.localeCompare(right.name);
+    });
+}
+
+function findFirstTreeDocument(node: LocalKnowledgeTreeNode): string {
+  if (node.kind === "document" && node.path) return node.path;
+  for (const child of node.children || []) {
+    const path = findFirstTreeDocument(child);
+    if (path) return path;
+  }
+  return "";
 }
 
 function statusTone(status: string | undefined) {
@@ -270,11 +471,12 @@ function artifactHandoffPrompt(item: CodexConsoleArtifact, tx: (zh: string, en: 
 
 export default function CodexConsolePage() {
   const { locale, tx } = useI18n();
+  const location = useLocation();
   const [data, setData] = useState<CodexConsoleResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
-  const [view, setView] = useState<ConsoleView>("brief");
+  const [view, setView] = useState<ConsoleView>(() => consoleViewFromSearch(location.search));
   const [selectedThreadID, setSelectedThreadID] = useState("");
   const [selectedRunID, setSelectedRunID] = useState("");
   const [selectedAutomationID, setSelectedAutomationID] = useState("");
@@ -304,6 +506,76 @@ export default function CodexConsolePage() {
   const [skillAssignPreview, setSkillAssignPreview] = useState<CodexConsoleSkillCandidateAssignPreviewResponse | null>(null);
   const [skillAssignAgentIDs, setSkillAssignAgentIDs] = useState<SkillCandidateAgentID[]>(["codex"]);
   const [showArchivedSkillCandidates, setShowArchivedSkillCandidates] = useState(false);
+  const [localKnowledgeIndex, setLocalKnowledgeIndex] = useState<LocalKnowledgeIndexResponse | null>(null);
+  const [localContextScanning, setLocalContextScanning] = useState(false);
+  const [localContextError, setLocalContextError] = useState("");
+  const [localContextQuery, setLocalContextQuery] = useState("");
+  const [localContextCategory, setLocalContextCategory] = useState<LocalContextCategory | "all">("all");
+  const [selectedLocalContextPaths, setSelectedLocalContextPaths] = useState<string[]>([]);
+  const [activeLocalContextPath, setActiveLocalContextPath] = useState("");
+  const [availableAgents, setAvailableAgents] = useState<SkillAgentTarget[]>([
+    { id: "codex", name: "Codex", platform: "codex", install_path_hint: "~/.agents/skills", supports_apply: true, export_supported: true },
+    { id: "claude-code", name: "Claude Code", platform: "claude-code", install_path_hint: "~/.claude/skills", supports_apply: true, export_supported: true },
+    { id: "cursor", name: "Cursor", platform: "cursor", install_path_hint: ".cursor/rules", supports_apply: false, export_supported: true },
+    { id: "gemini-cli", name: "Gemini CLI", platform: "gemini-cli", install_path_hint: "Export package; manual GEMINI.md integration", supports_apply: false, export_supported: true },
+  ]);
+
+  const agentOptions = useMemo(() => {
+    return availableAgents.map((agent) => getAgentOptionsFromTarget(agent, tx));
+  }, [availableAgents, locale]);
+
+  useEffect(() => {
+    setView(consoleViewFromSearch(location.search));
+  }, [location.search]);
+
+  const localContextDocs = useMemo(() => {
+    const docs = localKnowledgeIndex?.documents || [];
+    const query = localContextQuery.trim().toLowerCase();
+    return docs
+      .filter((doc) => !doc.sensitive_candidate)
+      .filter((doc) => localContextCategory === "all" || classifyMarkdownCandidate(doc) === localContextCategory)
+      .filter((doc) => {
+        if (!query) return true;
+        return [
+          doc.title,
+          doc.path,
+          doc.project_name,
+          doc.project_path,
+          doc.category,
+          ...(doc.headings || []),
+        ].join("\n").toLowerCase().includes(query);
+      })
+      .sort((left, right) => {
+        const leftRecommended = isRecommendedMarkdown(left) ? 1 : 0;
+        const rightRecommended = isRecommendedMarkdown(right) ? 1 : 0;
+        if (rightRecommended !== leftRecommended) return rightRecommended - leftRecommended;
+        if (localContextCategory === "all") {
+          const orderDiff = localContextCategoryOrder(classifyMarkdownCandidate(left)) - localContextCategoryOrder(classifyMarkdownCandidate(right));
+          if (orderDiff !== 0) return orderDiff;
+        }
+        return (right.score || 0) - (left.score || 0);
+      });
+  }, [localContextCategory, localContextQuery, localKnowledgeIndex]);
+
+  const selectedLocalContextDocs = useMemo(() => {
+    const selected = new Set(selectedLocalContextPaths);
+    return (localKnowledgeIndex?.documents || []).filter((doc) => selected.has(doc.path));
+  }, [localKnowledgeIndex?.documents, selectedLocalContextPaths]);
+
+  const activeLocalContextDoc = useMemo(
+    () => selectedKnowledgeDocument(localKnowledgeIndex, activeLocalContextPath) || localContextDocs[0] || null,
+    [activeLocalContextPath, localContextDocs, localKnowledgeIndex],
+  );
+
+  const selectedLocalContextConcepts = useMemo(
+    () => localKnowledgeConceptsForPaths(localKnowledgeIndex, selectedLocalContextPaths),
+    [localKnowledgeIndex, selectedLocalContextPaths],
+  );
+
+  const selectedLocalContextPrompt = useMemo(
+    () => buildLocalContextPrompt(selectedLocalContextDocs, tx),
+    [selectedLocalContextDocs, locale],
+  );
 
   const load = async (quiet = false) => {
     if (quiet) setRefreshing(true);
@@ -312,6 +584,14 @@ export default function CodexConsolePage() {
     try {
       const next = await api.getCodexConsole();
       setData(next);
+      try {
+        const assignmentsData = await api.getSkillAssignments();
+        if (assignmentsData && assignmentsData.agents) {
+          setAvailableAgents(assignmentsData.agents);
+        }
+      } catch (e) {
+        console.warn("Failed to load skill assignments in CodexConsole", e);
+      }
       setSelectedThreadID((current) => current || next.threads[0]?.id || "");
       setSelectedRunID((current) => current || next.runs[0]?.id || "");
       setSelectedAutomationID((current) => current || next.automations[0]?.id || "");
@@ -410,6 +690,62 @@ export default function CodexConsolePage() {
     await navigator.clipboard?.writeText(value);
     setCopied(marker);
     window.setTimeout(() => setCopied(""), 1400);
+  };
+
+  const copyText = async (marker: string, value: string) => {
+    if (!value) return;
+    await navigator.clipboard?.writeText(value);
+    setCopied(marker);
+    window.setTimeout(() => setCopied(""), 1400);
+  };
+
+  const scanLocalContextIndex = async () => {
+    setLocalContextScanning(true);
+    setLocalContextError("");
+    setMemorySyncMessage("");
+    setNoticeTarget("");
+    try {
+      const index = await api.indexLocalLibrary({ max_markdown: 5000, max_projects: 500 });
+      setLocalKnowledgeIndex(index);
+      const recommended = index.documents
+        .filter((doc) => !doc.sensitive_candidate && isRecommendedMarkdown(doc))
+        .slice(0, 40)
+        .map((doc) => doc.path);
+      setSelectedLocalContextPaths(Array.from(new Set(recommended)));
+      setActiveLocalContextPath((current) => current || recommended[0] || index.documents[0]?.path || "");
+      setMemorySyncMessage(tx(
+        `已建立 ${index.documents.length} 个 Markdown 的知识索引，识别 ${index.concepts.length} 个概念。`,
+        `Indexed ${index.documents.length} Markdown files and detected ${index.concepts.length} concepts.`,
+      ));
+    } catch (err: any) {
+      setLocalContextError(err?.message || tx("建立本地知识索引失败", "Failed to build local knowledge index"));
+    } finally {
+      setLocalContextScanning(false);
+    }
+  };
+
+  const toggleLocalContextPath = (path: string) => {
+    setSelectedLocalContextPaths((current) => {
+      if (current.includes(path)) return current.filter((item) => item !== path);
+      return [...current, path];
+    });
+  };
+
+  const selectRecommendedLocalContext = () => {
+    const recommended = localContextDocs
+      .filter((doc) => isRecommendedMarkdown(doc))
+      .slice(0, 40)
+      .map((doc) => doc.path);
+    setSelectedLocalContextPaths(Array.from(new Set(recommended)));
+  };
+
+  const selectVisibleLocalContext = () => {
+    setSelectedLocalContextPaths(Array.from(new Set(localContextDocs.slice(0, 80).map((doc) => doc.path))));
+  };
+
+  const openLocalKnowledgePath = (path: string) => {
+    if (!path) return;
+    setActiveLocalContextPath(path);
   };
 
   const saveArtifactRegistry = async () => {
@@ -649,10 +985,13 @@ export default function CodexConsolePage() {
         <div>
           <h2>Codex Console</h2>
           <p className="page-subtitle">
-            {tx("把本机 Codex 经验整理成提示词建议、长期记忆和交接材料。", "Turn local Codex work into prompt advice, long-term memory, and handoff context.")}
+            {tx("把最近 Codex 工作整理成待确认项、交接材料和可复用提示词。", "Turn recent Codex work into review items, handoff context, and reusable prompts.")}
           </p>
         </div>
         <div className="page-actions">
+          <button className="btn" type="button" onClick={() => setView("context_index")}>
+            {tx("本地上下文", "Local context")}
+          </button>
           <button className="btn" type="button" disabled={refreshing} onClick={() => void load(true)}>
             {refreshing ? tx("整理中...", "Refreshing...") : tx("重新整理", "Refresh")}
           </button>
@@ -674,20 +1013,35 @@ export default function CodexConsolePage() {
       ) : null}
       {memorySyncError ? <div className="alert alert-warn">{memorySyncError}</div> : null}
 
-      {!hasConsoleData ? (
+      {!hasConsoleData && view !== "context_index" ? (
         <div className="empty-action-state">
           <p>{tx("还没有可展示的 Codex 本地资料。", "No local Codex data is available yet.")}</p>
+          <button className="btn" type="button" onClick={() => setView("context_index")}>
+            {tx("整理本地 Markdown", "Organize local Markdown")}
+          </button>
           <Link className="btn btn-primary" to="/imports/local-apps?platform=codex">
             {tx("扫描 Codex", "Scan Codex")}
           </Link>
         </div>
       ) : (
         <>
-          <CodexConsoleBriefHero data={data} overview={overview} tx={tx} locale={locale} />
-
           {view === "brief" ? (
             <section className="codex-console-brief-shell">
-              <BriefDashboard data={data} overview={overview} tx={tx} onOpenAdvanced={setView} />
+              <BriefDashboard
+                data={data}
+                overview={overview}
+                tx={tx}
+                onOpenAdvanced={(nextView, selectedID) => {
+                  if (nextView === "memory" && selectedID) setSelectedMemoryID(selectedID);
+                  if (nextView === "skill_candidates" && selectedID) setSelectedSkillCandidateID(selectedID);
+                  if (nextView === "handovers" && selectedID) setSelectedHandoverID(selectedID);
+                  if (nextView === "artifacts" && selectedID) setSelectedArtifactID(selectedID);
+                  if (nextView === "hooks" && selectedID) setSelectedHookID(selectedID);
+                  if (nextView === "runs" && selectedID) setSelectedRunID(selectedID);
+                  if (nextView === "automations" && selectedID) setSelectedAutomationID(selectedID);
+                  setView(nextView);
+                }}
+              />
             </section>
           ) : (
             <section className="codex-console-layout">
@@ -695,6 +1049,7 @@ export default function CodexConsolePage() {
                 <div className="codex-console-tabs" role="tablist" aria-label="Codex Console views">
                   {([
                     ["brief", tx("简报", "Brief"), 0],
+                    ["context_index", tx("项目文档", "Project Docs"), localKnowledgeIndex?.documents.length || 0],
                     ["memory", tx("记忆候选", "Memory"), data?.memory_candidates.length || 0],
                     ["handovers", tx("项目交接", "Handovers"), data?.handovers?.length || 0],
                     ["skill_candidates", tx("Skill 草稿", "Skill Drafts"), visibleSkillCandidates.length],
@@ -710,6 +1065,30 @@ export default function CodexConsolePage() {
                     </button>
                   ))}
                 </div>
+                {view === "context_index" ? (
+                  <LocalContextIndex
+                    index={localKnowledgeIndex}
+                    docs={localContextDocs}
+                    selectedPaths={selectedLocalContextPaths}
+                    activePath={activeLocalContextDoc?.path || ""}
+                    query={localContextQuery}
+                    category={localContextCategory}
+                    scanning={localContextScanning}
+                    error={localContextError}
+                    tx={tx}
+                    locale={locale}
+                    copied={copied}
+                    onScan={() => void scanLocalContextIndex()}
+                    onQueryChange={setLocalContextQuery}
+                    onCategoryChange={setLocalContextCategory}
+                    onTogglePath={toggleLocalContextPath}
+                    onOpenPath={openLocalKnowledgePath}
+                    onSelectRecommended={selectRecommendedLocalContext}
+                    onSelectVisible={selectVisibleLocalContext}
+                    onClearSelection={() => setSelectedLocalContextPaths([])}
+                    onCopyPath={(path) => void copySource(path)}
+                  />
+                ) : null}
                 {view === "threads" ? (
                   <ThreadTable items={data?.threads || []} selectedID={selectedThread?.id || ""} onSelect={setSelectedThreadID} tx={tx} locale={locale} />
                 ) : null}
@@ -746,6 +1125,21 @@ export default function CodexConsolePage() {
               </div>
 
               <aside className="codex-console-detail">
+                {view === "context_index" ? (
+                  <LocalContextDetail
+                    index={localKnowledgeIndex}
+                    activeDoc={activeLocalContextDoc}
+                    selectedDocs={selectedLocalContextDocs}
+                    selectedConcepts={selectedLocalContextConcepts}
+                    prompt={selectedLocalContextPrompt}
+                    tx={tx}
+                    copied={copied}
+                    onCopyPrompt={() => void copyText("local-context-prompt", selectedLocalContextPrompt)}
+                    onCopyPaths={() => void copyText("local-context-paths", selectedLocalContextDocs.map((doc) => doc.path).join("\n"))}
+                    onCopyCompilePrompt={() => void copyText("local-context-compile-prompt", localKnowledgeIndex?.compile?.prompt || "")}
+                    onCopyPath={(path) => void copySource(path)}
+                  />
+                ) : null}
                 {view === "threads" && selectedThread ? (
                   <ThreadDetail item={selectedThread} locale={locale} tx={tx} copied={copied} onCopy={copySource} />
                 ) : null}
@@ -819,6 +1213,7 @@ export default function CodexConsolePage() {
                     draftContent={skillDraftContent}
                     assigning={skillAssigning === selectedSkillCandidate.id}
                     assignPreview={skillAssignPreview?.id === selectedSkillCandidate.id ? skillAssignPreview : null}
+                    agentOptions={agentOptions}
                     selectedAgentIDs={skillAssignAgentIDs}
                     onDraftChange={setSkillDraftContent}
                     onDraftReset={() => setSkillDraftContent(cleanSkillDraftText(selectedSkillCandidate.draft))}
@@ -834,7 +1229,7 @@ export default function CodexConsolePage() {
             </section>
           )}
 
-          {view !== "brief" ? (
+          {view !== "brief" && hasConsoleData ? (
             <section className="codex-console-overview">
               <div className="dashboard-section-head compact">
                 <div>
@@ -856,6 +1251,369 @@ export default function CodexConsolePage() {
           ) : null}
         </>
       )}
+    </div>
+  );
+}
+
+function LocalContextIndex({
+  index,
+  docs,
+  selectedPaths,
+  activePath,
+  query,
+  category,
+  scanning,
+  error,
+  tx,
+  locale,
+  copied,
+  onScan,
+  onQueryChange,
+  onCategoryChange,
+  onTogglePath,
+  onOpenPath,
+  onSelectRecommended,
+  onSelectVisible,
+  onClearSelection,
+  onCopyPath,
+}: {
+  index: LocalKnowledgeIndexResponse | null;
+  docs: LocalKnowledgeDocument[];
+  selectedPaths: string[];
+  activePath: string;
+  query: string;
+  category: LocalContextCategory | "all";
+  scanning: boolean;
+  error: string;
+  tx: (zh: string, en: string) => string;
+  locale: "zh-CN" | "en";
+  copied: string;
+  onScan: () => void;
+  onQueryChange: (value: string) => void;
+  onCategoryChange: (value: LocalContextCategory | "all") => void;
+  onTogglePath: (path: string) => void;
+  onOpenPath: (path: string) => void;
+  onSelectRecommended: () => void;
+  onSelectVisible: () => void;
+  onClearSelection: () => void;
+  onCopyPath: (path: string) => void;
+}) {
+  const groups = buildLocalContextGroups(docs);
+  const categories: Array<LocalContextCategory | "all"> = ["all", "important", "project", "skills", "mcp", "handoff", "research", "docs", "other"];
+  return (
+    <div className="local-context-index">
+      <div className="local-context-toolbar">
+        <div>
+          <strong>{tx("项目知识索引", "Project knowledge index")}</strong>
+          <p>{tx("把本机 Markdown 整理成项目、概念、链接和反向链接，使用 Codex 时直接复制真实路径。", "Organize local Markdown into projects, concepts, links, and backlinks, then copy real paths for Codex.")}</p>
+        </div>
+        <button className="btn btn-sm btn-primary" type="button" disabled={scanning} onClick={onScan}>
+          {scanning ? tx("索引中...", "Indexing...") : index ? tx("重新索引", "Re-index") : tx("建立索引", "Build index")}
+        </button>
+      </div>
+
+      {error ? <div className="alert alert-warn">{error}</div> : null}
+
+      {index ? (
+        <div className="local-context-stats">
+          <span>{tx(`${index.stats.projects_shown} 个项目`, `${index.stats.projects_shown} projects`)}</span>
+          <span>{tx(`${index.documents.length} 个 Markdown`, `${index.documents.length} Markdown files`)}</span>
+          <span>{tx(`${index.concepts.length} 个概念`, `${index.concepts.length} concepts`)}</span>
+          <span>{tx(`${index.links.filter((link) => link.resolved).length} 条已解析链接`, `${index.links.filter((link) => link.resolved).length} resolved links`)}</span>
+          <span>{tx(`${selectedPaths.length} 个已选择`, `${selectedPaths.length} selected`)}</span>
+          {index.stats.sensitive_files ? <span>{tx(`${index.stats.sensitive_files} 个敏感候选已隐藏`, `${index.stats.sensitive_files} sensitive candidates hidden`)}</span> : null}
+        </div>
+      ) : null}
+
+      <div className="local-context-filters">
+        <input
+          value={query}
+          onChange={(event) => onQueryChange(event.target.value)}
+          placeholder={tx("搜索项目、路径、标题", "Search projects, paths, titles")}
+        />
+        <select
+          value={category}
+          onChange={(event) => onCategoryChange(event.target.value as LocalContextCategory | "all")}
+        >
+          {categories.map((item) => (
+            <option key={item} value={item}>
+              {item === "all" ? tx("全部类型", "All types") : localContextCategoryLabel(item, tx)}
+            </option>
+          ))}
+        </select>
+        <button className="btn btn-sm" type="button" disabled={!index} onClick={onSelectRecommended}>{tx("推荐选择", "Recommended")}</button>
+        <button className="btn btn-sm" type="button" disabled={!docs.length} onClick={onSelectVisible}>{tx("选择当前列表", "Select visible")}</button>
+        <button className="btn btn-sm" type="button" disabled={!selectedPaths.length} onClick={onClearSelection}>{tx("清空", "Clear")}</button>
+      </div>
+
+      {!index ? (
+        <div className="local-context-empty">
+          <strong>{tx("先建立本地知识索引", "Build a local knowledge index first")}</strong>
+          <p>{tx("Vola 会解析 AGENTS.md、README、docs、Skill、MCP 和项目资料，提取标题、概念、链接、反向链接。", "Vola parses AGENTS.md, README, docs, Skill, MCP, and project notes, then extracts headings, concepts, links, and backlinks.")}</p>
+        </div>
+      ) : groups.length ? (
+        <div className="local-knowledge-layout">
+          <div className="local-knowledge-tree">
+            {(index.tree || []).map((node) => (
+              <KnowledgeTreeNodeView
+                key={node.id}
+                node={node}
+                depth={0}
+                activePath={activePath}
+                selectedPaths={selectedPaths}
+                onOpenPath={onOpenPath}
+                onTogglePath={onTogglePath}
+                tx={tx}
+              />
+            ))}
+          </div>
+          <div className="local-context-groups">
+            {groups.map((group) => (
+              <section key={group.category} className="local-context-group">
+                <div className="local-context-group-head">
+                  <strong>{localContextCategoryLabel(group.category, tx)}</strong>
+                  <span>{tx(`${group.docs.length} 个文件`, `${group.docs.length} files`)}</span>
+                </div>
+                <div className="local-context-doc-list">
+                  {group.docs.slice(0, 36).map((doc) => {
+                    const selected = selectedPaths.includes(doc.path);
+                    const active = activePath === doc.path;
+                    const recommended = isRecommendedMarkdown(doc);
+                    return (
+                      <div key={doc.path} className={active ? "local-context-doc is-active" : selected ? "local-context-doc is-selected" : "local-context-doc"}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          aria-label={tx("选择文档", "Select document")}
+                          onChange={() => onTogglePath(doc.path)}
+                        />
+                        <button className="local-context-doc-main" type="button" onClick={() => onOpenPath(doc.path)}>
+                          <strong>{doc.title || fileNameFromPath(doc.path)}</strong>
+                          <small>{sourceShortPath(doc.path)}</small>
+                          {doc.summary || doc.excerpt ? <p>{shortPreview(doc.summary || doc.excerpt || "", 140)}</p> : null}
+                        </button>
+                        <span className="local-context-doc-meta">
+                          {doc.project_name ? <b>{doc.project_name}</b> : null}
+                          {doc.concepts?.length ? <em>{tx(`${doc.concepts.length} 概念`, `${doc.concepts.length} concepts`)}</em> : null}
+                          {recommended ? <em>{tx("推荐", "Recommended")}</em> : null}
+                          <small>{formatDateTime(doc.updated_at, locale)}</small>
+                        </span>
+                        <button className="btn btn-sm" type="button" onClick={() => onCopyPath(doc.path)}>
+                          {copied === doc.path ? tx("已复制", "Copied") : tx("路径", "Path")}
+                        </button>
+                      </div>
+                    );
+                  })}
+                  {group.docs.length > 36 ? (
+                    <div className="local-context-doc-more">
+                      {tx(`还有 ${group.docs.length - 36} 个文件，搜索关键词可缩小范围。`, `${group.docs.length - 36} more files. Search to narrow the list.`)}
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <div className="local-context-empty">
+          <strong>{tx("没有匹配的 Markdown", "No matching Markdown")}</strong>
+          <p>{tx("换一个关键词或类型再看。", "Try another keyword or type.")}</p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function KnowledgeTreeNodeView({
+  node,
+  depth,
+  activePath,
+  selectedPaths,
+  onOpenPath,
+  onTogglePath,
+  tx,
+}: {
+  node: LocalKnowledgeTreeNode;
+  depth: number;
+  activePath: string;
+  selectedPaths: string[];
+  onOpenPath: (path: string) => void;
+  onTogglePath: (path: string) => void;
+  tx: (zh: string, en: string) => string;
+}) {
+  const firstPath = node.path || findFirstTreeDocument(node);
+  const isDocument = node.kind === "document" && !!node.path;
+  const selected = isDocument && selectedPaths.includes(node.path || "");
+  const active = isDocument && activePath === node.path;
+  return (
+    <div className="knowledge-tree-node">
+      <div
+        className={[
+          "knowledge-tree-row",
+          `is-${node.kind}`,
+          active ? "is-active" : "",
+          selected ? "is-selected" : "",
+        ].filter(Boolean).join(" ")}
+        style={{ paddingLeft: `${depth * 14 + 8}px` }}
+      >
+        {isDocument ? (
+          <input
+            type="checkbox"
+            checked={selected}
+            aria-label={tx("选择文档", "Select document")}
+            onChange={() => onTogglePath(node.path || "")}
+          />
+        ) : (
+          <span className="knowledge-tree-mark" />
+        )}
+        <button type="button" onClick={() => firstPath && onOpenPath(firstPath)}>
+          <span>{node.label}</span>
+          {node.count ? <small>{node.count}</small> : null}
+        </button>
+      </div>
+      {node.children?.length ? (
+        <div className="knowledge-tree-children">
+          {node.children.slice(0, 36).map((child) => (
+            <KnowledgeTreeNodeView
+              key={child.id}
+              node={child}
+              depth={depth + 1}
+              activePath={activePath}
+              selectedPaths={selectedPaths}
+              onOpenPath={onOpenPath}
+              onTogglePath={onTogglePath}
+              tx={tx}
+            />
+          ))}
+          {node.children.length > 36 ? (
+            <div className="knowledge-tree-more" style={{ paddingLeft: `${(depth + 1) * 14 + 26}px` }}>
+              {tx(`还有 ${node.children.length - 36} 项`, `${node.children.length - 36} more`)}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function LocalContextDetail({
+  index,
+  activeDoc,
+  selectedDocs,
+  selectedConcepts,
+  prompt,
+  tx,
+  copied,
+  onCopyPrompt,
+  onCopyPaths,
+  onCopyCompilePrompt,
+  onCopyPath,
+}: {
+  index: LocalKnowledgeIndexResponse | null;
+  activeDoc: LocalKnowledgeDocument | null;
+  selectedDocs: LocalKnowledgeDocument[];
+  selectedConcepts: LocalKnowledgeConcept[];
+  prompt: string;
+  tx: (zh: string, en: string) => string;
+  copied: string;
+  onCopyPrompt: () => void;
+  onCopyPaths: () => void;
+  onCopyCompilePrompt: () => void;
+  onCopyPath: (path: string) => void;
+}) {
+  const selectedProjects = Array.from(new Set(selectedDocs.map((doc) => doc.project_name || dirnameFromPath(doc.path)).filter(Boolean)));
+  return (
+    <div className="local-context-detail">
+      <h3>{tx("知识索引", "Knowledge index")}</h3>
+      <p>{tx("先把路径、概念和反向链接交给 Codex，让它读取真实文件后再工作。", "Give Codex paths, concepts, and backlinks first so it can read real files before working.")}</p>
+      <div className="local-context-detail-stats">
+        <span><strong>{selectedDocs.length}</strong>{tx("已选文件", "files")}</span>
+        <span><strong>{selectedProjects.length}</strong>{tx("相关项目", "projects")}</span>
+        <span><strong>{selectedConcepts.length}</strong>{tx("相关概念", "concepts")}</span>
+        <span><strong>{index?.warnings?.length || 0}</strong>{tx("提醒", "warnings")}</span>
+      </div>
+
+      {activeDoc ? (
+        <section className="local-knowledge-active">
+          <div className="local-knowledge-active-head">
+            <div>
+              <strong>{activeDoc.title || fileNameFromPath(activeDoc.path)}</strong>
+              <small>{activeDoc.path}</small>
+            </div>
+            <button className="btn btn-sm" type="button" onClick={() => onCopyPath(activeDoc.path)}>
+              {copied === activeDoc.path ? tx("已复制", "Copied") : tx("复制路径", "Copy path")}
+            </button>
+          </div>
+          {activeDoc.summary ? <p>{activeDoc.summary}</p> : null}
+          {activeDoc.concepts?.length ? (
+            <div className="local-knowledge-chip-list">
+              {activeDoc.concepts.slice(0, 12).map((concept, index) => <span key={`${concept}:${index}`}>{concept}</span>)}
+            </div>
+          ) : null}
+          {activeDoc.heading_items?.length ? (
+            <div className="local-knowledge-outline">
+              <strong>{tx("标题结构", "Outline")}</strong>
+              {activeDoc.heading_items.slice(0, 12).map((heading) => (
+                <small key={`${heading.level}:${heading.anchor}`} style={{ paddingLeft: `${Math.max(0, heading.level - 1) * 10}px` }}>
+                  {heading.text}
+                </small>
+              ))}
+            </div>
+          ) : null}
+          <div className="local-knowledge-relations">
+            <div>
+              <strong>{tx("反向链接", "Backlinks")}</strong>
+              {activeDoc.backlinks?.length ? activeDoc.backlinks.slice(0, 8).map((backlink) => (
+                <button key={`${backlink.source_path}:${backlink.text}`} type="button" onClick={() => onCopyPath(backlink.source_path)}>
+                  <span>{backlink.source_title || fileNameFromPath(backlink.source_path)}</span>
+                  <small>{sourceShortPath(backlink.source_path)}</small>
+                </button>
+              )) : <small>{tx("暂时没有其他文档链接到它", "No document links to it yet")}</small>}
+            </div>
+            <div>
+              <strong>{tx("链接出去", "Outgoing")}</strong>
+              {activeDoc.outgoing_links?.length ? activeDoc.outgoing_links.slice(0, 8).map((link) => (
+                <button key={`${link.kind}:${link.target}:${link.text}`} type="button" onClick={() => link.target_path ? onCopyPath(link.target_path) : undefined}>
+                  <span>{link.text || link.target}</span>
+                  <small>{link.resolved ? sourceShortPath(link.target_path) : link.kind}</small>
+                </button>
+              )) : <small>{tx("没有检测到链接", "No links detected")}</small>}
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <div className="local-context-copy-actions">
+        <button className="btn btn-primary" type="button" disabled={!prompt} onClick={onCopyPrompt}>
+          {copied === "local-context-prompt" ? tx("已复制提示词", "Prompt copied") : tx("复制提示词", "Copy prompt")}
+        </button>
+        <button className="btn" type="button" disabled={!selectedDocs.length} onClick={onCopyPaths}>
+          {copied === "local-context-paths" ? tx("已复制路径", "Paths copied") : tx("只复制路径", "Copy paths")}
+        </button>
+        <button className="btn" type="button" disabled={!index?.compile?.prompt} onClick={onCopyCompilePrompt}>
+          {copied === "local-context-compile-prompt" ? tx("已复制编译提示词", "Compile prompt copied") : tx("复制编译提示词", "Copy compile prompt")}
+        </button>
+      </div>
+      <pre className="local-context-prompt-preview">{prompt || tx("选择 Markdown 后，这里会生成可直接贴给 Codex 的提示词。", "Select Markdown files to generate a prompt you can paste into Codex.")}</pre>
+      {selectedConcepts.length ? (
+        <div className="local-knowledge-concepts">
+          <strong>{tx("已选概念", "Selected concepts")}</strong>
+          <div className="local-knowledge-chip-list">
+            {selectedConcepts.slice(0, 20).map((concept, index) => <span key={`${concept.slug}:${index}`}>{concept.name}<small>{concept.count}</small></span>)}
+          </div>
+        </div>
+      ) : null}
+      {selectedDocs.length ? (
+        <div className="local-context-selected-list">
+          {selectedDocs.slice(0, 14).map((doc) => (
+            <div key={doc.path}>
+              <strong>{doc.title || fileNameFromPath(doc.path)}</strong>
+              <small>{doc.path}</small>
+            </div>
+          ))}
+          {selectedDocs.length > 14 ? <p>{tx(`还有 ${selectedDocs.length - 14} 个文件未展示。`, `${selectedDocs.length - 14} more files not shown.`)}</p> : null}
+        </div>
+      ) : null}
     </div>
   );
 }
@@ -896,43 +1654,6 @@ function codexBriefRecentText(data: CodexConsoleResponse | null) {
   return chunks.join("\n").toLowerCase();
 }
 
-function CodexConsoleBriefHero({
-  data,
-  overview,
-  tx,
-  locale,
-}: {
-  data: CodexConsoleResponse | null;
-  overview: CodexConsoleResponse["overview"] | undefined;
-  tx: (zh: string, en: string) => string;
-  locale: "zh-CN" | "en";
-}) {
-  const stats = codexBriefStats(data);
-  return (
-    <section className="codex-console-brief-hero">
-      <div className="codex-console-brief-copy">
-        <span>{tx("AI 使用改进台", "AI improvement console")}</span>
-        <h3>{tx("下次找 AI，可以直接带上这些上下文。", "Give the next AI the right context immediately.")}</h3>
-        <p>{tx(
-          "这里不要求普通用户读原始线程。Vola 会把最近的 Codex 工作整理成三类可用信息：怎么写提示词、哪些长期事实值得记住、下一个 Agent 应该从哪里接手。",
-          "This page does not ask regular users to read raw threads. Vola turns recent Codex work into three usable things: prompt advice, long-term facts worth remembering, and where the next agent should continue.",
-        )}</p>
-      </div>
-      <div className="codex-console-brief-next">
-        <span>{tx("当前建议", "Current advice")}</span>
-        <strong>
-          {stats.memoryConflicts
-            ? tx("先处理相似记忆，再让 AI 继续任务。", "Review overlapping memory before the AI continues.")
-            : stats.pendingMemory
-              ? tx("先确认长期记忆候选，再开始下一次任务。", "Review long-term memory candidates before the next task.")
-              : tx("让 AI 先读取 Vola 交接和交付物索引。", "Ask the AI to read Vola handoffs and artifact registry first.")}
-        </strong>
-        <small>{tx(`最近整理时间：${formatDateTime(overview?.last_activity, locale)}`, `Last organized: ${formatDateTime(overview?.last_activity, locale)}`)}</small>
-      </div>
-    </section>
-  );
-}
-
 function BriefDashboard({
   data,
   overview,
@@ -942,7 +1663,7 @@ function BriefDashboard({
   data: CodexConsoleResponse | null;
   overview: CodexConsoleResponse["overview"] | undefined;
   tx: (zh: string, en: string) => string;
-  onOpenAdvanced: (view: ConsoleView) => void;
+  onOpenAdvanced: (view: ConsoleView, selectedID?: string) => void;
 }) {
   const stats = codexBriefStats(data);
   const latestProject = overview?.workspaces?.[0];
@@ -952,30 +1673,79 @@ function BriefDashboard({
     .sort((left, right) => Number(!!right.conflict) - Number(!!left.conflict))
     .slice(0, 1);
   const preparedItems = buildPreparedAgentItems(data, stats, latestProject?.name, tx);
+  const allTaskItems = buildBriefTaskItems(data, stats, tx);
+  const taskItems = allTaskItems.slice(0, 4);
+  const actionableTaskCount = allTaskItems.filter((item) => !item.disabled && !item.isEmpty).length;
   const nextPromptTemplate = tx(
     `请先读取 Vola 里${latestProject?.name ? ` ${latestProject.name} 的` : ""}项目交接、长期记忆候选和交付物索引；如果目标是桌面端，请验证 macOS Vola.app。完成后说明改了哪些文件、验证结果和未验证项。`,
     `Read Vola${latestProject?.name ? ` ${latestProject.name}` : ""} project handoff, memory candidates, and artifact registry first. If the target is desktop, verify the macOS Vola.app. Finish with changed files, verification results, and anything not verified.`,
   );
   return (
     <div className="codex-console-brief-board">
-      <section className="codex-console-brief-section is-primary">
-        <div className="dashboard-section-head compact">
-          <div>
-            <h3>{tx("下次找 AI，可以先这样说", "Start the next AI task like this")}</h3>
-            <p>{tx("这段提示词会提醒后续 AI 先读 Vola 里已经整理好的背景，避免重新解释和测错端。", "This prompt tells the next AI to read the context Vola already organized, reducing repeated explanations and wrong-surface checks.")}</p>
+      <section className="codex-console-workbench" aria-label={tx("Codex Console 工作台", "Codex Console workbench")}>
+        <div className="codex-console-action-queue">
+          <div className="codex-console-action-head">
+            <div>
+              <h3>{tx("现在要处理的事", "What needs attention")}</h3>
+              <p>{tx("只放会影响后续 AI 使用效果的项目。", "Only items that affect later AI usefulness are shown here.")}</p>
+            </div>
+            <span>{actionableTaskCount ? tx(`${countLabel(actionableTaskCount)} 项待处理`, `${countLabel(actionableTaskCount)} to review`) : tx("暂无待处理", "Nothing pending")}</span>
+          </div>
+          <div className="codex-console-task-list">
+            {taskItems.map((item) => (
+              <BriefTaskCard
+                key={item.title}
+                title={item.title}
+                body={item.body}
+                meta={item.meta}
+                result={item.result}
+                action={item.action}
+                tone={item.tone}
+                disabled={item.disabled}
+                isEmpty={item.isEmpty}
+                onAction={() => onOpenAdvanced(item.view, item.selectedID)}
+              />
+            ))}
           </div>
         </div>
-        <PromptTemplateBox text={nextPromptTemplate} tx={tx} />
+
+        <aside className="codex-console-next-panel">
+          <div className="dashboard-section-head compact">
+            <div>
+              <h3>{tx("给下个 AI 的提示词", "Prompt for the next AI")}</h3>
+              <p>{tx("复制后直接贴到新会话，先让它读取 Vola 已整理的资料。", "Copy this into a new session so it reads the context Vola already organized.")}</p>
+            </div>
+          </div>
+          <PromptTemplateBox text={nextPromptTemplate} tx={tx} />
+          <div className="codex-console-brief-metrics" aria-label={tx("资料概览", "Context overview")}>
+            <button type="button" onClick={() => onOpenAdvanced("memory")}>
+              <strong>{countLabel(stats.memoryConflicts + stats.pendingMemory)}</strong>
+              <span>{tx("记忆候选", "Memory")}</span>
+            </button>
+            <button type="button" onClick={() => onOpenAdvanced("handovers")}>
+              <strong>{countLabel(stats.handovers)}</strong>
+              <span>{tx("交接材料", "Handovers")}</span>
+            </button>
+            <button type="button" onClick={() => onOpenAdvanced("artifacts")}>
+              <strong>{countLabel(stats.artifacts)}</strong>
+              <span>{tx("交付物", "Artifacts")}</span>
+            </button>
+            <button type="button" onClick={() => onOpenAdvanced("skill_candidates")}>
+              <strong>{countLabel(stats.skillDrafts)}</strong>
+              <span>{tx("Skill 草稿", "Skill drafts")}</span>
+            </button>
+          </div>
+        </aside>
       </section>
 
-      <section className="codex-console-brief-section">
+      <section className="codex-console-brief-section is-compact">
         <div className="dashboard-section-head compact">
           <div>
-            <h3>{tx("Vola 已经替你整理好的内容", "What Vola prepared for you")}</h3>
-            <p>{tx("这些资料是给后续 AI 用的，普通用户不用翻原始记录。", "These materials are for later AI work, so regular users do not need to read raw records.")}</p>
+            <h3>{tx("常用资料入口", "Common context")}</h3>
+            <p>{tx("需要交接、保存索引或审查候选时从这里进入。", "Use these when you need handoff context, saved indexes, or candidate review.")}</p>
           </div>
         </div>
-        <div className="codex-console-prepared-list">
+        <div className="codex-console-prepared-list is-compact">
           {preparedItems.map((item) => (
             <BriefPreparedItem
               key={item.title}
@@ -990,43 +1760,45 @@ function BriefDashboard({
         </div>
       </section>
 
-      <section className="codex-console-brief-section">
-        <div className="dashboard-section-head compact">
-          <div>
-            <h3>{tx("下次提示词可以这样改", "Improve the next prompt")}</h3>
-            <p>{tx("Vola 从最近的 Codex 工作里找出容易让 AI 测错、漏说或重复解释的地方。", "Vola looks for places where recent Codex work made the AI check the wrong thing, miss context, or repeat explanations.")}</p>
+      <div className="codex-console-brief-secondary-grid">
+        <section className="codex-console-brief-section">
+          <div className="dashboard-section-head compact">
+            <div>
+              <h3>{tx("提示词改进建议", "Prompt improvements")}</h3>
+              <p>{tx("保留最容易影响结果的几条。", "The few points most likely to affect the result.")}</p>
+            </div>
           </div>
-        </div>
-        <div className="codex-console-prompt-list">
-          {promptSuggestions.map((item) => (
-            <PromptSuggestionCard
-              key={item.title}
-              title={item.title}
-              body={item.body}
-              example={item.example}
-              source={item.source}
-              tx={tx}
-            />
-          ))}
-        </div>
-      </section>
+          <div className="codex-console-prompt-list">
+            {promptSuggestions.map((item) => (
+              <PromptSuggestionCard
+                key={item.title}
+                title={item.title}
+                body={item.body}
+                example={item.example}
+                source={item.source}
+                tx={tx}
+              />
+            ))}
+          </div>
+        </section>
 
-      <section className="codex-console-brief-section">
-        <div className="dashboard-section-head compact">
-          <div>
-            <h3>{tx("长期记忆会让后续 AI 更准", "Long-term memory can improve later AI work")}</h3>
-            <p>{tx("默认只展示最值得看的候选。确认前不会写入长期记忆。", "Only the most useful candidates are shown by default. Nothing is saved as long-term memory before review.")}</p>
+        <section className="codex-console-brief-section">
+          <div className="dashboard-section-head compact">
+            <div>
+              <h3>{tx("长期记忆", "Long-term memory")}</h3>
+              <p>{tx("确认前不会写入长期记忆。", "Nothing is saved as long-term memory before review.")}</p>
+            </div>
+            <span className="dashboard-card-link-muted">{stats.memoryConflicts ? tx("有相似记忆", "possible overlap") : stats.pendingMemory ? tx("值得确认", "worth reviewing") : tx("暂无新建议", "nothing new")}</span>
           </div>
-          <span className="dashboard-card-link-muted">{stats.memoryConflicts ? tx("有相似记忆", "possible overlap") : stats.pendingMemory ? tx("值得确认", "worth reviewing") : tx("暂无新建议", "nothing new")}</span>
-        </div>
-        <div className="codex-console-memory-value-list">
-          {memoryHighlights.length ? (
-            memoryHighlights.map((item) => <MemoryValueCard key={item.id} item={item} tx={tx} />)
-          ) : (
-            <MemoryValueCard tx={tx} />
-          )}
-        </div>
-      </section>
+          <div className="codex-console-memory-value-list">
+            {memoryHighlights.length ? (
+              memoryHighlights.map((item) => <MemoryValueCard key={item.id} item={item} tx={tx} />)
+            ) : (
+              <MemoryValueCard tx={tx} />
+            )}
+          </div>
+        </section>
+      </div>
 
       <section className="codex-console-brief-section is-expert">
         <details className="codex-console-expert-details">
@@ -1044,6 +1816,192 @@ function BriefDashboard({
         </details>
       </section>
     </div>
+  );
+}
+
+type BriefTaskTone = "bad" | "warn" | "neutral" | "ok";
+
+type BriefTaskItem = {
+  title: string;
+  body: string;
+  meta: string;
+  result: string;
+  action: string;
+  view: ConsoleView;
+  selectedID?: string;
+  tone: BriefTaskTone;
+  disabled: boolean;
+  isEmpty?: boolean;
+};
+
+function buildBriefTaskItems(
+  data: CodexConsoleResponse | null,
+  stats: ReturnType<typeof codexBriefStats>,
+  tx: (zh: string, en: string) => string,
+): BriefTaskItem[] {
+  const items: BriefTaskItem[] = [];
+  const memoryCandidates = data?.memory_candidates || [];
+  const memoryConflict = memoryCandidates.find((item) => item.conflict && isMemoryActionable(item));
+  const pendingMemory = memoryCandidates.find((item) => !item.conflict && isMemoryActionable(item));
+  const skillDrafts = (data?.skill_candidates || []).filter((item) => {
+    if (isArchivedSkillCandidate(item)) return false;
+    const status = (item.status || "").toLowerCase();
+    return status !== "ready" || !item.skill_path;
+  });
+  const unsavedHandover = (data?.handovers || []).find((item) => !item.path);
+  const hookReview = (data?.hooks || []).find((item) => item.status === "manual_required" || item.risk_level === "high");
+  const failedRun = (data?.runs || []).find((item) => item.errors > 0);
+
+  if (memoryConflict) {
+    items.push({
+      title: tx("处理相似记忆", "Review overlapping memory"),
+      body: tx("有候选记忆和已有长期记忆相似。确认合并方式后，再让后续 AI 使用这些背景。", "A candidate overlaps with existing long-term memory. Choose how to merge it before later AI uses the context."),
+      meta: tx(`${countLabel(stats.memoryConflicts)} 条需要确认`, `${countLabel(stats.memoryConflicts)} need review`),
+      result: tx("后续 AI 不会读到互相打架的背景。", "Later AI will not read conflicting context."),
+      action: tx("处理记忆", "Review memory"),
+      view: "memory",
+      selectedID: memoryConflict.id,
+      tone: "bad",
+      disabled: false,
+    });
+  }
+
+  if (pendingMemory) {
+    items.push({
+      title: tx("确认长期记忆候选", "Review memory candidates"),
+      body: tx("这些内容可能是稳定偏好、项目背景或固定流程。确认前不会写入长期记忆。", "These may be stable preferences, project context, or repeat workflows. Nothing is saved before review."),
+      meta: tx(`${countLabel(stats.pendingMemory)} 条可确认`, `${countLabel(stats.pendingMemory)} reviewable`),
+      result: tx("后续 AI 会少问背景，少按旧前提处理任务。", "Later AI can ask less and avoid stale assumptions."),
+      action: tx("查看候选", "View candidates"),
+      view: "memory",
+      selectedID: pendingMemory.id,
+      tone: "warn",
+      disabled: false,
+    });
+  }
+
+  if (hookReview) {
+    items.push({
+      title: tx("审查 Hook 风险", "Review hook risk"),
+      body: tx("发现需要人工确认的 Hook 或高风险脚本。Vola 不会自动启用它们。", "A hook or high-risk script needs human review. Vola will not enable it automatically."),
+      meta: tx(`${countLabel(stats.hookReview)} 项需审查`, `${countLabel(stats.hookReview)} to review`),
+      result: tx("启用脚本前先确认权限和影响范围。", "Permissions and impact are reviewed before scripts are enabled."),
+      action: tx("查看 Hook", "View hooks"),
+      view: "hooks",
+      selectedID: hookReview.id,
+      tone: "bad",
+      disabled: false,
+    });
+  }
+
+  if (failedRun) {
+    items.push({
+      title: tx("查看失败执行记录", "Check failed run"),
+      body: tx("最近执行记录里有失败信号。继续同类任务前，建议先看失败发生在哪里。", "A recent run has failure signals. Check where it failed before continuing similar work."),
+      meta: tx(`${countLabel(stats.failedRuns)} 条失败记录`, `${countLabel(stats.failedRuns)} failed runs`),
+      result: tx("继续同类任务时可以避开已知失败点。", "Similar work can avoid known failure points."),
+      action: tx("查看记录", "View run"),
+      view: "runs",
+      selectedID: failedRun.id,
+      tone: "warn",
+      disabled: false,
+    });
+  }
+
+  if (skillDrafts.length) {
+    items.push({
+      title: tx("审查 Skill 草稿", "Review skill drafts"),
+      body: tx("先看命名、适用范围和同步目标，再决定是否分配给 Codex、Claude Code、Cursor 或 Gemini CLI。", "Review the name, scope, and sync target before assigning it to Codex, Claude Code, Cursor, or Gemini CLI."),
+      meta: tx(`${countLabel(skillDrafts.length)} 条待审查`, `${countLabel(skillDrafts.length)} to review`),
+      result: tx("常用流程会变成可复用规则，不用每次重讲。", "Repeat workflows become reusable rules."),
+      action: tx("查看草稿", "View drafts"),
+      view: "skill_candidates",
+      selectedID: skillDrafts[0]?.id,
+      tone: "warn",
+      disabled: false,
+    });
+  }
+
+  if (unsavedHandover) {
+    items.push({
+      title: tx("保存项目交接", "Save project handoff"),
+      body: tx(`${unsavedHandover.project} 已生成交接摘要，保存后后续 AI 可以直接读取项目状态。`, `${unsavedHandover.project} has a handoff summary. Save it so later AI can read the project state directly.`),
+      meta: tx(`${countLabel(stats.handovers)} 份交接材料`, `${countLabel(stats.handovers)} handoffs`),
+      result: tx("换会话或换同事时不用翻旧记录。", "New sessions and teammates can start without digging through old records."),
+      action: tx("查看交接", "View handoff"),
+      view: "handovers",
+      selectedID: unsavedHandover.id,
+      tone: "neutral",
+      disabled: false,
+    });
+  }
+
+  if (stats.artifacts > 0 && !stats.artifactRegistrySaved) {
+    items.push({
+      title: tx("保存交付物索引", "Save artifact registry"),
+      body: tx("报告、截图、文档和生成文件已经识别出来。保存索引后，后续 AI 更容易区分结果和验证证据。", "Reports, screenshots, documents, and generated files were found. Saving the registry helps later AI distinguish outputs from evidence."),
+      meta: tx(`${countLabel(stats.artifacts)} 个交付物`, `${countLabel(stats.artifacts)} artifacts`),
+      result: tx("下次接手能直接知道哪些文件能交付。", "The next session can tell which files are deliverables."),
+      action: tx("查看交付物", "View artifacts"),
+      view: "artifacts",
+      selectedID: data?.artifacts[0]?.id,
+      tone: "neutral",
+      disabled: false,
+    });
+  }
+
+  if (!items.length) {
+    items.push({
+      title: tx("暂无必须处理的项", "Nothing needs review"),
+      body: tx("可以直接复制右侧提示词开始新会话；需要追溯时再打开下面的专业入口。", "You can copy the prompt on the right into a new session. Open expert views only when tracing details."),
+      meta: tx("资料已整理", "Context organized"),
+      result: tx("当前不需要额外审查。", "No extra review is needed now."),
+      action: tx("无需操作", "No action needed"),
+      view: "brief",
+      tone: "ok",
+      disabled: true,
+      isEmpty: true,
+    });
+  }
+
+  return items;
+}
+
+function BriefTaskCard({
+  title,
+  body,
+  meta,
+  result,
+  action,
+  tone,
+  disabled,
+  isEmpty,
+  onAction,
+}: {
+  title: string;
+  body: string;
+  meta: string;
+  result: string;
+  action: string;
+  tone: BriefTaskTone;
+  disabled: boolean;
+  isEmpty?: boolean;
+  onAction: () => void;
+}) {
+  return (
+    <article className={`codex-console-task-card tone-${tone}${isEmpty ? " is-empty" : ""}`}>
+      <small>{meta}</small>
+      <strong>{title}</strong>
+      <p>{body}</p>
+      <span className="codex-console-task-result">{result}</span>
+      {isEmpty ? (
+        <b>{action}</b>
+      ) : (
+        <button type="button" disabled={disabled} onClick={onAction}>
+          {action}
+        </button>
+      )}
+    </article>
   );
 }
 
@@ -1607,6 +2565,40 @@ function HookList({
   );
 }
 
+function memoryReviewStatusLabel(status: string | undefined, tx: (zh: string, en: string) => string) {
+  const value = (status || "review_required").toLowerCase();
+  if (value === "accepted") return tx("已接受", "Accepted");
+  if (value === "ignored") return tx("已忽略", "Ignored");
+  if (value === "deferred") return tx("已延后", "Deferred");
+  return tx("待确认", "Needs review");
+}
+
+function memoryCandidateDisplayTitle(item: CodexConsoleMemoryCandidate) {
+  const raw = cleanPreviewText(item.content);
+  const taskGroup = raw.match(/Task Group:\s*([^#\n]+?)(?:\s+scope:|$)/i);
+  if (taskGroup?.[1]) return shortPreview(taskGroup[1].replace(/\s+/g, " ").trim(), 96);
+
+  const frontmatterName = raw.match(/^---[\s\S]*?\nname:\s*["']?([^"'\n]+)["']?/i);
+  if (frontmatterName?.[1]) return shortPreview(frontmatterName[1].replace(/[_-]+/g, " ").trim(), 96);
+
+  const heading = raw.match(/^\s{0,3}#{1,3}\s+(.+)$/m);
+  if (heading?.[1]) {
+    const cleanHeading = heading[1].replace(/`/g, "").replace(/\s+/g, " ").trim();
+    if (cleanHeading && !/^raw memories$/i.test(cleanHeading) && !/^ad-hoc notes$/i.test(cleanHeading)) {
+      return shortPreview(cleanHeading, 96);
+    }
+  }
+
+  const title = cleanPreviewText(item.title)
+    .replace(/^memories\/(?:rollout_summaries|extensions\/ad_hoc\/notes|skills)\//, "")
+    .replace(/^memories\//, "")
+    .replace(/\/SKILL$/, "")
+    .replace(/^20\d{2}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}-[A-Za-z0-9]+-/, "")
+    .split("/")
+    .pop();
+  return shortPreview((title || item.title || "Memory candidate").replace(/[_-]+/g, " ").trim(), 96);
+}
+
 function MemoryList({
   items,
   selectedID,
@@ -1618,18 +2610,72 @@ function MemoryList({
   onSelect: (id: string) => void;
   tx: (zh: string, en: string) => string;
 }) {
+  const [query, setQuery] = useState("");
+  const [mode, setMode] = useState<"actionable" | "conflict" | "all">("actionable");
+  const entries = useMemo(() => {
+    return items
+      .map((item) => ({
+        item,
+        title: memoryCandidateDisplayTitle(item),
+        summary: cleanMemoryValuePreview(item.content, item.title, tx),
+      }))
+      .sort((left, right) => {
+        const leftPriority = Number(!!left.item.conflict) * 2 + Number(isMemoryActionable(left.item));
+        const rightPriority = Number(!!right.item.conflict) * 2 + Number(isMemoryActionable(right.item));
+        if (rightPriority !== leftPriority) return rightPriority - leftPriority;
+        return left.title.localeCompare(right.title);
+      });
+  }, [items, tx]);
+  const filteredEntries = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return entries.filter((entry) => {
+      if (mode === "actionable" && !isMemoryActionable(entry.item)) return false;
+      if (mode === "conflict" && !entry.item.conflict) return false;
+      if (!needle) return true;
+      return [
+        entry.title,
+        entry.summary,
+        entry.item.title,
+        entry.item.kind,
+        entry.item.source_path,
+      ].some((value) => (value || "").toLowerCase().includes(needle));
+    });
+  }, [entries, mode, query]);
   if (!items.length) return <div className="empty-action-state"><p>{tx("还没有记忆候选。", "No memory candidates.")}</p></div>;
   return (
-    <div className="codex-console-card-list">
-      {items.map((item) => (
-        <button key={item.id} type="button" className={selectedID === item.id ? "is-selected" : ""} onClick={() => onSelect(item.id)}>
-          <span className={`codex-console-pill tone-${statusTone(item.review_status)}`}>{item.review_status || "review_required"}</span>
-          {item.conflict ? <span className="codex-console-pill tone-warn">conflict</span> : null}
-          <strong>{item.title}</strong>
-          <small>{item.conflict ? `${item.conflict.category} · ${item.conflict.message}` : `${item.kind} · ${shortPreview(item.content, 140)}`}</small>
-        </button>
-      ))}
-    </div>
+    <>
+      <div className="codex-console-list-tools is-stacked">
+        <div>
+          <strong>{tx("记忆候选", "Memory candidates")}</strong>
+          <span>{tx("确认前不会写入长期记忆。", "Nothing is saved as long-term memory before review.")}</span>
+        </div>
+        <div className="codex-console-memory-filters">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={tx("搜索候选、项目或关键词", "Search candidates, projects, or keywords")}
+          />
+          <select value={mode} onChange={(event) => setMode(event.target.value as "actionable" | "conflict" | "all")}>
+            <option value="actionable">{tx("待处理", "Actionable")}</option>
+            <option value="conflict">{tx("相似记忆", "Overlaps")}</option>
+            <option value="all">{tx("全部", "All")}</option>
+          </select>
+        </div>
+      </div>
+      <div className="codex-console-card-list">
+        {!filteredEntries.length ? (
+          <div className="empty-action-state"><p>{tx("没有符合条件的记忆候选。", "No memory candidates match the filters.")}</p></div>
+        ) : null}
+        {filteredEntries.map(({ item, title, summary }) => (
+          <button key={item.id} type="button" className={selectedID === item.id ? "is-selected" : ""} onClick={() => onSelect(item.id)}>
+            <span className={`codex-console-pill tone-${statusTone(item.review_status)}`}>{memoryReviewStatusLabel(item.review_status, tx)}</span>
+            {item.conflict ? <span className="codex-console-pill tone-warn">{tx("相似记忆", "Overlap")}</span> : null}
+            <strong>{title}</strong>
+            <small>{item.conflict ? item.conflict.message : summary}</small>
+          </button>
+        ))}
+      </div>
+    </>
   );
 }
 
@@ -1652,6 +2698,50 @@ function SkillCandidateList({
   showArchived: boolean;
   onShowArchivedChange: (value: boolean) => void;
 }) {
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<"open" | "unsaved" | "draft" | "ready" | "archived" | "all">("open");
+  const [projectFilter, setProjectFilter] = useState("all");
+  const projectOptions = useMemo(() => {
+    const projects = new Set(items.map((item) => item.project || "unassigned"));
+    return Array.from(projects).sort((left, right) => left.localeCompare(right));
+  }, [items]);
+  const visibleItems = useMemo(() => {
+    const needle = query.trim().toLowerCase();
+    return items.filter((item) => {
+      const status = (item.status || "").toLowerCase();
+      const project = item.project || "unassigned";
+      if (projectFilter !== "all" && project !== projectFilter) return false;
+      if (statusFilter === "open" && (status === "ready" || status === "archived")) return false;
+      if (statusFilter === "unsaved" && item.skill_path) return false;
+      if (statusFilter === "draft" && (!item.skill_path || status === "ready" || status === "archived")) return false;
+      if (statusFilter === "ready" && status !== "ready") return false;
+      if (statusFilter === "archived" && status !== "archived") return false;
+      if (!needle) return true;
+      return [
+        item.title,
+        item.name,
+        item.project,
+        item.thread_title,
+        ...(item.signals || []),
+      ].some((value) => (value || "").toLowerCase().includes(needle));
+    });
+  }, [items, projectFilter, query, statusFilter]);
+  useEffect(() => {
+    if (!showArchived && statusFilter === "archived") {
+      setStatusFilter("open");
+    }
+  }, [showArchived, statusFilter]);
+  useEffect(() => {
+    if (showArchived && statusFilter === "open" && items.length > 0 && items.every(isArchivedSkillCandidate)) {
+      setStatusFilter("archived");
+    }
+  }, [items, showArchived, statusFilter]);
+  useEffect(() => {
+    if (!visibleItems.length) return;
+    if (!visibleItems.some((item) => item.id === selectedID)) {
+      onSelect(visibleItems[0].id);
+    }
+  }, [onSelect, selectedID, visibleItems]);
   if (!items.length) {
     return (
       <div className="empty-action-state">
@@ -1666,19 +2756,55 @@ function SkillCandidateList({
   }
   return (
     <>
-      <div className="codex-console-list-tools">
-        <span>{archivedCount ? tx(`已隐藏 ${archivedCount} 条归档草稿`, `${archivedCount} archived drafts hidden`) : tx("归档草稿会从默认列表隐藏", "Archived drafts are hidden by default")}</span>
-        {archivedCount ? (
-          <button className="btn btn-outline" type="button" onClick={() => onShowArchivedChange(!showArchived)}>
-            {showArchived ? tx("隐藏归档", "Hide archived") : tx("显示归档", "Show archived")}
-          </button>
-        ) : null}
+      <div className="codex-console-list-tools is-stacked">
+        <div>
+          <strong>{tx("Skill 草稿", "Skill drafts")}</strong>
+          <span>
+            {archivedCount && !showArchived
+              ? tx(`当前显示 ${countLabel(items.length)} 条，另有 ${countLabel(archivedCount)} 条归档草稿隐藏`, `Showing ${countLabel(items.length)} drafts, with ${countLabel(archivedCount)} archived hidden`)
+              : tx(`当前显示 ${countLabel(items.length)} 条草稿`, `Showing ${countLabel(items.length)} drafts`)}
+          </span>
+        </div>
+        <div className="codex-console-skill-filters">
+          <input
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={tx("搜索草稿、项目或信号", "Search drafts, projects, or signals")}
+          />
+          <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "open" | "unsaved" | "draft" | "ready" | "archived" | "all")}>
+            <option value="open">{tx("待审查", "Needs review")}</option>
+            <option value="unsaved">{tx("未保存", "Not saved")}</option>
+            <option value="draft">{tx("已保存草稿", "Saved drafts")}</option>
+            <option value="ready">{tx("已确认", "Ready")}</option>
+            {showArchived ? <option value="archived">{tx("已归档", "Archived")}</option> : null}
+            <option value="all">{tx("全部状态", "All statuses")}</option>
+          </select>
+          <select value={projectFilter} onChange={(event) => setProjectFilter(event.target.value)}>
+            <option value="all">{tx("全部项目", "All projects")}</option>
+            {projectOptions.map((project) => (
+              <option key={project} value={project}>{project === "unassigned" ? tx("未归属项目", "Unassigned") : project}</option>
+            ))}
+          </select>
+          {archivedCount ? (
+            <button className="btn btn-outline" type="button" onClick={() => onShowArchivedChange(!showArchived)}>
+              {showArchived ? tx("隐藏归档", "Hide archived") : tx("显示归档", "Show archived")}
+            </button>
+          ) : null}
+        </div>
       </div>
       <div className="codex-console-card-list">
-        {items.map((item) => (
+        {visibleItems.length !== items.length ? (
+          <div className="dashboard-card-link-muted">
+            {tx(`显示 ${countLabel(visibleItems.length)} / ${countLabel(items.length)} 条草稿`, `Showing ${countLabel(visibleItems.length)} / ${countLabel(items.length)} drafts`)}
+          </div>
+        ) : null}
+        {!visibleItems.length ? (
+          <div className="empty-action-state"><p>{tx("没有符合条件的 Skill 草稿。", "No skill drafts match the filters.")}</p></div>
+        ) : null}
+        {visibleItems.map((item) => (
           <button key={item.id} type="button" className={selectedID === item.id ? "is-selected" : ""} onClick={() => onSelect(item.id)}>
             <span className={`codex-console-pill tone-${confidenceTone(item.confidence)}`}>{confidenceLabel(item.confidence)}</span>
-            {item.skill_path ? <span className={`codex-console-pill tone-${skillCandidateStatusTone(item)}`}>{skillCandidateStatusLabel(item, tx)}</span> : null}
+            <span className={`codex-console-pill tone-${skillCandidateStatusTone(item)}`}>{skillCandidateStatusLabel(item, tx)}</span>
             <strong>{item.title || item.name}</strong>
             <small>
               {tx(
@@ -2235,6 +3361,7 @@ function SkillCandidateDetail({
   draftContent,
   assigning,
   assignPreview,
+  agentOptions,
   selectedAgentIDs,
   onDraftChange,
   onDraftReset,
@@ -2254,6 +3381,7 @@ function SkillCandidateDetail({
   draftContent: string;
   assigning: boolean;
   assignPreview: CodexConsoleSkillCandidateAssignPreviewResponse | null;
+  agentOptions: SkillCandidateAgentOption[];
   selectedAgentIDs: SkillCandidateAgentID[];
   onDraftChange: (value: string) => void;
   onDraftReset: () => void;
@@ -2331,7 +3459,7 @@ function SkillCandidateDetail({
         </div>
         <p>{tx("Vola 会把这份 Skill 作为同一份资产分配给所选 Agent。Codex 和 Claude Code 生成本地同步预览，Cursor 和 Gemini CLI 生成导出预览；这里不会写入本机目录。", "Vola assigns this Skill asset to the selected Agents. Codex and Claude Code get local sync previews; Cursor and Gemini CLI get export previews. Nothing is written locally here.")}</p>
         <div className="codex-console-agent-options" role="group" aria-label={tx("选择 Agent 目标", "Select Agent targets")}>
-          {SKILL_CANDIDATE_AGENT_OPTIONS.map((agent) => {
+          {agentOptions.map((agent) => {
             const checked = selectedAgentIDs.includes(agent.id);
             const disableLastChecked = checked && selectedAgentIDs.length <= 1;
             return (

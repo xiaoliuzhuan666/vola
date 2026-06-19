@@ -38,6 +38,7 @@ type SyncProfile struct {
 	UpdatedAt    string   `json:"updated_at,omitempty"`
 	Source       string   `json:"source,omitempty"`
 	AuthMode     string   `json:"auth_mode,omitempty"`
+	ActiveTeamID string   `json:"active_team_id,omitempty"`
 }
 
 type LocalConnection struct {

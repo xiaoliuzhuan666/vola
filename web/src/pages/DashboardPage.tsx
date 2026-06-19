@@ -258,20 +258,20 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
       aliases: ['workbuddy', 'workbuddy-agent'],
     },
     {
-      id: 'claude-code',
-      name: 'Claude Code',
-      description: tx('连接 Claude Code CLI', 'Connect Claude Code CLI'),
-      to: '/setup/cli',
-      state: { cloudPlatform: 'claude' },
-      aliases: ['claude-code', 'claude code'],
-    },
-    {
       id: 'codex',
       name: 'Codex',
       description: tx('连接 Codex CLI', 'Connect Codex CLI'),
       to: '/setup/cli',
       state: { cloudPlatform: 'codex' },
       aliases: ['codex', 'codex-cli'],
+    },
+    {
+      id: 'claude-code',
+      name: 'Claude Code',
+      description: tx('连接 Claude Code CLI', 'Connect Claude Code CLI'),
+      to: '/setup/cli',
+      state: { cloudPlatform: 'claude' },
+      aliases: ['claude-code', 'claude code'],
     },
     {
       id: 'gemini',
@@ -344,6 +344,60 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
 
   const offlineMcps = Object.entries(mcpHealth).filter(([_, info]) => info.status === 'offline')
   const offlineCount = offlineMcps.length
+  const connectedMethods = connectionMethods.filter((method) => hasConnectedPlatform(connections, grants, method.aliases))
+  const connectedCount = connectedMethods.length
+  const dataItemCount = Math.max(0, stats.files + stats.memory + stats.skills + stats.projects + stats.conversations)
+  const hasImportedData = dataItemCount > 0 || treeEntries.length > 0
+  const featuredConnectionIDs = localMode
+    ? ['codex', 'claude-code', 'claude', 'chatgpt']
+    : ['claude', 'chatgpt', 'cursor', 'api']
+  const featuredConnectionMethods = featuredConnectionIDs
+    .map((id) => connectionMethods.find((method) => method.id === id))
+    .filter(Boolean) as typeof connectionMethods
+  const workspaceModeLabel = localMode ? tx('本地单机', 'Local-only') : tx('云端账号', 'Cloud')
+  const statusItems = [
+    {
+      label: tx('AI 工具', 'AI tools'),
+      value: connectedCount > 0 ? tx(`已连接 ${connectedCount} 个`, `${connectedCount} connected`) : tx('还未连接', 'Not connected'),
+      tone: connectedCount > 0 ? 'good' : 'warn',
+    },
+    {
+      label: tx('资料量', 'Data'),
+      value: hasImportedData ? tx(`${dataItemCount || treeEntries.length} 项`, `${dataItemCount || treeEntries.length} items`) : tx('还没有资料', 'No data yet'),
+      tone: hasImportedData ? 'good' : 'warn',
+    },
+    {
+      label: tx('工作模式', 'Workspace'),
+      value: workspaceModeLabel,
+      tone: localMode ? 'neutral' : 'good',
+    },
+  ]
+  const nextActions = [
+    {
+      title: connectedCount > 0 ? tx('管理已连接的 AI 工具', 'Manage connected AI tools') : tx('连接第一个 AI 工具', 'Connect your first AI tool'),
+      body: connectedCount > 0
+        ? tx('查看授权状态，或继续把 Codex、Claude Code、ChatGPT 等工具接到同一份 Hub。', 'Review access and add Codex, Claude Code, ChatGPT, or another tool to the same hub.')
+        : localMode
+          ? tx('推荐先连接 Codex，其次 Claude Code。连接后，在 AI 工具里验证它能读取你授权的资料。', 'Start with Codex, then Claude Code. After connecting, verify the AI tool can read authorized data.')
+          : tx('推荐从 Claude 或 ChatGPT 开始。连接后，把测试提示词发给 AI，就能看到它读取你授权的 profile 和 memory。', 'Start with Claude or ChatGPT. After connecting, send the test prompt to confirm it can read authorized profile and memory.'),
+      to: localMode ? '/setup/cli' : '/setup/mcp',
+      cta: connectedCount > 0 ? tx('管理连接', 'Manage') : localMode ? tx('连接 Codex', 'Connect Codex') : tx('连接 Claude / ChatGPT', 'Connect Claude / ChatGPT'),
+      tone: 'primary',
+    }
+  ]
+  const secondaryActions = [
+    {
+      title: hasImportedData ? tx('整理已导入资料', 'Review imported data') : tx('导入本机资料', 'Import local data'),
+      to: localMode ? '/imports/local-apps' : '/imports/claude-export',
+      cta: hasImportedData ? tx('查看资料', 'Review') : tx('导入资料', 'Import'),
+    },
+    {
+      title: tx('设置备份与同步', 'Set backup and sync'),
+      to: '/sync-backup',
+      cta: tx('打开备份', 'Open backup'),
+    },
+  ]
+  const recommendedConnectionId = localMode ? 'codex' : 'claude'
 
   return (
     <div className="page home-page dashboard-redesign-page">
@@ -443,26 +497,68 @@ export default function DashboardPage({ localMode = false }: DashboardPageProps)
         </div>
       )}
 
-      <section className="dashboard-platform-panel" aria-label={tx('连接方式', 'Connection methods')}>
+      <section className="dashboard-focus-panel" aria-label={tx('今日重点', 'Today focus')}>
+        <div className="dashboard-focus-copy">
+          <span>{tx('首次设置', 'First setup')}</span>
+          <h2>{tx('连接第一个 AI 工具，让它共享你的长期上下文。', 'Connect one AI tool to your long-term context.')}</h2>
+          <p>{tx('Vola 把 profile、memory、projects、skills 和 vault 权限放在一处。连接完成后，Claude、ChatGPT、Codex、Cursor 都可以读取你授权的同一份资料。', 'Vola keeps profile, memory, projects, skills, and vault access in one place. After connecting, Claude, ChatGPT, Codex, and Cursor can use the same authorized data.')}</p>
+        </div>
+        <div className="dashboard-status-grid" aria-label={tx('当前状态', 'Current status')}>
+          {statusItems.map((item) => (
+            <div key={item.label} className={`dashboard-status-item is-${item.tone}`}>
+              <span>{item.label}</span>
+              <strong>{item.value}</strong>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="dashboard-next-actions is-focused" aria-label={tx('下一步', 'Next actions')}>
+        {nextActions.map((action) => (
+          <Link key={action.title} to={action.to} className={`dashboard-action-card is-${action.tone}`}>
+            <span>{action.title}</span>
+            <p>{action.body}</p>
+            <strong>{action.cta}</strong>
+          </Link>
+        ))}
+        <div className="dashboard-secondary-action-list" aria-label={tx('稍后设置', 'Later setup')}>
+          {secondaryActions.map((action) => (
+            <Link key={action.title} to={action.to} className="dashboard-secondary-action">
+              <span>{action.title}</span>
+              <strong>{action.cta}</strong>
+            </Link>
+          ))}
+        </div>
+      </section>
+
+      <section className="dashboard-platform-panel dashboard-platform-panel-compact" aria-label={tx('常用连接', 'Common connections')}>
         <div className="dashboard-section-head">
           <div>
-            <h3>{tx('连接 Agent 到个人数据 Hub', 'Connect agents to your data hub')}</h3>
-            <p>{tx('连接后，Agent 可以读取被授权的 profile、memory、projects、skills 和 vault 资料。绿色表示当前账户已有这种连接。', 'After connection, agents can read authorized profile, memory, projects, skills, and vault material. Green means this account already has that connection type.')}</p>
+            <h3>{tx('推荐连接', 'Recommended connections')}</h3>
+            <p>{localMode
+              ? tx('第一次只需要选一个。优先推荐 Codex，其次 Claude Code。', 'Choose one to start. Codex is recommended first, then Claude Code.')
+              : tx('第一次只需要选一个。Claude 和 ChatGPT 适合验证 profile / memory，Codex 与 Claude Code 适合项目资料和 Skills。', 'Choose one to start. Claude and ChatGPT are good for profile and memory checks; Codex and Claude Code are better for projects and skills.')}
+            </p>
           </div>
           <Link to="/connections" className="dashboard-card-link">{tx('管理连接', 'Manage connections')}</Link>
         </div>
-        <div className="dashboard-platform-grid">
-          {connectionMethods.map((method) => {
+        <div className="dashboard-featured-connection-grid">
+          {featuredConnectionMethods.map((method) => {
             const connected = hasConnectedPlatform(connections, grants, method.aliases)
+            const className = [
+              'dashboard-platform-card',
+              connected ? 'is-connected' : '',
+              method.id === recommendedConnectionId ? 'is-recommended' : '',
+            ].filter(Boolean).join(' ')
             return (
-              <Link key={method.id} to={method.to} state={method.state} className={connected ? 'dashboard-platform-card is-connected' : 'dashboard-platform-card'}>
+              <Link key={method.id} to={method.to} state={method.state} className={className}>
                 <span className={`dashboard-platform-icon platform-${method.id}`} aria-hidden="true">
                   <PlatformIcon id={method.id} />
                 </span>
                 <span className="dashboard-platform-copy">
                   <strong>{method.name}</strong>
                   <small>{method.description}</small>
-                  <em>{connected ? tx('已连接', 'Connected') : tx('未连接', 'Not connected')}</em>
+                  <em>{connected ? tx('已连接', 'Connected') : method.id === recommendedConnectionId ? tx('推荐首次连接', 'Recommended first') : tx('可选', 'Optional')}</em>
                 </span>
               </Link>
             )

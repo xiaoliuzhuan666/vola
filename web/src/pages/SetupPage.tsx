@@ -6,7 +6,7 @@ import {
   type SetStateAction,
 } from 'react'
 import { Outlet, useOutletContext } from 'react-router-dom'
-import { api, CreateTokenRequest, ScopedTokenResponse } from '../api'
+import { api, CreateTokenRequest, isTauri, ScopedTokenResponse } from '../api'
 import { useI18n } from '../i18n'
 
 export const TRUST_LEVELS = [
@@ -42,7 +42,7 @@ interface ModeTokenState {
 
 const MODE_DEFAULTS: Record<ModeKey, { name: string; preset: Preset; trustLevel: number; expiryDays: number }> = {
   local: {
-    name: 'Claude Code',
+    name: 'Codex CLI',
     preset: 'agent',
     trustLevel: 4,
     expiryDays: 90,
@@ -91,6 +91,7 @@ export interface SetupOutletContext {
   setEditingTokenName: Dispatch<SetStateAction<string>>
   renamingTokenId: string | null
   baseUrl: string
+  isDesktopRuntime: boolean
   cloudModeNeedsPublicUrl: boolean
   claudeCloudCommand: string
   codexCloudCommand: string
@@ -137,7 +138,7 @@ export default function SetupPage() {
 
   const [scopeInfo, setScopeInfo] = useState<ScopeInfo | null>(null)
 
-  const [name, setName] = useState('Claude Code')
+  const [name, setName] = useState('Codex CLI')
   const [preset, setPreset] = useState<Preset>('agent')
   const [trustLevel, setTrustLevel] = useState(4)
   const [expiryDays, setExpiryDays] = useState(90)
@@ -149,8 +150,8 @@ export default function SetupPage() {
   const [openModes, setOpenModes] = useState<Record<ModeKey, boolean>>(EMPTY_MODE_STATE)
   const [modeTokens, setModeTokens] = useState<Partial<Record<ModeKey, ModeTokenState>>>({})
   const [provisioningMode, setProvisioningMode] = useState<ModeKey | null>(null)
-  const [cloudPlatform, setCloudPlatform] = useState<CloudPlatformTab>('claude')
-  const [localPlatform, setLocalPlatform] = useState<LocalPlatformTab>('claude')
+  const [cloudPlatform, setCloudPlatform] = useState<CloudPlatformTab>('codex')
+  const [localPlatform, setLocalPlatform] = useState<LocalPlatformTab>('codex')
   const [editingTokenId, setEditingTokenId] = useState<string | null>(null)
   const [editingTokenName, setEditingTokenName] = useState('')
   const [renamingTokenId, setRenamingTokenId] = useState<string | null>(null)
@@ -265,7 +266,8 @@ export default function SetupPage() {
   const hostName = typeof window !== 'undefined' ? window.location.hostname : 'localhost'
   const isLocalOrigin = /^(localhost|127\.0\.0\.1|0\.0\.0\.0)$/.test(hostName) || hostName.endsWith('.local')
   const isSecureOrigin = baseUrl.startsWith('https://')
-  const cloudModeNeedsPublicUrl = !isSecureOrigin || isLocalOrigin
+  const isDesktopRuntime = isTauri
+  const cloudModeNeedsPublicUrl = isDesktopRuntime || !isSecureOrigin || isLocalOrigin
 
   const claudeCloudCommand = `claude mcp add -s user --transport http vola \\
   ${baseUrl}/mcp`
@@ -474,6 +476,7 @@ export default function SetupPage() {
           setEditingTokenName,
           renamingTokenId,
           baseUrl,
+          isDesktopRuntime,
           cloudModeNeedsPublicUrl,
           claudeCloudCommand,
           codexCloudCommand,

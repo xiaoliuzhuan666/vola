@@ -17,6 +17,7 @@
 - 阶段 6 主体完成：已补生产部署可靠性，包括 K8s Git mirror 持久卷、管理员运维状态接口、备份恢复手册和页面状态摘要。
 - 阶段 7 主体完成：外部备份已有自动计划、运行历史、最近失败展示、保留策略、恢复预览和恢复应用入口；真实恢复演练和告警通道仍需继续。
 - 阶段 8 进行中：Codex Console 已能展示 Codex Threads、Goals、Automations、Runs、Artifacts、Hooks、Memory 候选、Handover Summary 和候选 Skill 草稿，支持把选中的 Codex / Chronicle 记忆同步到 Vola profile memory 或 project context，并保存 Memory Review 状态；Hooks 已加入基础风险分析，profile memory conflict 已支持处理动作；Handover 已能保存为项目文件，候选 Skill 已能保存为 Hub 草稿并写入 manifest，也能分配给 Codex、Claude Code、Cursor、Gemini CLI 生成同步或导出预览。
+- 阶段 9 待开始：围绕“连接第一个本机工具、确认 Vola 可用、同步团队资产”降低使用成本。原则和竞品调研已经整理到 `docs/core-principles.zh-CN.md` 与 `docs/agent-data-hub-competitor-research.zh-CN.md`。
 
 ## 整体完成度快照（2026-05-10）
 
@@ -40,6 +41,7 @@
 - Docker build 链路此前受 registry mirror 403 影响，生产镜像构建仍需要再次验证。
 - Codex Console 仍缺 people 目标写入、hook 触发时机审查、候选 Skill 的真实本地同步验证和状态流转。
 - 团队共享仍缺多人审批历史、团队管理员视角的全员订阅报表、后台自动检查更新和通知。团队 Agent 当前是可安装配置对象，不是 Vola 内置执行器。
+- 新用户路径仍偏长：需要在页面和 CLI 里更清楚地区分 Codex / Claude Code 可自动同步，Cursor / Gemini CLI 只能导出或手工处理。
 
 ## 阶段 1：产品定位改清楚
 
@@ -346,6 +348,31 @@
 - 记忆编辑：普通候选写入前编辑和 profile conflict 最终合并文本编辑已完成；people 目标仍未实现。
 - Hook Review 深化：触发时机、结构化命令、读取路径和执行日志。
 - 候选 Skill 的真实本地同步验证和状态流转。
+
+## 阶段 9：降低首次使用成本
+
+目标：
+
+- 让新用户不用理解全部 Hub 模型，也能先完成“连接一个本机工具 -> 发一句测试指令 -> 同步团队资产”。
+- 在页面和 CLI 里清楚展示 Codex、Claude Code、Cursor、Gemini CLI 的能力差异。
+- 团队成员能看懂团队 Skill / MCP 到本机工具的路径，不需要知道背后是否要重新运行 `neu connect codex` 或 `neu connect claude`。
+
+交付：
+
+- 首页、连接页和本地欢迎页默认推荐 Codex，其次 Claude Code；Cursor 和 Gemini CLI 显示为导出型平台。
+- 连接成功后展示可复制测试指令，例如：`请读取我的 Vola profile、skills 和最近项目上下文，并告诉我已经能访问哪些资料。`
+- `neu status` 或等价状态入口展示 `neu`、Hub、账号、Codex / Claude Code 连接、团队 Skill / MCP 待同步状态。
+- Team Library 和 MCP Hub 保留“同步到 Codex / Claude Code”直接入口，并在 Cursor / Gemini CLI 上显示导出说明。
+- 空团队资料库提供 `/team/mcp`、`/team/prompts`、`/team/playbooks`、`/skills/<name>` 模板。
+- 同步结果说明写入了哪里、哪些内容没有处理、失败时该看哪个状态。
+
+验收：
+
+- 新用户只需要一个推荐入口就能完成首次连接。
+- 用户能明确知道：Codex 和 Claude Code 支持自动同步；Cursor 和 Gemini CLI 当前需要导出或手工处理。
+- 团队成员能从团队页面直接完成 Skill / MCP 本机刷新或拿到导出包。
+- 所有本机写入仍使用安全路径、配置锁和 Vola 管理标记；同名非 Vola 管理目录不会被覆盖。
+- 不自动安装第三方 MCP server，不自动启用 hook 或 plugin。
 
 验证结果（2026-06-07）：
 

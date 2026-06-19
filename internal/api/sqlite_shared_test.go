@@ -50,13 +50,14 @@ type fakeGitHubTokenState struct {
 
 func newTestHTTPServer(t *testing.T, gitOpts ...localgitsync.Option) (*httptest.Server, *sqlitestorage.Store, string, string, string) {
 	cfg := &config.Config{
-		JWTSecret:            testJWTSecret,
-		VaultMasterKey:       strings.Repeat("0", 64),
-		CORSOrigins:          []string{"http://localhost:3000"},
-		RateLimit:            100,
-		MaxBodySize:          10 * 1024 * 1024,
-		PublicBaseURL:        "http://127.0.0.1:0",
-		EnableSystemSettings: true,
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           strings.Repeat("0", 64),
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		PublicBaseURL:            "http://127.0.0.1:0",
+		EnableSystemSettings:     true,
+		EnablePublicRegistration: true,
 	}
 	return newTestHTTPServerWithConfig(t, cfg, gitOpts...)
 }
@@ -316,10 +317,11 @@ func TestPublicConfigUsesLocalModeInsteadOfStorageBackend(t *testing.T) {
 		Storage:      "postgres",
 		LocalOwnerID: uuid.New(),
 		Config: &config.Config{
-			CORSOrigins:          []string{"http://localhost:3000"},
-			RateLimit:            100,
-			MaxBodySize:          10 * 1024 * 1024,
-			EnableSystemSettings: true,
+			CORSOrigins:              []string{"http://localhost:3000"},
+			RateLimit:                100,
+			MaxBodySize:              10 * 1024 * 1024,
+			EnableSystemSettings:     true,
+			EnablePublicRegistration: true,
 		},
 	})
 	ts := httptest.NewServer(s.Router)
@@ -335,7 +337,7 @@ func TestPublicConfigUsesLocalModeInsteadOfStorageBackend(t *testing.T) {
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode config: %v", err)
 	}
-	for _, expected := range []string{`"storage":"postgres"`, `"local_mode":true`, `"system_settings_enabled":true`, `"git_mirror_manual_sync_cooldown_seconds":0`} {
+	for _, expected := range []string{`"storage":"postgres"`, `"local_mode":true`, `"system_settings_enabled":true`, `"public_registration_enabled":true`, `"git_mirror_manual_sync_cooldown_seconds":0`} {
 		if !bytes.Contains(payload.Data, []byte(expected)) {
 			t.Fatalf("expected %q in config payload: %s", expected, string(payload.Data))
 		}
@@ -411,6 +413,34 @@ func TestPublicConfigExposesBillingFlagWhenEnabled(t *testing.T) {
 	}
 }
 
+func TestPublicRegistrationDisabledBlocksRegister(t *testing.T) {
+	cfg := &config.Config{
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           strings.Repeat("0", 64),
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		PublicBaseURL:            "https://vola.example.com",
+		EnablePublicRegistration: false,
+	}
+	ts, _, _ := newHostedTestHTTPServerWithConfig(t, cfg)
+
+	resp, err := http.Post(ts.URL+"/api/auth/register", "application/json", bytes.NewReader([]byte(`{
+		"email":"blocked@example.com",
+		"password":"blockedpass22",
+		"display_name":"Blocked User",
+		"slug":"blocked-user"
+	}`)))
+	if err != nil {
+		t.Fatalf("POST /api/auth/register: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusForbidden {
+		body, _ := io.ReadAll(resp.Body)
+		t.Fatalf("register status = %d body=%s", resp.StatusCode, string(body))
+	}
+}
+
 func TestSQLiteSharedServerOpsStatusReportsBackupReadiness(t *testing.T) {
 	ts, _, adminToken, readBundleToken, _ := newTestHTTPServer(t)
 
@@ -434,6 +464,193 @@ func TestSQLiteSharedServerOpsStatusReportsBackupReadiness(t *testing.T) {
 		if !bytes.Contains(ops.Data, []byte(expected)) {
 			t.Fatalf("expected %q in ops status payload: %s", expected, string(ops.Data))
 		}
+	}
+}
+
+func TestSQLiteSharedServerOpsInstanceStatusAggregatesBackupReadiness(t *testing.T) {
+	ts, store, adminToken, readBundleToken, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+
+	status, denied := doJSON(t, http.MethodGet, ts.URL+"/api/ops/instance-status", readBundleToken, nil)
+	if status != http.StatusForbidden || denied.OK {
+		t.Fatalf("read bundle token should not read ops instance status: status=%d body=%+v", status, denied)
+	}
+
+	status, created := doJSON(t, http.MethodPost, ts.URL+"/api/admin/users", adminToken, []byte(`{
+		"email": "backup-user@example.com",
+		"password": "password-123",
+		"display_name": "Backup User",
+		"slug": "backup-user"
+	}`))
+	if status != http.StatusCreated || !created.OK {
+		t.Fatalf("POST /api/admin/users failed: status=%d body=%+v", status, created)
+	}
+	var createdPayload struct {
+		User models.AdminUserAccount `json:"user"`
+	}
+	if err := json.Unmarshal(created.Data, &createdPayload); err != nil {
+		t.Fatalf("decode created user: %v", err)
+	}
+	now := time.Now().UTC().Add(-time.Minute)
+	if err := store.UpsertActiveLocalGitMirror(ctx, models.LocalGitMirror{
+		UserID:            createdPayload.User.ID,
+		RootPath:          filepath.Join(t.TempDir(), "git-mirror"),
+		IsActive:          true,
+		ExecutionMode:     localgitsync.ExecutionModeLocal,
+		SyncState:         localgitsync.SyncStateIdle,
+		AutoCommitEnabled: true,
+		AutoPushEnabled:   true,
+		AuthMode:          localgitsync.AuthModeLocalCredentials,
+		RemoteName:        localgitsync.DefaultRemoteName,
+		RemoteURL:         "https://github.com/example/vola-backup.git",
+		RemoteBranch:      localgitsync.DefaultRemoteBranch,
+		LastSyncedAt:      &now,
+		LastPushAt:        &now,
+		CreatedAt:         now,
+		UpdatedAt:         now,
+	}); err != nil {
+		t.Fatalf("UpsertActiveLocalGitMirror: %v", err)
+	}
+	targetID := uuid.New()
+	if err := store.UpsertBackupTarget(ctx, backups.Target{
+		ID:                      targetID,
+		UserID:                  createdPayload.User.ID,
+		Kind:                    backups.KindS3,
+		Name:                    "Instance S3",
+		Enabled:                 true,
+		SecretConfigured:        true,
+		LastBackupAt:            &now,
+		LastBackupObject:        "vola/test-instance.zip",
+		RetentionKeepLast:       7,
+		RetentionKeepDays:       0,
+		CreatedAt:               now,
+		UpdatedAt:               now,
+		AutoBackupEnabled:       true,
+		AutoBackupIntervalHours: 24,
+	}); err != nil {
+		t.Fatalf("UpsertBackupTarget: %v", err)
+	}
+	if err := store.InsertBackupRun(ctx, backups.Run{
+		ID:          uuid.New(),
+		UserID:      createdPayload.User.ID,
+		TargetID:    targetID,
+		TargetName:  "Instance S3",
+		TargetKind:  backups.KindS3,
+		Trigger:     backups.RunTriggerManual,
+		Status:      backups.RunStatusSuccess,
+		ObjectName:  "vola/test-instance.zip",
+		SizeBytes:   1234,
+		StartedAt:   now,
+		CompletedAt: &now,
+		DurationMs:  12,
+		CreatedAt:   now,
+	}); err != nil {
+		t.Fatalf("InsertBackupRun: %v", err)
+	}
+
+	status, instance := doJSON(t, http.MethodGet, ts.URL+"/api/ops/instance-status", adminToken, nil)
+	if status != http.StatusOK || !instance.OK {
+		t.Fatalf("GET /api/ops/instance-status failed: status=%d body=%+v", status, instance)
+	}
+	for _, expected := range []string{
+		`"status":"ok"`,
+		`"users_total":2`,
+		`"users_with_git_backup":1`,
+		`"users_with_external_backup":1`,
+		`"users_with_remote_backup_artifact":1`,
+		`"latest_external_backup_object":"vola/test-instance.zip"`,
+		`"user_slug":"backup-user"`,
+		`"id":"instance_remote_backup_artifact"`,
+	} {
+		if !bytes.Contains(instance.Data, []byte(expected)) {
+			t.Fatalf("expected %q in ops instance status: %s", expected, string(instance.Data))
+		}
+	}
+}
+
+func TestInstanceAdminAPIsRejectNonOwnerAdminToken(t *testing.T) {
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+
+	status, created := doJSON(t, http.MethodPost, ts.URL+"/api/admin/users", adminToken, []byte(`{
+		"email": "regular-admin@example.com",
+		"password": "password-123",
+		"display_name": "Regular Admin",
+		"slug": "regular-admin"
+	}`))
+	if status != http.StatusCreated || !created.OK {
+		t.Fatalf("POST /api/admin/users failed: status=%d body=%+v", status, created)
+	}
+	var createdPayload struct {
+		User models.AdminUserAccount `json:"user"`
+	}
+	if err := json.Unmarshal(created.Data, &createdPayload); err != nil {
+		t.Fatalf("decode created user: %v", err)
+	}
+	userAdmin, err := store.CreateToken(ctx, createdPayload.User.ID, "regular-admin-token", []string{models.ScopeAdmin}, models.TrustLevelFull, time.Hour)
+	if err != nil {
+		t.Fatalf("CreateToken regular admin: %v", err)
+	}
+
+	status, ownStatus := doJSON(t, http.MethodGet, ts.URL+"/api/ops/status", userAdmin.Token, nil)
+	if status != http.StatusOK || !ownStatus.OK {
+		t.Fatalf("user admin token should read own ops status: status=%d body=%+v", status, ownStatus)
+	}
+
+	status, instanceStatus := doJSON(t, http.MethodGet, ts.URL+"/api/ops/instance-status", userAdmin.Token, nil)
+	if status != http.StatusForbidden || instanceStatus.OK {
+		t.Fatalf("user admin token should not read instance ops status: status=%d body=%+v", status, instanceStatus)
+	}
+
+	status, users := doJSON(t, http.MethodGet, ts.URL+"/api/admin/users", userAdmin.Token, nil)
+	if status != http.StatusForbidden || users.OK {
+		t.Fatalf("user admin token should not list instance users: status=%d body=%+v", status, users)
+	}
+
+	status, login := doAuthJSON(t, http.MethodPost, ts.URL+"/api/auth/login", []byte(`{
+		"email": "regular-admin@example.com",
+		"password": "password-123"
+	}`))
+	if status != http.StatusOK {
+		t.Fatalf("login regular admin failed: status=%d body=%+v", status, login)
+	}
+	status, jwtUsers := doJSON(t, http.MethodGet, ts.URL+"/api/admin/users", login.AccessToken, nil)
+	if status != http.StatusForbidden || jwtUsers.OK {
+		t.Fatalf("regular JWT session should not list instance users: status=%d body=%+v", status, jwtUsers)
+	}
+}
+
+func TestHostedInstanceAdminAPIsAllowConfiguredAdminUser(t *testing.T) {
+	cfg := &config.Config{
+		JWTSecret:            testJWTSecret,
+		VaultMasterKey:       strings.Repeat("0", 64),
+		CORSOrigins:          []string{"http://localhost:3000"},
+		RateLimit:            100,
+		MaxBodySize:          10 * 1024 * 1024,
+		PublicBaseURL:        "http://127.0.0.1:0",
+		EnableSystemSettings: true,
+	}
+	ts, store, adminToken := newHostedTestHTTPServerWithConfig(t, cfg)
+	ctx := context.Background()
+
+	status, denied := doJSON(t, http.MethodGet, ts.URL+"/api/admin/users", adminToken, nil)
+	if status != http.StatusForbidden || denied.OK {
+		t.Fatalf("hosted admin token should not list users before instance admin config: status=%d body=%+v", status, denied)
+	}
+
+	owner, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	cfg.InstanceAdminUserIDs = []uuid.UUID{owner.ID}
+
+	status, users := doJSON(t, http.MethodGet, ts.URL+"/api/admin/users", adminToken, nil)
+	if status != http.StatusOK || !users.OK {
+		t.Fatalf("configured hosted instance admin should list users: status=%d body=%+v", status, users)
+	}
+	status, instanceStatus := doJSON(t, http.MethodGet, ts.URL+"/api/ops/instance-status", adminToken, nil)
+	if status != http.StatusOK || !instanceStatus.OK {
+		t.Fatalf("configured hosted instance admin should read instance ops status: status=%d body=%+v", status, instanceStatus)
 	}
 }
 
@@ -1209,6 +1426,12 @@ func TestSQLiteSharedServerRegisterLoginRefresh(t *testing.T) {
 	if !bytes.Contains(me.Data, []byte(`"slug":"new-user"`)) {
 		t.Fatalf("unexpected auth me payload: %s", string(me.Data))
 	}
+	if !bytes.Contains(me.Data, []byte(`"effective_storage_quota_bytes":104857600`)) {
+		t.Fatalf("auth me missing default storage quota: %s", string(me.Data))
+	}
+	if !bytes.Contains(me.Data, []byte(`"storage_used_bytes":0`)) {
+		t.Fatalf("auth me missing storage usage: %s", string(me.Data))
+	}
 
 	refreshReq, _ := http.NewRequest(http.MethodPost, ts.URL+"/api/auth/refresh", bytes.NewReader([]byte(`{"refresh_token":"`+registered.RefreshToken+`"}`)))
 	refreshReq.Header.Set("Content-Type", "application/json")
@@ -1232,13 +1455,14 @@ func TestSQLiteSharedServerRegisterLoginRefresh(t *testing.T) {
 
 func TestHostedSharedServerRegisterLoginRefresh(t *testing.T) {
 	cfg := &config.Config{
-		JWTSecret:           testJWTSecret,
-		VaultMasterKey:      strings.Repeat("0", 64),
-		CORSOrigins:         []string{"http://localhost:3000"},
-		RateLimit:           100,
-		MaxBodySize:         10 * 1024 * 1024,
-		PublicBaseURL:       "http://127.0.0.1:0",
-		GitMirrorHostedRoot: filepath.Join(t.TempDir(), "hosted-root"),
+		JWTSecret:                testJWTSecret,
+		VaultMasterKey:           strings.Repeat("0", 64),
+		CORSOrigins:              []string{"http://localhost:3000"},
+		RateLimit:                100,
+		MaxBodySize:              10 * 1024 * 1024,
+		PublicBaseURL:            "http://127.0.0.1:0",
+		EnablePublicRegistration: true,
+		GitMirrorHostedRoot:      filepath.Join(t.TempDir(), "hosted-root"),
 	}
 	ts, _, _ := newHostedTestHTTPServerWithConfig(t, cfg)
 
@@ -1279,6 +1503,310 @@ func TestHostedSharedServerRegisterLoginRefresh(t *testing.T) {
 	}
 	if loggedIn.AccessToken == "" || loggedIn.RefreshToken == "" {
 		t.Fatalf("expected hosted auth tokens in login response: %+v", loggedIn)
+	}
+}
+
+func TestLocalCloudRegisterStatusAndPushUsesOfficialCloud(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+	t.Setenv("HOME", tempDir)
+
+	var importedBundle models.Bundle
+	importCalls := 0
+	cloudUsedBytes := int64(0)
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/auth/register":
+			if r.Method != http.MethodPost {
+				t.Fatalf("unexpected register method: %s", r.Method)
+			}
+			writeJSON(w, http.StatusCreated, models.AuthResponse{
+				AccessToken:  "cloud-access",
+				RefreshToken: "cloud-refresh",
+				ExpiresIn:    86400,
+				User: models.User{
+					Slug:        "cloud-user",
+					DisplayName: "Cloud User",
+					Email:       "cloud@example.com",
+				},
+			})
+		case "/api/auth/me":
+			if got := r.Header.Get("Authorization"); got != "Bearer cloud-access" {
+				t.Fatalf("unexpected auth header for me: %q", got)
+			}
+			respondOK(w, map[string]any{
+				"slug":                          "cloud-user",
+				"display_name":                  "Cloud User",
+				"email":                         "cloud@example.com",
+				"storage_quota_bytes":           nil,
+				"effective_storage_quota_bytes": int64(100 * 1024 * 1024),
+				"storage_used_bytes":            cloudUsedBytes,
+			})
+		case "/agent/import/bundle":
+			if got := r.Header.Get("Authorization"); got != "Bearer cloud-access" {
+				t.Fatalf("unexpected auth header for import: %q", got)
+			}
+			importCalls++
+			if err := json.NewDecoder(r.Body).Decode(&importedBundle); err != nil {
+				t.Fatalf("decode imported bundle: %v", err)
+			}
+			cloudUsedBytes = importedBundle.Stats.TotalBytes
+			respondOK(w, &models.BundleImportResult{
+				Version:        importedBundle.Version,
+				Mode:           importedBundle.Mode,
+				SkillsWritten:  len(importedBundle.Skills),
+				FilesWritten:   importedBundle.Stats.TotalFiles,
+				MemoryImported: importedBundle.Stats.MemoryItems,
+			})
+		default:
+			t.Fatalf("unexpected cloud request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer cloud.Close()
+
+	if err := runtimecfg.SaveConfig(configPath, &runtimecfg.CLIConfig{
+		Version: 3,
+		Profiles: map[string]runtimecfg.SyncProfile{
+			localCloudProfileName: {APIBase: cloud.URL},
+		},
+		Local: runtimecfg.LocalConfig{Connections: map[string]runtimecfg.LocalConnection{}},
+	}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, user.ID, "/skills/cloud-demo/SKILL.md", "# Cloud Demo\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("WriteEntry skill: %v", err)
+	}
+	if err := store.UpsertProfile(ctx, user.ID, "preferences", "prefers bright blue", "test"); err != nil {
+		t.Fatalf("UpsertProfile: %v", err)
+	}
+	if _, err := store.WriteScratchWithTitle(ctx, user.ID, "remember cloud sync", "test", "sync note"); err != nil {
+		t.Fatalf("WriteScratchWithTitle: %v", err)
+	}
+
+	status, registered := doJSON(t, http.MethodPost, ts.URL+"/api/local/cloud/register", adminToken, []byte(`{
+		"email":"cloud@example.com",
+		"password":"cloudpass22",
+		"display_name":"Cloud User",
+		"slug":"cloud-user"
+	}`))
+	if status != http.StatusCreated || !registered.OK {
+		t.Fatalf("local cloud register failed: status=%d body=%+v", status, registered)
+	}
+	if !bytes.Contains(registered.Data, []byte(`"connected":true`)) ||
+		!bytes.Contains(registered.Data, []byte(`"effective_storage_quota_bytes":104857600`)) ||
+		!bytes.Contains(registered.Data, []byte(`"storage_used_bytes":0`)) {
+		t.Fatalf("unexpected register status payload: %s", string(registered.Data))
+	}
+
+	_, saved, err := runtimecfg.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	profile := saved.Profiles[localCloudProfileName]
+	if profile.APIBase != cloud.URL || profile.Token != "cloud-access" || profile.RefreshToken != "cloud-refresh" {
+		t.Fatalf("official profile not saved correctly: %+v", profile)
+	}
+
+	status, pushed := doJSON(t, http.MethodPost, ts.URL+"/api/local/cloud/push", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !pushed.OK {
+		t.Fatalf("local cloud push failed: status=%d body=%+v", status, pushed)
+	}
+	if importCalls != 1 {
+		t.Fatalf("import calls = %d, want 1", importCalls)
+	}
+	if importedBundle.Version != models.BundleVersionV1 || importedBundle.Stats.TotalFiles == 0 || importedBundle.Stats.MemoryItems == 0 {
+		t.Fatalf("unexpected imported bundle: %+v", importedBundle)
+	}
+	if !bytes.Contains(pushed.Data, []byte(`"storage_used_bytes":`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"files_written":1`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"memory_imported":1`)) {
+		t.Fatalf("unexpected push payload: %s", string(pushed.Data))
+	}
+}
+
+func TestLocalCloudAPIBaseReplacesLegacyOfficialHost(t *testing.T) {
+	s := &Server{}
+	if got := s.localCloudAPIBase(""); got != localCloudDefaultAPIBase {
+		t.Fatalf("empty cloud api base = %q, want %q", got, localCloudDefaultAPIBase)
+	}
+	for _, legacy := range []string{"https://vola.ai", "https://www.vola.ai/", " https://vola.ai/ "} {
+		if got := s.localCloudAPIBase(legacy); got != localCloudDefaultAPIBase {
+			t.Fatalf("legacy cloud api base %q resolved to %q, want %q", legacy, got, localCloudDefaultAPIBase)
+		}
+	}
+	if got := s.localCloudAPIBase("https://custom.example.com/"); got != "https://custom.example.com" {
+		t.Fatalf("custom cloud api base resolved to %q", got)
+	}
+}
+
+func TestLocalCloudPushReportsUsageWhenImportConfirmationTimesOut(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+	t.Setenv("HOME", tempDir)
+
+	importSeen := make(chan struct{}, 1)
+	cloudUsedBytes := int64(0)
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/auth/me":
+			respondOK(w, map[string]any{
+				"slug":                          "cloud-user",
+				"email":                         "cloud@example.com",
+				"storage_quota_bytes":           nil,
+				"effective_storage_quota_bytes": int64(100 * 1024 * 1024),
+				"storage_used_bytes":            cloudUsedBytes,
+			})
+		case "/agent/import/bundle":
+			var importedBundle models.Bundle
+			if err := json.NewDecoder(r.Body).Decode(&importedBundle); err != nil {
+				t.Fatalf("decode imported bundle: %v", err)
+			}
+			cloudUsedBytes = importedBundle.Stats.TotalBytes
+			importSeen <- struct{}{}
+			time.Sleep(150 * time.Millisecond)
+			respondOK(w, &models.BundleImportResult{})
+		default:
+			t.Fatalf("unexpected cloud request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer cloud.Close()
+
+	if err := runtimecfg.SaveConfig(configPath, &runtimecfg.CLIConfig{
+		Version: 3,
+		Profiles: map[string]runtimecfg.SyncProfile{
+			localCloudProfileName: {
+				APIBase: cloud.URL,
+				Token:   "cloud-access",
+			},
+		},
+		Local: runtimecfg.LocalConfig{Connections: map[string]runtimecfg.LocalConnection{}},
+	}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	originalImportTimeout := localCloudImportHTTPTimeout
+	originalPollTimeout := localCloudImportUsagePollTimeout
+	originalPollInterval := localCloudImportUsagePollInterval
+	localCloudImportHTTPTimeout = 25 * time.Millisecond
+	localCloudImportUsagePollTimeout = time.Second
+	localCloudImportUsagePollInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		localCloudImportHTTPTimeout = originalImportTimeout
+		localCloudImportUsagePollTimeout = originalPollTimeout
+		localCloudImportUsagePollInterval = originalPollInterval
+	})
+
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, user.ID, "/skills/cloud-timeout/SKILL.md", "# Cloud Timeout\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("WriteEntry skill: %v", err)
+	}
+
+	status, pushed := doJSON(t, http.MethodPost, ts.URL+"/api/local/cloud/push", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !pushed.OK {
+		t.Fatalf("local cloud push should report cloud usage on timeout: status=%d body=%+v", status, pushed)
+	}
+	select {
+	case <-importSeen:
+	default:
+		t.Fatalf("cloud import endpoint was not called")
+	}
+	if !bytes.Contains(pushed.Data, []byte(`"confirmed":false`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"warning":`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"storage_used_bytes":`)) {
+		t.Fatalf("unexpected timeout push payload: %s", string(pushed.Data))
+	}
+}
+
+func TestLocalCloudPushReturnsCurrentQuotaWhenRepeatedImportConfirmationTimesOut(t *testing.T) {
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+	t.Setenv("HOME", tempDir)
+
+	cloudUsedBytes := int64(12345)
+	cloud := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/auth/me":
+			respondOK(w, map[string]any{
+				"slug":                          "cloud-user",
+				"email":                         "cloud@example.com",
+				"storage_quota_bytes":           nil,
+				"effective_storage_quota_bytes": int64(100 * 1024 * 1024),
+				"storage_used_bytes":            cloudUsedBytes,
+			})
+		case "/agent/import/bundle":
+			var importedBundle models.Bundle
+			if err := json.NewDecoder(r.Body).Decode(&importedBundle); err != nil {
+				t.Fatalf("decode imported bundle: %v", err)
+			}
+			time.Sleep(150 * time.Millisecond)
+			respondOK(w, &models.BundleImportResult{})
+		default:
+			t.Fatalf("unexpected cloud request: %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer cloud.Close()
+
+	if err := runtimecfg.SaveConfig(configPath, &runtimecfg.CLIConfig{
+		Version: 3,
+		Profiles: map[string]runtimecfg.SyncProfile{
+			localCloudProfileName: {
+				APIBase: cloud.URL,
+				Token:   "cloud-access",
+			},
+		},
+		Local: runtimecfg.LocalConfig{Connections: map[string]runtimecfg.LocalConnection{}},
+	}); err != nil {
+		t.Fatalf("SaveConfig: %v", err)
+	}
+
+	originalImportTimeout := localCloudImportHTTPTimeout
+	originalPollTimeout := localCloudImportUsagePollTimeout
+	originalPollInterval := localCloudImportUsagePollInterval
+	localCloudImportHTTPTimeout = 25 * time.Millisecond
+	localCloudImportUsagePollTimeout = 35 * time.Millisecond
+	localCloudImportUsagePollInterval = 10 * time.Millisecond
+	t.Cleanup(func() {
+		localCloudImportHTTPTimeout = originalImportTimeout
+		localCloudImportUsagePollTimeout = originalPollTimeout
+		localCloudImportUsagePollInterval = originalPollInterval
+	})
+
+	ts, store, adminToken, _, _ := newTestHTTPServer(t)
+	ctx := context.Background()
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+	if _, err := store.WriteEntry(ctx, user.ID, "/skills/cloud-repeat/SKILL.md", "# Cloud Repeat\n", "text/markdown", models.FileTreeWriteOptions{}); err != nil {
+		t.Fatalf("WriteEntry skill: %v", err)
+	}
+
+	status, pushed := doJSON(t, http.MethodPost, ts.URL+"/api/local/cloud/push", adminToken, []byte(`{}`))
+	if status != http.StatusOK || !pushed.OK {
+		t.Fatalf("local cloud repeated push should return latest quota on timeout: status=%d body=%+v", status, pushed)
+	}
+	if !bytes.Contains(pushed.Data, []byte(`"confirmed":false`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"storage_used_bytes":12345`)) ||
+		!bytes.Contains(pushed.Data, []byte(`"warning":`)) {
+		t.Fatalf("unexpected repeated timeout push payload: %s", string(pushed.Data))
 	}
 }
 
@@ -1654,6 +2182,55 @@ func TestSQLiteSharedServerLocalConfigRejectsInvalidJSON(t *testing.T) {
 	}
 	if failed.OK {
 		t.Fatalf("expected invalid config update to fail: %+v", failed)
+	}
+}
+
+func TestSQLiteSharedServerWorkspaceActiveUpdate(t *testing.T) {
+	configPath := filepath.Join(t.TempDir(), "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+
+	ts, _, adminToken, _, _ := newTestHTTPServer(t)
+
+	// Update active team to team-xyz
+	body, err := json.Marshal(map[string]string{"active_team_id": "team-xyz"})
+	if err != nil {
+		t.Fatalf("Marshal body: %v", err)
+	}
+	status, res := doJSON(t, http.MethodPut, ts.URL+"/api/local/workspace/active", adminToken, body)
+	if status != http.StatusOK || !res.OK {
+		t.Fatalf("PUT /api/local/workspace/active failed: status=%d body=%+v", status, res)
+	}
+
+	// Read and verify persisted config.json
+	_, cfg, err := runtimecfg.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	profileName := cfg.CurrentProfile
+	if profileName == "" {
+		profileName = "default"
+	}
+	if cfg.Profiles[profileName].ActiveTeamID != "team-xyz" {
+		t.Errorf("expected active_team_id to be 'team-xyz', got %q", cfg.Profiles[profileName].ActiveTeamID)
+	}
+
+	// Update active team to empty (back to personal)
+	body2, err := json.Marshal(map[string]string{"active_team_id": ""})
+	if err != nil {
+		t.Fatalf("Marshal body: %v", err)
+	}
+	status2, res2 := doJSON(t, http.MethodPut, ts.URL+"/api/local/workspace/active", adminToken, body2)
+	if status2 != http.StatusOK || !res2.OK {
+		t.Fatalf("PUT /api/local/workspace/active failed: status=%d body=%+v", status2, res2)
+	}
+
+	// Verify it was cleared
+	_, cfg2, err := runtimecfg.LoadConfig(configPath)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg2.Profiles[profileName].ActiveTeamID != "" {
+		t.Errorf("expected active_team_id to be cleared, got %q", cfg2.Profiles[profileName].ActiveTeamID)
 	}
 }
 
@@ -4175,5 +4752,125 @@ func TestAgentScratchAndEphemeralTokenEndpoints(t *testing.T) {
 		if !bytes.Contains(uploadToken.Data, []byte(expected)) {
 			t.Fatalf("expected %q in skills upload token response: %s", expected, string(uploadToken.Data))
 		}
+	}
+}
+
+func TestSseTriggeredSkillSilentAutoSync(t *testing.T) {
+	// 1. 初始化临时的 config.json 路径和 HOME 环境变量
+	tempDir := t.TempDir()
+	configPath := filepath.Join(tempDir, "config.json")
+	t.Setenv(runtimecfg.ConfigEnv, configPath)
+	t.Setenv("HOME", tempDir)
+
+	// 2. 初始化完整的后台基础设施
+	ctx := context.Background()
+	store, err := sqlitestorage.Open(filepath.Join(tempDir, "local.db"))
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	defer store.Close()
+
+	user, err := store.EnsureOwner(ctx)
+	if err != nil {
+		t.Fatalf("EnsureOwner: %v", err)
+	}
+
+	fileTreeSvc := services.NewFileTreeServiceWithRepo(sqlitestorage.NewFileTreeRepo(store))
+	teamSvc := services.NewTeamServiceWithRepo(sqlitestorage.NewTeamRepo(store))
+
+	// 3. 构造极简 Server 实例
+	s := &Server{
+		LocalOwnerID:    user.ID,
+		TeamService:     teamSvc,
+		FileTreeService: fileTreeSvc,
+	}
+
+	// 4. 创建一个团队，并把用户加入进去成为 Owner 角色
+	team, err := teamSvc.Create(ctx, user.ID, models.CreateTeamRequest{
+		Name: "Test SSE Sync Team",
+		Slug: "sse-sync-team",
+	})
+	if err != nil {
+		t.Fatalf("CreateTeam: %v", err)
+	}
+
+	// 5. 模拟团队 Skills 的目录结构并写入一个 Skill 资产包
+	teamSkillDir := fmt.Sprintf("/skills/teams/%s/skills/my-test-skill", team.ID)
+	_, err = store.WriteEntry(ctx, team.HubUserID, teamSkillDir+"/SKILL.md", "# My Cool Skill\n", "text/markdown", models.FileTreeWriteOptions{Kind: "skill_file"})
+	if err != nil {
+		t.Fatalf("Write team skill: %v", err)
+	}
+
+	// 6. 初始化订阅文件，指定将该团队 Skill 同步到本地
+	personalSkillDir := "/skills/personal-copy"
+	subDoc := teamSkillSubscriptionsDocument{
+		Version: "vola.team-skill-subscriptions/v1",
+		Subscriptions: []teamSkillSubscription{
+			{
+				TeamID:     team.ID.String(),
+				SourcePath: teamSkillDir,
+				TargetPath: personalSkillDir,
+			},
+		},
+	}
+	subDocData, _ := json.Marshal(subDoc)
+	_, err = store.WriteEntry(ctx, user.ID, "/settings/team-skill-subscriptions.json", string(subDocData), "application/json", models.FileTreeWriteOptions{})
+	if err != nil {
+		t.Fatalf("Write subscriptions: %v", err)
+	}
+
+	// 6.5. 初始化派发关系文件，说明将该团队技能分配给 claude-code
+	assignDoc := skillAssignmentsDocument{
+		Version: "vola.skill-assignments/v1",
+		Assignments: []skillAgentAssignment{
+			{
+				AgentID:    "claude-code",
+				SkillPaths: []string{teamSkillDir},
+			},
+		},
+	}
+	assignDocData, _ := json.Marshal(assignDoc)
+	_, err = store.WriteEntry(ctx, team.HubUserID, skillAssignmentsPath, string(assignDocData), "application/json", models.FileTreeWriteOptions{})
+	if err != nil {
+		t.Fatalf("Write assignments: %v", err)
+	}
+
+	// 7. 模拟当前有本地连接的配置（必须是支持自动更新的 claude-code）
+	cliConf := &runtimecfg.CLIConfig{
+		Version:        1,
+		CurrentProfile: "default",
+		Profiles: map[string]runtimecfg.SyncProfile{
+			"default": {
+				ActiveTeamID: team.ID.String(),
+			},
+		},
+		Local: runtimecfg.LocalConfig{
+			Connections: map[string]runtimecfg.LocalConnection{
+				"claude-code": {
+					Transport: "http",
+				},
+			},
+		},
+	}
+	cliConfBytes, _ := json.Marshal(cliConf)
+	_ = os.WriteFile(configPath, cliConfBytes, 0644)
+
+	// 8. 手动调用 s.handleSseEvent，发送 skill_update 消息
+	s.handleSseEvent(ctx, team.ID.String(), "skill_update")
+
+	// 9. 因为 handleSseEvent 中的自动同步是异步的，我们在测试中等待它执行完成
+	time.Sleep(2500 * time.Millisecond)
+
+	// 10. 验证本地物理目标目录里，是否已经自动生成了同步后的 SKILL.md
+	// 本地路径是 root + rel => ~/.claude/skills + sse-sync-team--teams--{team_id}--skills--my-test-skill
+	normalizedSkillDirName := "sse-sync-team--teams-" + team.ID.String() + "-skills-my-test-skill"
+	expectedPhysicalPath := filepath.Join(tempDir, ".claude", "skills", normalizedSkillDirName, "SKILL.md")
+
+	content, err := os.ReadFile(expectedPhysicalPath)
+	if err != nil {
+		t.Fatalf("Auto sync failed: physical local file not found: %v", err)
+	}
+	if string(content) != "# My Cool Skill\n" {
+		t.Errorf("expected auto synced content '# My Cool Skill\n', got %q", string(content))
 	}
 }

@@ -53,6 +53,7 @@ Required settings for the release candidate:
 - `VAULT_MASTER_KEY`
 - `PUBLIC_BASE_URL`
 - `GIT_MIRROR_HOSTED_ROOT`，production 默认写入 `/data/git-mirrors`
+- `INSTANCE_ADMIN_USER_IDS`，逗号分隔的实例管理员用户 UUID，用于整站用户管理和实例级运维状态
 - `GITHUB_APP_CLIENT_ID`、`GITHUB_APP_CLIENT_SECRET`、`GITHUB_APP_SLUG`，用于 hosted GitHub Backup 的 GitHub App 授权
 - `GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`，用于通用 GitHub OAuth 路径；如果只开放 GitHub App user backup，可以留空
 - `USER_STORAGE_QUOTA_BYTES`，默认每用户存储额度；现在示例默认 100MB，单个账号额度可以通过 admin API 设置

@@ -7,6 +7,9 @@ web/node_modules
 web/dist
 internal/web/dist
 desktop
+src-tauri/target
+src-tauri/gen
+src-tauri/bin
 
 bin
 tmp

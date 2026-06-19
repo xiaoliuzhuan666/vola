@@ -31,8 +31,9 @@ func (s *ConnectionService) ListByUser(ctx context.Context, userID uuid.UUID) ([
 		return s.repo.ListByUser(ctx, userID)
 	}
 	rows, err := s.db.Query(ctx,
-		`SELECT id, user_id, name, platform, trust_level, api_key_hash, api_key_prefix,
-		        config, last_used_at, created_at, updated_at
+		`SELECT id, user_id, name, platform, trust_level,
+		        COALESCE(api_key_hash, ''), COALESCE(api_key_prefix, ''),
+		        COALESCE(config, '{}'::jsonb), last_used_at, created_at, updated_at
 		 FROM connections WHERE user_id = $1 ORDER BY created_at DESC`, userID)
 	if err != nil {
 		return nil, fmt.Errorf("connection.ListByUser: %w", err)
@@ -57,8 +58,9 @@ func (s *ConnectionService) GetByID(ctx context.Context, id uuid.UUID) (*models.
 	}
 	var c models.Connection
 	err := s.db.QueryRow(ctx,
-		`SELECT id, user_id, name, platform, trust_level, api_key_hash, api_key_prefix,
-		        config, last_used_at, created_at, updated_at
+		`SELECT id, user_id, name, platform, trust_level,
+		        COALESCE(api_key_hash, ''), COALESCE(api_key_prefix, ''),
+		        COALESCE(config, '{}'::jsonb), last_used_at, created_at, updated_at
 		 FROM connections WHERE id = $1`, id).
 		Scan(&c.ID, &c.UserID, &c.Name, &c.Platform, &c.TrustLevel,
 			&c.APIKeyHash, &c.APIKeyPrefix, &c.Config, &c.LastUsedAt, &c.CreatedAt, &c.UpdatedAt)
@@ -74,8 +76,9 @@ func (s *ConnectionService) GetByAPIKey(ctx context.Context, apiKeyHash string) 
 	}
 	var c models.Connection
 	err := s.db.QueryRow(ctx,
-		`SELECT id, user_id, name, platform, trust_level, api_key_hash, api_key_prefix,
-		        config, last_used_at, created_at, updated_at
+		`SELECT id, user_id, name, platform, trust_level,
+		        COALESCE(api_key_hash, ''), COALESCE(api_key_prefix, ''),
+		        COALESCE(config, '{}'::jsonb), last_used_at, created_at, updated_at
 		 FROM connections WHERE api_key_hash = $1`, apiKeyHash).
 		Scan(&c.ID, &c.UserID, &c.Name, &c.Platform, &c.TrustLevel,
 			&c.APIKeyHash, &c.APIKeyPrefix, &c.Config, &c.LastUsedAt, &c.CreatedAt, &c.UpdatedAt)

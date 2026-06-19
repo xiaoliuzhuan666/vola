@@ -47,6 +47,7 @@ type teamMcpAsset struct {
 	PublishedAt           string            `json:"published_at,omitempty"`
 	ArchivedAt            string            `json:"archived_at,omitempty"`
 	Path                  string            `json:"path,omitempty"`
+	Tags                  []string          `json:"tags,omitempty"`
 }
 
 type teamMcpsResponse struct {
@@ -67,6 +68,7 @@ type teamMcpSaveRequest struct {
 	Headers     map[string]string `json:"headers,omitempty"`
 	Status      string            `json:"status,omitempty"`
 	Visibility  string            `json:"visibility,omitempty"`
+	Tags        []string          `json:"tags,omitempty"`
 }
 
 func (s *Server) handleTeamMcpList(w http.ResponseWriter, r *http.Request) {
@@ -113,6 +115,7 @@ func (s *Server) handleTeamMcpSave(w http.ResponseWriter, r *http.Request) {
 		Headers:     req.Headers,
 		Status:      req.Status,
 		Visibility:  req.Visibility,
+		Tags:        req.Tags,
 	})
 	if asset.Slug == "" || asset.Name == "" {
 		respondValidationError(w, "slug", "mcp slug and name are required")
@@ -356,7 +359,7 @@ func (s *Server) handleTeamMcpReviewResolve(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) listTeamMcps(ctx context.Context, team *models.Team) ([]teamMcpAsset, error) {
-	snapshot, err := s.FileTreeService.Snapshot(ctx, team.HubUserID, "/team/mcps", models.TrustLevelFull)
+	snapshot, err := s.FileTreeService.Snapshot(ctx, team.HubUserID, "/team/mcp", models.TrustLevelFull)
 	if err != nil {
 		if errors.Is(err, services.ErrEntryNotFound) {
 			return []teamMcpAsset{}, nil
@@ -364,6 +367,7 @@ func (s *Server) listTeamMcps(ctx context.Context, team *models.Team) ([]teamMcp
 		return nil, err
 	}
 	mcps := make([]teamMcpAsset, 0)
+	seen := map[string]bool{}
 	for _, entry := range snapshot.Entries {
 		if entry.IsDirectory || entry.DeletedAt != nil || pathpkg.Base(entry.Path) != "mcp.vola.json" {
 			continue
@@ -377,7 +381,32 @@ func (s *Server) listTeamMcps(ctx context.Context, team *models.Team) ([]teamMcp
 		if !team.CanManageMembers && !teamMcpVisible(asset) {
 			continue
 		}
+		seen[asset.Slug] = true
 		mcps = append(mcps, asset)
+	}
+	legacySnapshot, legacyErr := s.FileTreeService.Snapshot(ctx, team.HubUserID, "/team/mcps", models.TrustLevelFull)
+	if legacyErr != nil && !errors.Is(legacyErr, services.ErrEntryNotFound) {
+		return nil, legacyErr
+	}
+	if legacyErr == nil {
+		for _, entry := range legacySnapshot.Entries {
+			if entry.IsDirectory || entry.DeletedAt != nil || pathpkg.Base(entry.Path) != "mcp.vola.json" {
+				continue
+			}
+			var asset teamMcpAsset
+			if err := json.Unmarshal([]byte(entry.Content), &asset); err != nil {
+				continue
+			}
+			asset = s.normalizeTeamMcpAsset(asset)
+			if seen[asset.Slug] {
+				continue
+			}
+			asset.Path = entry.Path
+			if !team.CanManageMembers && !teamMcpVisible(asset) {
+				continue
+			}
+			mcps = append(mcps, asset)
+		}
 	}
 	sort.Slice(mcps, func(i, j int) bool { return mcps[i].Slug < mcps[j].Slug })
 	return mcps, nil
@@ -464,7 +493,25 @@ func (s *Server) normalizeTeamMcpAsset(asset teamMcpAsset) teamMcpAsset {
 	default:
 		asset.Visibility = "private"
 	}
+	asset.Tags = cleanTags(asset.Tags)
 	return asset
+}
+
+func cleanTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	seen := make(map[string]bool)
+	var out []string
+	for _, t := range tags {
+		clean := strings.TrimSpace(strings.ToLower(t))
+		if clean != "" && !seen[clean] {
+			seen[clean] = true
+			out = append(out, clean)
+		}
+	}
+	sort.Strings(out)
+	return out
 }
 
 func teamMcpVisible(asset teamMcpAsset) bool {
@@ -472,11 +519,11 @@ func teamMcpVisible(asset teamMcpAsset) bool {
 }
 
 func teamMcpAssetPath(slug string) string {
-	return "/team/mcps/" + normalizeSlugInput(slug) + "/mcp.vola.json"
+	return "/team/mcp/" + normalizeSlugInput(slug) + "/mcp.vola.json"
 }
 
 func teamMcpReadmePath(slug string) string {
-	return "/team/mcps/" + normalizeSlugInput(slug) + "/README.md"
+	return "/team/mcp/" + normalizeSlugInput(slug) + "/README.md"
 }
 
 func renderTeamMcpReadme(asset teamMcpAsset) string {
@@ -484,6 +531,9 @@ func renderTeamMcpReadme(asset teamMcpAsset) string {
 	b.WriteString("# MCP: " + firstNonEmpty(asset.Name, asset.Slug) + "\n\n")
 	if asset.Description != "" {
 		b.WriteString(asset.Description + "\n\n")
+	}
+	if len(asset.Tags) > 0 {
+		b.WriteString("- Tags: " + strings.Join(asset.Tags, ", ") + "\n\n")
 	}
 	b.WriteString("## Connection Parameters\n\n")
 	b.WriteString("- Transport: " + asset.Transport + "\n")

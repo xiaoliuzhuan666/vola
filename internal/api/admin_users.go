@@ -101,27 +101,47 @@ func (s *Server) handleAdminUserQuotaUpdate(w http.ResponseWriter, r *http.Reque
 }
 
 func (s *Server) requireAdminAccountAccess(w http.ResponseWriter, r *http.Request) bool {
+	return s.requireInstanceAdminAccess(w, r)
+}
+
+func (s *Server) requireInstanceAdminAccess(w http.ResponseWriter, r *http.Request) bool {
 	if !s.agentCheckAuth(w, r, models.TrustLevelFull, models.ScopeAdmin) {
 		return false
 	}
-	if scopedTokenFromCtx(r.Context()) != nil || s.isLocalMode() {
-		if scopedTokenFromCtx(r.Context()) != nil {
-			return true
-		}
-		userID, ok := userIDFromCtx(r.Context())
-		if ok && s.LocalOwnerID != uuid.Nil && userID == s.LocalOwnerID {
-			return true
+	userID, ok := userIDFromCtx(r.Context())
+	if !ok {
+		respondUnauthorized(w)
+		return false
+	}
+	if s.isInstanceAdminUser(userID) {
+		return true
+	}
+	respondForbidden(w, "instance admin APIs require an instance administrator user")
+	return false
+}
+
+func (s *Server) isInstanceAdminUser(userID uuid.UUID) bool {
+	if userID == uuid.Nil {
+		return false
+	}
+	if s != nil && s.LocalOwnerID != uuid.Nil && userID == s.LocalOwnerID {
+		return true
+	}
+	if s != nil && s.Config != nil {
+		for _, id := range s.Config.InstanceAdminUserIDs {
+			if id == userID {
+				return true
+			}
 		}
 	}
-	respondForbidden(w, "admin account APIs require an admin scoped token or the local owner session")
 	return false
 }
 
 func (s *Server) defaultUserStorageQuotaBytes() int64 {
-	if s != nil && s.Config != nil {
+	if s != nil && s.Config != nil && s.Config.UserStorageQuotaBytes > 0 {
 		return s.Config.UserStorageQuotaBytes
 	}
-	return 0
+	return 100 * 1024 * 1024
 }
 
 func parseQuotaUpdateBody(r *http.Request) (*int64, error) {

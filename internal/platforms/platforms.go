@@ -175,6 +175,27 @@ func EnsureConnection(ctx context.Context, cfg *runtimecfg.CLIConfig, platform, 
 	return updated, nil
 }
 
+func RefreshConnection(ctx context.Context, cfg *runtimecfg.CLIConfig, platform, executable, daemonURL string) (runtimecfg.LocalConnection, error) {
+	adapter, err := Resolve(platform)
+	if err != nil {
+		return runtimecfg.LocalConnection{}, err
+	}
+	if cfg.Local.Connections == nil {
+		cfg.Local.Connections = map[string]runtimecfg.LocalConnection{}
+	}
+	connection := cfg.Local.Connections[adapter.ID()]
+	if strings.TrimSpace(connection.Token) == "" {
+		return runtimecfg.LocalConnection{}, fmt.Errorf("platform %q is not connected", platform)
+	}
+	connection.LastPlatformURL = strings.TrimRight(daemonURL, "/") + "/mcp"
+	updated, err := adapter.Connect(ctx, cfg, executable, daemonURL, connection)
+	if err != nil {
+		return runtimecfg.LocalConnection{}, err
+	}
+	cfg.Local.Connections[adapter.ID()] = updated
+	return updated, nil
+}
+
 func Disconnect(ctx context.Context, cfg *runtimecfg.CLIConfig, platform string) error {
 	adapter, err := Resolve(platform)
 	if err != nil {
@@ -640,11 +661,13 @@ func (a *codebuddyAdapter) init() *codebuddyAdapter {
 	return a
 }
 
-func (a *codebuddyAdapter) ID() string                 { return a.init().baseAdapter.ID() }
-func (a *codebuddyAdapter) DisplayName() string        { return a.init().baseAdapter.DisplayName() }
-func (a *codebuddyAdapter) Aliases() []string          { return a.init().baseAdapter.Aliases() }
-func (a *codebuddyAdapter) SupportedDomains() []string { return a.init().baseAdapter.SupportedDomains() }
-func (a *codebuddyAdapter) DiscoverSources() []Source  { return a.init().baseAdapter.DiscoverSources() }
+func (a *codebuddyAdapter) ID() string          { return a.init().baseAdapter.ID() }
+func (a *codebuddyAdapter) DisplayName() string { return a.init().baseAdapter.DisplayName() }
+func (a *codebuddyAdapter) Aliases() []string   { return a.init().baseAdapter.Aliases() }
+func (a *codebuddyAdapter) SupportedDomains() []string {
+	return a.init().baseAdapter.SupportedDomains()
+}
+func (a *codebuddyAdapter) DiscoverSources() []Source { return a.init().baseAdapter.DiscoverSources() }
 func (a *codebuddyAdapter) Detect(cfg *runtimecfg.CLIConfig, daemonURL string) Status {
 	return a.init().baseAdapter.Detect(cfg, daemonURL)
 }
@@ -685,11 +708,13 @@ func (a *workbuddyAdapter) init() *workbuddyAdapter {
 	return a
 }
 
-func (a *workbuddyAdapter) ID() string                 { return a.init().baseAdapter.ID() }
-func (a *workbuddyAdapter) DisplayName() string        { return a.init().baseAdapter.DisplayName() }
-func (a *workbuddyAdapter) Aliases() []string          { return a.init().baseAdapter.Aliases() }
-func (a *workbuddyAdapter) SupportedDomains() []string { return a.init().baseAdapter.SupportedDomains() }
-func (a *workbuddyAdapter) DiscoverSources() []Source  { return a.init().baseAdapter.DiscoverSources() }
+func (a *workbuddyAdapter) ID() string          { return a.init().baseAdapter.ID() }
+func (a *workbuddyAdapter) DisplayName() string { return a.init().baseAdapter.DisplayName() }
+func (a *workbuddyAdapter) Aliases() []string   { return a.init().baseAdapter.Aliases() }
+func (a *workbuddyAdapter) SupportedDomains() []string {
+	return a.init().baseAdapter.SupportedDomains()
+}
+func (a *workbuddyAdapter) DiscoverSources() []Source { return a.init().baseAdapter.DiscoverSources() }
 func (a *workbuddyAdapter) Detect(cfg *runtimecfg.CLIConfig, daemonURL string) Status {
 	return a.init().baseAdapter.Detect(cfg, daemonURL)
 }
@@ -943,7 +968,7 @@ func loadLocalVolarc() []string {
 		return nil
 	}
 	volarcPath := filepath.Join(cwd, ".volarc")
-	
+
 	// Resolve absolute physical path and evaluate symlinks
 	absPath, err := filepath.Abs(volarcPath)
 	if err != nil {
@@ -1033,7 +1058,7 @@ func fetchTeamMcps(ctx context.Context, apiBase, token string) ([]teamMcpConfig,
 	return allMcps, nil
 }
 
-func safeUpdateMcpConfig(configPath string, modifyFunc func(current map[string]any) error) error {
+func SafeUpdateMcpConfig(configPath string, modifyFunc func(current map[string]any) error) error {
 	lockPath := filepath.Join(filepath.Dir(configPath), "."+filepath.Base(configPath)+".lock")
 	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
 		return err
@@ -1104,7 +1129,7 @@ func safeUpdateMcpConfig(configPath string, modifyFunc func(current map[string]a
 }
 
 func connectMcpPlatform(ctx context.Context, daemonURL string, connection runtimecfg.LocalConnection, configPath string) error {
-	return safeUpdateMcpConfig(configPath, func(current map[string]any) error {
+	return SafeUpdateMcpConfig(configPath, func(current map[string]any) error {
 		servers, _ := current["mcpServers"].(map[string]any)
 		if servers == nil {
 			servers = map[string]any{}
@@ -1149,7 +1174,7 @@ func connectMcpPlatform(ctx context.Context, daemonURL string, connection runtim
 }
 
 func disconnectMcpPlatform(configPath string) error {
-	return safeUpdateMcpConfig(configPath, func(current map[string]any) error {
+	return SafeUpdateMcpConfig(configPath, func(current map[string]any) error {
 		servers, _ := current["mcpServers"].(map[string]any)
 		if servers == nil {
 			return nil
@@ -1164,5 +1189,3 @@ func disconnectMcpPlatform(configPath string) error {
 		return nil
 	})
 }
-
-

@@ -16,6 +16,8 @@
 
 Vola 给每个人一个 Agent 数据 Hub。Claude、ChatGPT、Codex、Cursor、Copilot、飞书、Kimi、智谱等 Agent 可以通过这个 Hub 读取被授权的 profile、memory、projects、conversations、skills 和 vault 资料，减少在每个平台重复维护上下文。
 
+项目核心原则：**Vola 是给个人和小团队用的 Agent 资料中心：把 profile、memory、projects、skills、MCP、prompt 和 playbook 放在一个私有 Hub 里，再安全同步到 Codex、Claude Code 等本机工具。** 详细说明见 [Vola 核心原则](docs/core-principles.zh-CN.md)。
+
 你可以自己部署 Vola，运行属于自己的 Hub。我也提供了一个已经部署好的版本，可以直接在 [https://www.vola.ai](https://www.vola.ai) 体验。使用兑换码 `VIVO50` 可以获得三个月免费服务；三个月到期后，你可以选择继续续费、继续使用可用的托管方案，或者切换到自己部署的版本。
 
 **你的 profile、memory、projects、skills 和私密资料跟着人走，不跟平台走。**
@@ -36,7 +38,7 @@ Vola 给每个人一个 Agent 数据 Hub。Claude、ChatGPT、Codex、Cursor、C
 
 - GitHub Backup 备份的是用户可见文件树，不包含 secret 明文，也不能替代 Postgres 备份。
 - WebDAV / S3-compatible 备份上传的是 Vola 导出 zip，适合离开当前服务器保存恢复包；账号、连接、billing、session 等仍以数据库备份为准。
-- Skill 自动写入当前只对 Claude Code 和 Codex 开放：Claude Code 写 `~/.claude/skills`，Codex 写 `~/.codex/skills`，且只更新带 `.vola-managed.json` 的目录；Cursor、Gemini CLI 可分配、可预览、可导出，但 Vola 不自动修改它们的本地配置。详细边界见 [多 Agent Skill 目标规则](docs/agent-skill-targets.zh-CN.md)。
+- Skill 自动写入当前只对 Claude Code 和 Codex 开放：Claude Code 写 `~/.claude/skills`，Codex 写 `~/.agents/skills`，且只更新带 `.vola-managed.json` 的目录；Cursor、Gemini CLI 可分配、可预览、可导出，但 Vola 不自动修改它们的本地配置。详细边界见 [多 Agent Skill 目标规则](docs/agent-skill-targets.zh-CN.md)。
 - Claude / Codex Skill 转换会保留脚本、依赖、assets、二进制资源和外部引用文件；MCP、plugin、hook 只生成报告，需要用户手动配置。
 - Hosted OAuth、ChatGPT Apps、Claude Connectors 等能力受对应平台账号计划、灰度和平台规则影响。
 - Team Library 当前按小团队共享资料库设计，不等同于企业级组织管理、审计报表、SSO 或审批流。
@@ -99,7 +101,8 @@ cd vola
 ```bash
 neu status         # 检查 daemon、本地存储和当前 target 是否就绪
 neu platform ls    # 查看已发现的平台 adapter 和连接状态
-neu connect claude # 安装 / 配置 Claude 集成
+neu connect codex  # 推荐：安装 / 配置 Codex 集成
+neu connect claude # 其次：安装 / 配置 Claude Code 集成
 neu browse         # 在浏览器里打开本地 Hub
 ```
 
@@ -145,6 +148,7 @@ neu login
 先看这些：
 
 - [接入说明](docs/setup.zh-CN.md)
+- [Vola 核心原则](docs/core-principles.zh-CN.md)
 - [GitHub Backup 指南](docs/github-backup.zh-CN.md)
 - [小范围上线测试清单](docs/launch-test-checklist.zh-CN.md)
 - [CLI 使用手册](docs/cli.zh-CN.md)
@@ -162,6 +166,7 @@ neu login
 
 - [Token 管理](docs/setup.zh-CN.md#token-management)
 - [团队 AI 资料库](docs/team-ai-library.zh-CN.md)
+- [相似产品调研与优化建议](docs/agent-data-hub-competitor-research.zh-CN.md)
 - [Bundle Sync 指南](docs/sync.md)
 - [SDK / HTTP API](docs/reference.zh-CN.md#sdk)
 - [产品设计文档](docs/design.md)

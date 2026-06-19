@@ -320,6 +320,15 @@ func (s *Server) handleTreeSnapshot(w http.ResponseWriter, r *http.Request) {
 	trustLevel := trustLevelFromCtx(r.Context())
 	snapshot, err := s.FileTreeService.Snapshot(r.Context(), userID, path, trustLevel)
 	if err != nil {
+		if errors.Is(err, services.ErrEntryNotFound) {
+			respondOK(w, SnapshotResponse{
+				Path:         hubpath.NormalizePublic(path),
+				Cursor:       0,
+				RootChecksum: "",
+				Entries:      []*FileNode{},
+			})
+			return
+		}
 		respondInternalError(w, err)
 		return
 	}

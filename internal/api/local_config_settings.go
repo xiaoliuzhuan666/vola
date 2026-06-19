@@ -69,3 +69,47 @@ func (s *Server) handleLocalConfigUpdate(w http.ResponseWriter, r *http.Request)
 	}
 	respondOK(w, localConfigResponse{Path: path, Raw: raw})
 }
+
+func (s *Server) handleLocalWorkspaceActiveUpdate(w http.ResponseWriter, r *http.Request) {
+	if !s.isLocalMode() {
+		respondError(w, http.StatusNotImplemented, ErrCodeUnsupported, "local workspace operations are only available in local mode")
+		return
+	}
+	if _, ok := userIDFromCtx(r.Context()); !ok {
+		respondUnauthorized(w)
+		return
+	}
+	var req struct {
+		ActiveTeamID string `json:"active_team_id"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, ErrCodeBadRequest, "invalid request body")
+		return
+	}
+
+	configPath, cfg, err := runtimecfg.LoadConfig(runtimecfg.DefaultConfigPath())
+	if err != nil {
+		respondInternalError(w, err)
+		return
+	}
+
+	profileName := cfg.CurrentProfile
+	if profileName == "" {
+		profileName = "default"
+	}
+
+	profile, ok := cfg.Profiles[profileName]
+	if !ok {
+		profile = runtimecfg.SyncProfile{}
+	}
+
+	profile.ActiveTeamID = req.ActiveTeamID
+	cfg.Profiles[profileName] = profile
+
+	if err := runtimecfg.SaveConfig(configPath, cfg); err != nil {
+		respondInternalError(w, err)
+		return
+	}
+
+	respondOK(w, nil)
+}

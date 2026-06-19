@@ -12,6 +12,8 @@ English | [简体中文](README.zh-CN.md)
 
 Vola gives one person one agent data hub. Claude, ChatGPT, Codex, Cursor, Gemini, Feishu, and other agents can read authorized profile, memory, projects, conversations, skills, and vault material through that hub instead of rebuilding context on every platform.
 
+Core principle: Vola is a private Agent knowledge hub for individuals and small teams. It keeps profile, memory, projects, skills, MCP, prompts, and playbooks in one Hub, then safely syncs supported assets to local tools such as Codex and Claude Code. [Chinese principle note](docs/core-principles.zh-CN.md)
+
 You can deploy Vola yourself and run your own hub. I also host a ready-to-use version at [https://www.vola.ai](https://www.vola.ai) if you want to try it right away. Use promotion code `VIVO50` for three free months of service; after that, you can keep subscribing, continue with the available hosted plan, or move to your own self-hosted deployment.
 
 ```bash
@@ -147,6 +149,7 @@ This opens a browser login flow, saves the hosted profile locally, and switches 
 Start here:
 
 - [Setup Guide](docs/setup.md)
+- [Core Principles](docs/core-principles.zh-CN.md)
 - [GitHub Backup Guide](docs/github-backup.md)
 - [Small-scope launch test checklist](docs/launch-test-checklist.zh-CN.md)
 - [CLI Guide](docs/cli.md)

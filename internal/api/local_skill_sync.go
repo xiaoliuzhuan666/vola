@@ -506,18 +506,7 @@ func (s *Server) buildLocalSkillSyncAgentPlan(
 			}
 
 			for _, file := range files {
-				relPath := file.RelPath
-				fileData := file.Data
-
-				// 如果是 cursor agent，将 SKILL.md 改写转换为 <skill-name>.mdc 规则文件并加入 Frontmatter
-				if agent.ID == "cursor" && file.RelPath == "SKILL.md" {
-					skillName := strings.TrimPrefix(normalizeAssignedSkillPath(skillPath), "/skills/")
-					relPath = skillName + ".mdc"
-
-					desc := fmt.Sprintf("Vola managed skill: %s", skillName)
-					frontmatter := fmt.Sprintf("---\ndescription: %q\nglobs: \"*\"\n---\n\n", desc)
-					fileData = append([]byte(frontmatter), file.Data...)
-				}
+				relPath, fileData := transformFileForAgent(agent.ID, skillPath, file)
 
 				sourceRelPaths[relPath] = struct{}{}
 				targetPath, err := localSkillDestinationPath(root, skillPath, relPath, scope)
@@ -599,7 +588,8 @@ func (s *Server) addLocalSkillExportChanges(ctx context.Context, userID uuid.UUI
 		}
 		var total int64
 		for _, file := range files {
-			total += int64(len(file.Data))
+			_, fileData := transformFileForAgent(plan.AgentID, skillPath, file)
+			total += int64(len(fileData))
 		}
 		plan.ExportAvailable = true
 		plan.addChange(localSkillSyncChange{
@@ -862,6 +852,20 @@ func localSkillSelectedAgents(agentIDs []string) []skillAgentTarget {
 	return out
 }
 
+func transformFileForAgent(agentID string, skillPath string, file localSkillFile) (string, []byte) {
+	relPath := file.RelPath
+	fileData := file.Data
+	if agentID == "cursor" && file.RelPath == "SKILL.md" {
+		skillName := strings.TrimPrefix(normalizeAssignedSkillPath(skillPath), "/skills/")
+		relPath = skillName + ".mdc"
+
+		desc := fmt.Sprintf("Vola managed skill: %s", skillName)
+		frontmatter := fmt.Sprintf("---\ndescription: %q\nglobs: \"*\"\n---\n\n", desc)
+		fileData = append([]byte(frontmatter), file.Data...)
+	}
+	return relPath, fileData
+}
+
 func localSkillAgentByID(agentID string) *skillAgentTarget {
 	clean := strings.TrimSpace(agentID)
 	for _, target := range skillAgentTargets {
@@ -883,7 +887,7 @@ func localSkillTargetRoot(agentID string, targetRoots map[string]string) (string
 		case "claude-code":
 			value = "~/.claude/skills"
 		case "codex":
-			value = "~/.codex/skills"
+			value = "~/.agents/skills"
 		default:
 			return "", fmt.Errorf("no local skill root configured for %s", agentID)
 		}
@@ -1134,8 +1138,9 @@ func (s *Server) writeLocalSkillExportPackage(ctx context.Context, zw *zip.Write
 		}
 		skillName := strings.TrimPrefix(normalizeAssignedSkillPath(skillPath), "/skills/")
 		for _, file := range files {
-			zipPath := pathpkg.Join("skills", skillName, filepath.ToSlash(file.RelPath))
-			if err := writeLocalSkillExportFile(zw, zipPath, file.Data); err != nil {
+			relPath, fileData := transformFileForAgent(agent.ID, skillPath, file)
+			zipPath := pathpkg.Join("skills", skillName, filepath.ToSlash(relPath))
+			if err := writeLocalSkillExportFile(zw, zipPath, fileData); err != nil {
 				return err
 			}
 		}

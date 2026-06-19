@@ -25,26 +25,18 @@ jobs:
             platform: macos-15
             tauriTarget: aarch64-apple-darwin
             bundles: ""
-            goos: darwin
-            goarch: arm64
           - artifact: macos-x86_64
             platform: macos-15-intel
             tauriTarget: x86_64-apple-darwin
             bundles: ""
-            goos: darwin
-            goarch: amd64
           - artifact: linux-x86_64
             platform: ubuntu-22.04
             tauriTarget: ""
             bundles: "appimage"
-            goos: linux
-            goarch: amd64
           - artifact: windows-x86_64
             platform: windows-latest
             tauriTarget: ""
             bundles: "nsis"
-            goos: windows
-            goarch: amd64
     env:
       TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
       TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
@@ -114,13 +106,6 @@ jobs:
             echo "Release version ($ref_version) does not match src-tauri/tauri.conf.json ($app_version)."
             exit 1
           fi
-
-      - name: Build bundled Vola sidecar
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p src-tauri/bin
-          GOOS=${{ matrix.goos }} GOARCH=${{ matrix.goarch }} go build -o src-tauri/bin/vola ./cmd/vola/
 
       - name: Build desktop app
         shell: bash
